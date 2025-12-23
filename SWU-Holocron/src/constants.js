@@ -3,6 +3,7 @@ import { Sword, Shield, Crown, Zap, Star, Skull, Info } from 'lucide-react';
 export const API_BASE = 'https://api.swu-db.com';
 
 export const SETS = [
+  { code: 'ALL', name: 'All Sets' },
   { code: 'SOR', name: 'Spark of Rebellion' },
   { code: 'SHD', name: 'Shadows of the Galaxy' },
   { code: 'TWI', name: 'Twilight of the Republic' },

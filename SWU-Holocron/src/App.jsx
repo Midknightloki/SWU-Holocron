@@ -31,12 +31,16 @@ const getCollectionRef = (user, syncCode) => {
 
 export default function App() {
   // Set and Card State
-  const [activeSet, setActiveSet] = useState(SETS[0].code);
+  const [activeSet, setActiveSet] = useState('ALL');
   const [cards, setCards] = useState([]);
   const [loading, setLoading] = useState(false);
   const [lastSync, setLastSync] = useState(null);
   const [error, setError] = useState(null);
   const [reconstructedData, setReconstructedData] = useState(false);
+  const [availableSets, setAvailableSets] = useState(() => {
+    const cached = localStorage.getItem('swu-available-sets');
+    return cached ? JSON.parse(cached) : [];
+  });
 
   // Auth and Collection State
   const [user, setUser] = useState(null);
@@ -73,6 +77,24 @@ export default function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  // Discover Available Sets
+  useEffect(() => {
+    const discoverSets = async () => {
+      const sets = await CardService.getAvailableSets();
+      if (sets.length > 0) {
+        setAvailableSets(sets);
+        localStorage.setItem('swu-available-sets', JSON.stringify(sets));
+      }
+    };
+    
+    if (hasVisited && (syncCode || isGuestMode)) {
+      discoverSets();
+      // Refresh available sets every hour
+      const interval = setInterval(discoverSets, 60 * 60 * 1000);
+      return () => clearInterval(interval);
+    }
+  }, [hasVisited, syncCode, isGuestMode]);
 
   // Sync Code Persistence
   useEffect(() => {
@@ -123,6 +145,51 @@ export default function App() {
     setReconstructedData(false);
 
     try {
+      // Load all sets if 'ALL' is selected
+      if (activeSet === 'ALL') {
+        const cacheKey = 'swu-cards-ALL';
+        const local = localStorage.getItem(cacheKey);
+        
+        if (!force && local) {
+          setCards(JSON.parse(local));
+          setLoading(false);
+          return;
+        }
+
+        // Load all available sets in parallel
+        const setsToLoad = availableSets.length > 0 
+          ? availableSets 
+          : SETS.filter(s => s.code !== 'ALL').map(s => s.code);
+        
+        const setPromises = setsToLoad.map(setCode => 
+          CardService.fetchSetData(setCode)
+            .then(result => result.data)
+            .catch(err => {
+              console.warn(`Failed to load ${setCode}: ${err.message}`);
+              return []; // Return empty array for failed sets
+            })
+        );
+        
+        const allSetsData = await Promise.all(setPromises);
+        const allCards = allSetsData.flat().filter(card => card); // Remove any null/undefined
+        
+        if (allCards.length === 0) {
+          throw new Error('No card data could be loaded');
+        }
+        
+        allCards.sort((a, b) => {
+          const setCompare = a.Set.localeCompare(b.Set);
+          if (setCompare !== 0) return setCompare;
+          return a.Number.localeCompare(b.Number, undefined, { numeric: true });
+        });
+        
+        setCards(allCards);
+        setLastSync('firestore');
+        localStorage.setItem(cacheKey, JSON.stringify(allCards));
+        setLoading(false);
+        return;
+      }
+
       // 1. Try Local Cache
       const cacheKey = `swu-cards-${activeSet}`;
       const local = localStorage.getItem(cacheKey);
@@ -339,6 +406,16 @@ export default function App() {
     return ['All', ...types].sort();
   }, [cards]);
 
+  // Compute available SETS based on discovered sets
+  const visibleSets = useMemo(() => {
+    const allOption = { code: 'ALL', name: 'All Sets' };
+    if (availableSets.length === 0) {
+      return [allOption, ...SETS.filter(s => s.code !== 'ALL')];
+    }
+    const filtered = SETS.filter(s => s.code === 'ALL' || availableSets.includes(s.code));
+    return filtered.length > 1 ? filtered : [allOption, ...SETS.filter(s => s.code !== 'ALL')];
+  }, [availableSets]);
+
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 font-sans selection:bg-yellow-500/30">
       <input
@@ -422,7 +499,7 @@ export default function App() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-2">
               {/* Set Tabs */}
               <div className="flex bg-gray-800 p-1 rounded-lg overflow-x-auto no-scrollbar max-w-full">
-                {SETS.map(set => (
+                {visibleSets.map(set => (
                   <button
                     key={set.code}
                     onClick={() => setActiveSet(set.code)}

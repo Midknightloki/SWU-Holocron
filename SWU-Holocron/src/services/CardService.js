@@ -1,6 +1,6 @@
 import { API_BASE } from '../constants';
 import { db, APP_ID } from '../firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
 
 export const CardService = {
   getCollectionId: (set, number, isFoil) => `${set}_${number}_${isFoil ? 'foil' : 'std'}`,
@@ -8,6 +8,40 @@ export const CardService = {
   getCardImage: (set, number) => `${API_BASE}/cards/${set}/${number}?format=image`,
   
   getBackImage: (set, number) => `${API_BASE}/cards/${set}/${number}?format=image&face=back`,
+
+  // Get list of available sets from Firestore
+  getAvailableSets: async () => {
+    if (!db || !APP_ID) return [];
+    
+    try {
+      const setsCollectionRef = collection(
+        db, 
+        'artifacts', APP_ID, 
+        'public', 'data', 
+        'cardDatabase', 'sets'
+      );
+      
+      const snapshot = await getDocs(setsCollectionRef);
+      const availableSets = [];
+      
+      for (const docSnap of snapshot.docs) {
+        const setCode = docSnap.id;
+        if (setCode !== 'data') { // Skip any non-set documents
+          // Check if the set has a data subdocument
+          const dataDoc = await getDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'cardDatabase', 'sets', setCode, 'data'));
+          if (dataDoc.exists() && dataDoc.data().totalCards > 0) {
+            availableSets.push(setCode);
+          }
+        }
+      }
+      
+      console.log('✓ Available sets:', availableSets);
+      return availableSets;
+    } catch (error) {
+      console.error('Error fetching available sets:', error);
+      return [];
+    }
+  },
 
   fetchWithTimeout: async (url, options = {}, timeout = 35000) => {
     const controller = new AbortController();
