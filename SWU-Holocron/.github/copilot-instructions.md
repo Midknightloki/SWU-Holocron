@@ -102,6 +102,65 @@ Currently monolithic [app.jsx](../src/app.jsx) (157 lines). Components extracted
 
 ## Developer Workflows
 
+### Test-Driven Development (TDD) - REQUIRED for New Features
+
+**Critical Process**: When adding new functionality, always write tests FIRST, then implement:
+
+1. **Write Tests First**: Before writing any implementation code, create tests that define the desired behavior
+   - Unit tests for individual functions/methods
+   - Integration tests for component interactions
+   - Tests should initially fail (red state)
+
+2. **Implement Until Green**: Write minimum code needed to make tests pass
+   - Implement the feature
+   - Run tests frequently: `npm test -- --run`
+   - Iterate until all tests pass (green state)
+
+3. **Refactor**: Clean up code while maintaining green tests
+   - Improve readability, performance, or structure
+   - Tests ensure no regression during refactoring
+
+**Benefits**:
+- ✅ Cuts way down on repetitive manual testing
+- ✅ Prevents regressions when adding features
+- ✅ Documents expected behavior
+- ✅ Faster debugging (tests pinpoint exact failures)
+- ✅ Safer refactoring (tests verify nothing breaks)
+
+**Example: Set Discovery Feature**
+```javascript
+// 1. Write tests first (setDiscovery.test.js)
+it('should filter out empty sets', () => {
+  const availableSets = ['SOR', 'SHD'];
+  const visibleSets = filterEmptySets(allSets, availableSets);
+  expect(visibleSets).not.toContain('EMPTY');
+});
+
+// 2. Implement feature (App.jsx)
+const visibleSets = useMemo(() => {
+  return SETS.filter(s => s.code === 'ALL' || availableSets.includes(s.code));
+}, [availableSets]);
+
+// 3. Verify tests pass
+// npm test -- --run
+```
+
+**Test Organization**:
+- `src/test/services/` - Service layer tests (CardService, Firebase)
+- `src/test/components/` - React component tests
+- `src/test/integration/` - Multi-component integration tests
+- `src/test/utils/` - Utility function tests
+
+**Running Tests**:
+```bash
+npm test              # Watch mode (interactive)
+npm test -- --run     # Single run (CI/pre-commit)
+npm run test:unit     # Unit tests only
+npm run test:integration  # Integration tests only
+```
+
+Current test suite: **146 tests passing** - maintain this number or increase it!
+
 ### Build & Run
 ```bash
 npm run dev      # Vite dev server (port 5173)
