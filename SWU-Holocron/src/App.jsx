@@ -135,6 +135,10 @@ export default function App() {
   // Data Loading
   useEffect(() => {
     if (hasVisited && (syncCode || isGuestMode)) {
+      // Clear filters when switching sets for cleaner UX
+      setSearchTerm('');
+      setSelectedAspect('All');
+      setSelectedType('All');
       loadSetData();
     }
   }, [activeSet, hasVisited, syncCode, isGuestMode]);
@@ -393,12 +397,14 @@ export default function App() {
     if (!Array.isArray(cards)) return [];
     return cards.filter(card => {
       if (!card) return false;
+      // When viewing a specific set, only show cards from that set
+      if (activeSet !== 'ALL' && card.Set !== activeSet) return false;
       const matchSearch = card.Name?.toLowerCase().includes(searchTerm.toLowerCase());
       const matchAspect = selectedAspect === 'All' || (card.Aspects && card.Aspects.includes(selectedAspect));
       const matchType = selectedType === 'All' || card.Type === selectedType;
       return matchSearch && matchAspect && matchType;
     });
-  }, [cards, searchTerm, selectedAspect, selectedType]);
+  }, [cards, searchTerm, selectedAspect, selectedType, activeSet]);
 
   const uniqueTypes = useMemo(() => {
     if (!Array.isArray(cards)) return ['All'];
