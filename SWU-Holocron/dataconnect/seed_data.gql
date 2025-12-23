@@ -1,0 +1,98 @@
+mutation CreateSeedData @transaction @auth(level: USER) {
+  user_insertMany(data: [
+    {
+      id: "550e8400-e29b-41d4-a716-446655440000",
+      username: "demouser1",
+      email: "demouser1@example.com",
+      createdAt: "2024-04-03T00:00:00Z"
+    },
+    {
+      id: "550e8400-e29b-41d4-a716-446655440001",
+      username: "demouser2",
+      email: "demouser2@example.com",
+      createdAt: "2024-04-03T00:00:00Z"
+    }
+  ])
+  card_insertMany(data: [
+    {
+      id: "650e8400-e29b-41d4-a716-446655440002",
+      name: "Example Card 1",
+      cardNumber: 100,
+      cardType: "Creature",
+      rarity: "Common",
+      set: "Base Set",
+      createdAt: "2024-04-03T00:00:00Z"
+    },
+    {
+      id: "750e8400-e29b-41d4-a716-446655440003",
+      name: "Example Card 2",
+      cardNumber: 200,
+      cardType: "Spell",
+      rarity: "Uncommon",
+      set: "Base Set",
+      createdAt: "2024-04-03T00:00:00Z"
+    }
+  ])
+  deck_insertMany(data: [
+    {
+      id: "850e8400-e29b-41d4-a716-446655440004",
+      userId: "550e8400-e29b-41d4-a716-446655440000",
+      name: "Example Deck 1",
+      isPublic: true,
+      createdAt: "2024-04-03T00:00:00Z",
+      updatedAt: "2024-04-03T00:00:00Z"
+    },
+    {
+      id: "950e8400-e29b-41d4-a716-446655440005",
+      userId: "550e8400-e29b-41d4-a716-446655440001",
+      name: "Example Deck 2",
+      isPublic: false,
+      createdAt: "2024-04-03T00:00:00Z",
+      updatedAt: "2024-04-03T00:00:00Z"
+    }
+  ])
+  deckCard_insertMany(data: [
+    {
+      deckId: "850e8400-e29b-41d4-a716-446655440004",
+      cardId: "650e8400-e29b-41d4-a716-446655440002",
+      quantity: 2
+    },
+    {
+      deckId: "950e8400-e29b-41d4-a716-446655440005",
+      cardId: "750e8400-e29b-41d4-a716-446655440003",
+      quantity: 3
+    }
+  ])
+  collectionCard_insertMany(data: [
+    {
+      userId: "550e8400-e29b-41d4-a716-446655440000",
+      cardId: "650e8400-e29b-41d4-a716-446655440002",
+      quantity: 1,
+      createdAt: "2024-04-03T00:00:00Z"
+    },
+    {
+      userId: "550e8400-e29b-41d4-a716-446655440001",
+      cardId: "750e8400-e29b-41d4-a716-446655440003",
+      quantity: 1,
+      createdAt: "2024-04-03T00:00:00Z"
+    }
+  ])
+  game_insertMany(data: [
+    {
+      id: "a50e8400-e29b-41d4-a716-446655440006",
+      playerId: "550e8400-e29b-41d4-a716-446655440000",
+      deckUsedId: "850e8400-e29b-41d4-a716-446655440004",
+      gameDate: "2024-04-03",
+      outcome: "Win",
+      createdAt: "2024-04-03T00:00:00Z"
+    },
+    {
+      id: "b50e8400-e29b-41d4-a716-446655440007",
+      playerId: "550e8400-e29b-41d4-a716-446655440001",
+      deckUsedId: "950e8400-e29b-41d4-a716-446655440005",
+      gameDate: "2024-04-04",
+      outcome: "Loss",
+      createdAt: "2024-04-03T00:00:00Z"
+    }
+  ])
+}

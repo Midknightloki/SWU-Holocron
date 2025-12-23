@@ -1,0 +1,44 @@
+mutation CreateNewUser($displayName: String!, $email: String!, $username: String!) @auth(level: USER) {
+  user_insert(data: {
+    displayName: $displayName,
+    email: $email,
+    username: $username,
+		createdAt_expr: "request.time"
+  })
+}
+
+query GetMyDecks @auth(level: USER) {
+  decks(where: {userId: {eq_expr: "auth.uid"}}) {
+    id
+    name
+    description
+    isPublic
+    createdAt
+    updatedAt
+  }
+}
+
+mutation CreateNewDeck($name: String!, $description: String!, $isPublic: Boolean!) @auth(level: USER) {
+  deck_insert(data: {
+    name: $name,
+    description: $description,
+    isPublic: $isPublic,
+		userId_expr: "auth.uid",
+		createdAt_expr: "request.time",
+		updatedAt_expr: "request.time"
+  })
+}
+
+query ListPublicDecks @auth(level: PUBLIC, insecureReason: "This operation is safe to expose to the public") {
+  decks(where: {isPublic: {eq: true}}) {
+    id
+    name
+    description
+    createdAt
+    updatedAt
+    user {
+      id
+      username
+    }
+  }
+}

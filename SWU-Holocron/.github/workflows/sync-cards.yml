@@ -1,0 +1,114 @@
+name: Sync Card Database
+
+on:
+  # Run daily at 6 AM UTC (after new card releases typically happen)
+  schedule:
+    - cron: '0 6 * * *'
+  
+  # Allow manual triggering from GitHub UI
+  workflow_dispatch:
+    inputs:
+      force_update:
+        description: 'Force update all sets (ignore hash check)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+jobs:
+  sync-cards:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Install Firebase Admin SDK
+        run: npm install firebase-admin --save-dev
+      
+      - name: Create Firebase service account file
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          echo "$FIREBASE_SERVICE_ACCOUNT" > firebase-admin-key.json
+          chmod 600 firebase-admin-key.json
+      
+      - name: Run card database sync
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FORCE_UPDATE: ${{ github.event.inputs.force_update || 'false' }}
+        run: node scripts/seedCardDatabase.js
+      
+      - name: Clean up service account file
+        if: always()
+        run: rm -f firebase-admin-key.json
+      
+      - name: Upload sync log artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sync-log-${{ github.run_number }}
+          path: |
+            sync-log.json
+            sync-errors.json
+          retention-days: 30
+      
+      - name: Report sync status
+        if: always()
+        run: |
+          echo "### Card Database Sync Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Workflow Run:** #${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Check the job logs for detailed sync information." >> $GITHUB_STEP_SUMMARY
+      
+      - name: Notify on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue_title = `Card Database Sync Failed - Run #${context.runNumber}`;
+            const issue_body = `The automated card database sync failed.
+            
+            **Run:** [${context.runNumber}](${context.payload.repository.html_url}/actions/runs/${context.runId})
+            **Triggered:** ${context.eventName}
+            **Time:** ${new Date().toISOString()}
+            
+            Please check the workflow logs for details and run manually if needed.
+            
+            \`\`\`
+            Workflow: .github/workflows/sync-cards.yml
+            \`\`\`
+            `;
+            
+            // Check if an issue already exists
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'sync-failure,automated'
+            });
+            
+            if (issues.data.length === 0) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: issue_title,
+                body: issue_body,
+                labels: ['sync-failure', 'automated', 'bug']
+              });
+            }

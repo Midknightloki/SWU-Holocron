@@ -1,0 +1,54 @@
+type User @table {
+  username: String!
+  email: String!
+  createdAt: Timestamp!
+  displayName: String
+  photoUrl: String
+}
+
+type Card @table {
+  name: String!
+  set: String!
+  cardNumber: Int!
+  rarity: String!
+  cardType: String!
+  createdAt: Timestamp!
+  cost: Int
+  power: Int
+  health: Int
+  text: String
+  factions: [String]
+  aspects: [String]
+}
+
+type CollectionCard @table(key: ["user", "card"]) {
+  user: User!
+  card: Card!
+  quantity: Int!
+  createdAt: Timestamp!
+  isFoil: Boolean
+}
+
+type Deck @table {
+  user: User!
+  name: String!
+  isPublic: Boolean!
+  createdAt: Timestamp!
+  updatedAt: Timestamp!
+  description: String
+}
+
+type DeckCard @table(key: ["deck", "card"]) {
+  deck: Deck!
+  card: Card!
+  quantity: Int!
+}
+
+type Game @table {
+  player: User!
+  deckUsed: Deck!
+  gameDate: Date!
+  outcome: String!
+  createdAt: Timestamp!
+  opponentUsername: String
+}

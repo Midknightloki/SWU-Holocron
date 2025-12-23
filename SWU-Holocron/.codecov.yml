@@ -1,0 +1,45 @@
+coverage:
+  status:
+    project:
+      default:
+        target: 80%
+        threshold: 2%
+        paths:
+          - "src/utils/"
+          - "src/services/"
+    patch:
+      default:
+        target: 80%
+        threshold: 1%
+
+flags:
+  unit:
+    paths:
+      - src/utils/
+      - src/services/
+    carryforward: true
+  
+  integration:
+    paths:
+      - src/
+    carryforward: true
+  
+  full:
+    paths:
+      - src/
+    carryforward: false
+
+comment:
+  layout: "condensed_header, condensed_files, condensed_footer"
+  behavior: default
+  require_changes: true
+  require_base: false
+  require_head: true
+
+ignore:
+  - "src/test/**"
+  - "**/*.test.js"
+  - "**/*.test.jsx"
+  - "**/*.spec.js"
+  - "vite.config.js"
+  - "tailwind.config.js"
