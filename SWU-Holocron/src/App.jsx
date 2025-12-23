@@ -356,7 +356,7 @@ export default function App() {
       return;
     }
 
-    const collId = getCollectionId(activeSet, card.Number, false); // Default to standard
+    const collId = getCollectionId(card.Set, card.Number, false); // Default to standard
     const currentQty = collectionData[collId]?.quantity || 0;
     const newQty = currentQty + delta;
 
@@ -611,8 +611,8 @@ export default function App() {
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6">
                   {filteredCards.map((card) => {
                     const isHoriz = isHorizontalCard(card.Type);
-                    const stdKey = getCollectionId(activeSet, card.Number, false);
-                    const foilKey = getCollectionId(activeSet, card.Number, true);
+                    const stdKey = getCollectionId(card.Set, card.Number, false);
+                    const foilKey = getCollectionId(card.Set, card.Number, true);
                     const stdOwned = collectionData[stdKey]?.quantity || 0;
                     const foilOwned = collectionData[foilKey]?.quantity || 0;
                     const totalOwned = stdOwned + foilOwned;
