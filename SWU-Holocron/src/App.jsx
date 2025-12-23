@@ -648,7 +648,7 @@ export default function App() {
 
                         <div className="absolute inset-0 bg-gray-900 flex items-center justify-center">
                           <img
-                            src={CardService.getCardImage(activeSet, card.Number)}
+                            src={CardService.getCardImage(card.Set, card.Number)}
                             alt={card.Name}
                             loading="lazy"
                             className={`w-full h-full object-cover transition-opacity duration-300 ${totalOwned > 0 ? 'opacity-100' : 'opacity-80 group-hover:opacity-100'}`}

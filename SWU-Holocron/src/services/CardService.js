@@ -10,7 +10,13 @@ export const CardService = {
   getBackImage: (set, number) => `${API_BASE}/cards/${set}/${number}?format=image&face=back`,
 
   // Get list of available sets from Firestore
+  // TODO: Fix collection path structure - currently getting "odd segments" error
+  // Temporarily disabled until we can verify the correct Firestore schema
   getAvailableSets: async () => {
+    // Returning empty array will cause fallback to show all SETS from constants
+    return [];
+    
+    /* DISABLED - Collection path has wrong number of segments
     if (!db || !APP_ID) return [];
     
     try {
@@ -41,6 +47,7 @@ export const CardService = {
       console.error('Error fetching available sets:', error);
       return [];
     }
+    */
   },
 
   fetchWithTimeout: async (url, options = {}, timeout = 35000) => {
