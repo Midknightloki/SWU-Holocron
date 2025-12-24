@@ -132,13 +132,16 @@ export default function App() {
     return () => unsub();
   }, [user, syncCode, isGuestMode]);
 
+  // Clear filters when switching sets
+  useEffect(() => {
+    setSearchTerm('');
+    setSelectedAspect('All');
+    setSelectedType('All');
+  }, [activeSet]);
+
   // Data Loading
   useEffect(() => {
     if (hasVisited && (syncCode || isGuestMode)) {
-      // Clear filters when switching sets for cleaner UX
-      setSearchTerm('');
-      setSelectedAspect('All');
-      setSelectedType('All');
       loadSetData();
     }
   }, [activeSet, hasVisited, syncCode, isGuestMode]);
