@@ -159,7 +159,46 @@ npm run test:unit     # Unit tests only
 npm run test:integration  # Integration tests only
 ```
 
-Current test suite: **146 tests passing** - maintain this number or increase it!
+Current test suite: **229 tests** (220 passing, 9 failing async timing issues) - maintain or increase!
+
+**Test-Driven Development (TDD) Required**:
+1. **Write Test First** (RED): Test fails because feature doesn't exist yet
+2. **Make It Pass** (GREEN): Write minimal code to pass the test
+3. **Refactor** (CLEAN): Improve code while keeping tests green
+
+**Example TDD Flow**:
+```javascript
+// 1. RED: Write failing test
+it('should call onUpdateQuantity when plus button clicked', () => {
+  const onUpdateQuantity = vi.fn();
+  render(<AdvancedSearch onUpdateQuantity={onUpdateQuantity} />);
+  fireEvent.click(screen.getByRole('button', { name: /plus/i }));
+  expect(onUpdateQuantity).toHaveBeenCalledWith(card, 1);
+}); // ❌ FAILS: onUpdateQuantity prop doesn't exist
+
+// 2. GREEN: Add minimal code
+<button onClick={() => onUpdateQuantity(card, 1)}>+</button> // ✅ PASSES
+
+// 3. REFACTOR: Improve without breaking tests
+<button 
+  onClick={(e) => { e.stopPropagation(); onUpdateQuantity(card, 1); }}
+  className="w-8 h-8 bg-green-600 rounded-full"
+>
+  <Plus size={14} />
+</button> // ✅ STILL PASSES
+```
+
+**Recent TDD Success**: AdvancedSearch tests (25 new tests) caught `updateQuantity is not defined` error before production!
+
+**Testing Lessons Learned**:
+- **React Rules of Hooks**: ALL hooks (useState, useEffect, useMemo, useCallback) must be called BEFORE any conditional returns or early exits
+  - ❌ **Bad**: `if (condition) return; useMemo(() => ...)`
+  - ✅ **Good**: `const memoized = useMemo(() => ...); if (condition) return;`
+  - Error symptom: "Rendered more hooks than during the previous render"
+- **JSX Test Files**: Tests containing JSX must use `.jsx` extension for Vite/esbuild parsing
+- **Async Mock Timing**: When mocking async services (CardService.fetchSetData), tests must wait for data loading with generous timeouts
+- **Named vs Default Exports**: CardService uses `export const CardService = {}`, requires `import { CardService }`
+- **Constants Structure**: ASPECTS is array of objects with `.name` property, not strings - always use `aspect.name` when rendering
 
 ### Build & Run
 ```bash
@@ -224,7 +263,43 @@ Header expands/collapses to maximize screen space for card grid:
 Grid cards show dual count format: `std` + `foilF` (e.g., "3 +2F")
 - Standard count displayed prominently
 - Foil count as smaller yellow badge
-- Controls fade in on hover when count is 0Ls
+- Controls fade in on hover when count is 0
+
+## Key Files Reference
+- [app.jsx](../src/app.jsx): Main app logic, auth flow, view routing (687 lines)
+- [CardService.js](../src/services/CardService.js): Data fetching, caching, image URLs
 - [firebase.js](../src/firebase.js): Firebase config, exports `isConfigured` flag
 - [constants.js](../src/constants.js): Sets, aspects, fallback data
 - [Dashboard.jsx](../src/components/Dashboard.jsx): Collection stats, CSV operations
+- [AdvancedSearch.jsx](../src/components/AdvancedSearch.jsx): Multi-criteria card search modal (485 lines, Dec 2024)
+- [LandingScreen.jsx](../src/components/LandingScreen.jsx): Auth/welcome screen
+- [CardModal.jsx](../src/components/CardModal.jsx): Card detail view with inline collection controls
+
+## Pending TODOs
+
+### High Priority
+- [ ] **Fix Advanced Search Tests**: 9/20 tests failing due to async mock timing - need synchronous mock or proper async waits
+- [ ] **Browser Test Advanced Search**: Manually verify search filters (text, sets, aspects, types, cost), debouncing, lazy loading
+- [ ] **Deploy Advanced Search Feature**: Component complete and integrated, ready after browser testing
+
+### Technical Debt
+- [ ] **Refactor App.jsx**: Still 687 lines - extract more components (binder grid, filters panel candidates)
+- [ ] **Add Error Boundaries**: Wrap major components to catch React errors gracefully (especially after React error #310 fix)
+- [ ] **Context/Store Pattern**: Replace prop drilling with Context API or Zustand for collection state
+- [ ] **Optimize Re-renders**: Use React.memo strategically for card grid performance (200+ cards)
+
+### Features  
+- [ ] **Advanced Search Enhancements**: 
+  - Save search presets
+  - Search history
+  - Export search results to CSV
+- [ ] **Collection Import Improvements**: Support more CSV formats, drag-and-drop file upload
+- [ ] **Mobile Optimization**: Touch-friendly controls, responsive grid improvements, gesture navigation
+- [ ] **Offline Mode**: Service worker for complete offline functionality (PWA)
+- [ ] **Bulk Operations**: Select multiple cards for batch quantity updates
+
+### Documentation
+- [ ] Document AdvancedSearch component API and props
+- [ ] Add testing guide for async components with mocks
+- [ ] Create troubleshooting guide for common errors (Rules of Hooks, import issues)
+- [ ] Document React error #310 fix pattern for future reference

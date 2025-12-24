@@ -14,6 +14,7 @@ import { getCollectionId, reconstructCardsFromCollection, isHorizontalCard } fro
 import LandingScreen from './components/LandingScreen';
 import Dashboard from './components/Dashboard';
 import CardModal from './components/CardModal';
+import AdvancedSearch from './components/AdvancedSearch';
 import PWAUpdatePrompt from './components/PWAUpdatePrompt';
 import InstallPrompt from './components/InstallPrompt';
 
@@ -56,6 +57,7 @@ export default function App() {
   const [selectedAspect, setSelectedAspect] = useState('All');
   const [selectedType, setSelectedType] = useState('All');
   const [selectedCard, setSelectedCard] = useState(null);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isHeaderExpanded, setIsHeaderExpanded] = useState(true);
   const [importing, setImporting] = useState(false);
 
@@ -438,7 +440,15 @@ export default function App() {
 
             {/* View Toggle */}
             <div className="flex items-center gap-2">
-              <div className="flex bg-gray-800 rounded-lg p-1 mr-2 border border-gray-700">
+              <button
+                onClick={() => setIsSearchOpen(true)}
+                className="flex items-center gap-2 px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-all group border border-gray-700 hover:border-blue-500/50"
+                title="Advanced Search"
+              >
+                <Search className="text-blue-500" size={18} />
+                <span className="text-sm font-medium hidden lg:inline">Search</span>
+              </button>
+              <div className="flex bg-gray-800 rounded-lg p-1 border border-gray-700">
                 <button
                   onClick={() => setView('binder')}
                   className={`p-2 rounded-md transition-colors ${view === 'binder' ? 'bg-gray-700 text-white shadow' : 'text-gray-400 hover:text-white'}`}
@@ -491,16 +501,18 @@ export default function App() {
             {/* Filters (Only in Binder View) */}
             {view === 'binder' && (
               <div className="mt-2 flex flex-col md:flex-row gap-4 items-center justify-between pb-2 border-t border-gray-800 pt-4">
-                <div className="relative w-full md:w-64 group">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-yellow-500 transition-colors" size={16} />
-                  <input
-                    type="text"
-                    placeholder="Search cards..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
+                <div className="flex gap-3 items-center w-full md:w-auto">
+                  <div className="relative flex-1 md:w-64 group">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-yellow-500 transition-colors" size={16} />
+                    <input
+                      type="text"
+                      placeholder="Search cards..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
                     className="w-full bg-gray-800/50 border border-gray-700 rounded-full pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-yellow-500/50 focus:ring-1 focus:ring-yellow-500/50 transition-all placeholder:text-gray-600"
                   />
                 </div>
+              </div>
                 <div className="flex items-center gap-3 overflow-x-auto w-full md:w-auto pb-2 md:pb-0 no-scrollbar">
                   <div className="flex items-center gap-1 bg-gray-800/50 rounded-full p-1 border border-gray-700">
                     <button
@@ -674,6 +686,20 @@ export default function App() {
           collectionData={collectionData}
           syncCode={syncCode}
           onClose={() => setSelectedCard(null)}
+        />
+      )}
+
+      {/* Advanced Search - Full page view */}
+      {isSearchOpen && (
+        <AdvancedSearch 
+          onCardClick={(card) => {
+            setSelectedCard(card);
+            // Don't close search - let modal overlay on top of results
+          }}
+          collectionData={collectionData}
+          currentSet={activeSet}
+          onClose={() => setIsSearchOpen(false)}
+          onUpdateQuantity={handleGridQuantityChange}
         />
       )}
 
