@@ -31,7 +31,7 @@ const getCollectionRef = (user, syncCode) => {
 
 export default function App() {
   // Set and Card State
-  const [activeSet, setActiveSet] = useState('ALL');
+  const [activeSet, setActiveSet] = useState('SOR');
   const [cards, setCards] = useState([]);
   const [loading, setLoading] = useState(false);
   const [lastSync, setLastSync] = useState(null);
@@ -122,14 +122,26 @@ export default function App() {
     }
 
     console.log('Setting up collection listener - uid:', user.uid, 'syncCode:', syncCode || '(guest)', 'isGuestMode:', isGuestMode);
-    const unsub = onSnapshot(ref, (snap) => {
-      const data = {};
-      snap.forEach(d => data[d.id] = d.data());
-      console.log('Collection updated:', Object.keys(data).length, 'items');
-      setCollectionData(data);
-    }, err => console.error("Collection sync error:", err));
     
-    return () => unsub();
+    // Defer the listener setup to avoid React error #310
+    // onSnapshot can fire synchronously if there's cached data, which would call
+    // setCollectionData during the render cycle when handleStart triggers this effect
+    const timer = setTimeout(() => {
+      const unsub = onSnapshot(ref, (snap) => {
+        const data = {};
+        snap.forEach(d => data[d.id] = d.data());
+        console.log('Collection updated:', Object.keys(data).length, 'items');
+        setCollectionData(data);
+      }, err => console.error("Collection sync error:", err));
+      
+      // Store unsub function so we can call it on cleanup
+      timer._unsub = unsub;
+    }, 0);
+    
+    return () => {
+      clearTimeout(timer);
+      if (timer._unsub) timer._unsub();
+    };
   }, [user, syncCode, isGuestMode]);
 
   // Clear filters when switching sets
@@ -185,9 +197,7 @@ export default function App() {
   };
 
   const handleStart = (code) => {
-    console.log('handleStart called with code:', code);
     if (code) {
-      console.log('Setting sync code:', code);
       setSyncCode(code);
       setIsGuestMode(false);
       // Immediately save to localStorage to ensure persistence
@@ -340,17 +350,7 @@ export default function App() {
     }
   };
 
-  if (!hasVisited || (!syncCode && !isGuestMode)) {
-    return <LandingScreen onStart={handleStart} />;
-  }
-
-  // Safety check: Don't render if user is authenticated but syncCode isn't set yet
-  if (user && !syncCode && !isGuestMode) {
-    console.log('Waiting for syncCode to be set...');
-    return <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white">Loading...</div>;
-  }
-
-  // Filter Logic
+  // Filter Logic - MUST be before any conditional returns (Rules of Hooks)
   const filteredCards = useMemo(() => {
     if (!Array.isArray(cards)) return [];
     return cards.filter(card => {
@@ -381,6 +381,17 @@ export default function App() {
     // If no discovery data yet, show all sets (will be filtered once discovery completes)
     return SETS;
   }, [availableSets]);
+
+  // Conditional rendering - MUST be after all hooks
+  if (!hasVisited || (!syncCode && !isGuestMode)) {
+    return <LandingScreen onStart={handleStart} />;
+  }
+
+  // Safety check: Don't render if user is authenticated but syncCode isn't set yet
+  if (user && !syncCode && !isGuestMode) {
+    console.log('Waiting for syncCode to be set...');
+    return <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white">Loading...</div>;
+  }
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 font-sans selection:bg-yellow-500/30">
