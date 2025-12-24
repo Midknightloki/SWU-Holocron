@@ -1,0 +1,57 @@
+{
+  "metadata": {
+    "lastUpdated": "2025-12-24",
+    "source": "Fantasy Flight Games",
+    "version": "1.0"
+  },
+  "formats": {
+    "premier": {
+      "name": "Premier",
+      "suspended": [
+        {
+          "cardName": "Boba Fett",
+          "subtitle": "Collecting the Bounty",
+          "dateSuspended": "2024-11-08",
+          "reason": "Dominance in meta"
+        },
+        {
+          "cardName": "DJ",
+          "subtitle": "Blatant Thief",
+          "dateSuspended": "2025-01-01",
+          "reason": "Negative play experience"
+        },
+        {
+          "cardName": "Jango Fett",
+          "subtitle": "Concealing the Conspiracy",
+          "dateSuspended": "2025-03-15",
+          "reason": "Consistency issues"
+        },
+        {
+          "cardName": "Triple Dark Raid",
+          "subtitle": null,
+          "dateSuspended": "2025-06-20",
+          "reason": "Combo potential"
+        },
+        {
+          "cardName": "Force Throw",
+          "subtitle": null,
+          "dateSuspended": "2025-11-01",
+          "reason": "Curb Aggression dominance"
+        }
+      ]
+    },
+    "twinSuns": {
+      "name": "Twin Suns",
+      "suspended": []
+    },
+    "trilogy": {
+      "name": "Trilogy",
+      "suspended": [],
+      "allowedSets": [
+        "Spark of Rebellion",
+        "Shadows of the Galaxy",
+        "Twilight of the Republic"
+      ]
+    }
+  }
+}

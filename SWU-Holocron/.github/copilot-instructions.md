@@ -303,3 +303,21 @@ Grid cards show dual count format: `std` + `foilF` (e.g., "3 +2F")
 - [ ] Add testing guide for async components with mocks
 - [ ] Create troubleshooting guide for common errors (Rules of Hooks, import issues)
 - [ ] Document React error #310 fix pattern for future reference
+
+## Future Implementations
+
+### 1. Google SSO & Multi-User Architecture
+**Summary**: Replace the insecure "Sync Key" system with robust Google Single Sign-On (SSO) and a "Claim Account" migration flow for existing users.
+**Plan**: [docs/IMPLEMENTATION-PLANS/GoogleSSO.md](../docs/IMPLEMENTATION-PLANS/GoogleSSO.md)
+**Priority**: **High** (Foundational for all user-specific features)
+
+### 2. Deckbuilder Feature
+**Summary**: A full-featured deck construction interface allowing users to build, save, and export decks using their collection data.
+**Plan**: [docs/IMPLEMENTATION-PLANS/Deckbuilder.md](../docs/IMPLEMENTATION-PLANS/Deckbuilder.md)
+**Priority**: **Medium** (Depends on Google SSO for saving decks)
+
+### 3. Deck Data Collection Service
+**Summary**: A backend service to periodically scrape community decklists (SWUDB) and analyze meta trends (Leader/Base popularity, Core Shells).
+**Plan**: [docs/IMPLEMENTATION-PLANS/DeckDataCollectionService.md](../docs/IMPLEMENTATION-PLANS/DeckDataCollectionService.md)
+**Priority**: **Low** (Independent backend service, can be built in parallel)
+
