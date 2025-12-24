@@ -139,7 +139,14 @@ export default function App() {
     setSelectedType('All');
   }, [activeSet]);
 
-  const loadSetData = useCallback(async (force = false) => {
+  // Data Loading
+  useEffect(() => {
+    if (hasVisited && (syncCode || isGuestMode)) {
+      loadSetData();
+    }
+  }, [activeSet, hasVisited, syncCode, isGuestMode]);
+
+  const loadSetData = async (force = false) => {
     setLoading(true);
     setError(null);
     setReconstructedData(false);
@@ -175,14 +182,7 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [activeSet, collectionData]);
-
-  // Data Loading
-  useEffect(() => {
-    if (hasVisited && (syncCode || isGuestMode)) {
-      loadSetData();
-    }
-  }, [activeSet, hasVisited, syncCode, isGuestMode, loadSetData]);
+  };
 
   const handleStart = (code) => {
     console.log('handleStart called with code:', code);
