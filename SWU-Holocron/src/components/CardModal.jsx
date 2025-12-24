@@ -13,7 +13,7 @@ export default function CardModal({ initialCard, allCards, setCode, user, collec
   const [imageError, setImageError] = useState(false);
   const [imageLoading, setImageLoading] = useState(true);
 
-  const collectionKey = CardService.getCollectionId(setCode, currentCard.Number, isFoil);
+  const collectionKey = CardService.getCollectionId(currentCard.Set, currentCard.Number, isFoil);
   const ownedCount = collectionData[collectionKey]?.quantity || 0;
 
   const variants = useMemo(() => {
@@ -26,7 +26,7 @@ export default function CardModal({ initialCard, allCards, setCode, user, collec
   useEffect(() => { setCurrentCard(initialCard); setIsFlipped(false); setIsFoil(false); }, [initialCard]);
 
   const hasBack = currentCard.Type === 'Leader';
-  const imageUrl = isFlipped && hasBack ? CardService.getBackImage(setCode, currentCard.Number) : CardService.getCardImage(setCode, currentCard.Number);
+  const imageUrl = isFlipped && hasBack ? CardService.getBackImage(currentCard.Set, currentCard.Number) : CardService.getCardImage(currentCard.Set, currentCard.Number);
 
   useEffect(() => { setImageLoading(true); setImageError(false); }, [imageUrl]);
 
@@ -44,7 +44,7 @@ export default function CardModal({ initialCard, allCards, setCode, user, collec
       const docRef = doc(collectionRef, collectionKey);
       if (newQuantity > 0) {
         await setDoc(docRef, {
-          quantity: newQuantity, set: setCode, number: currentCard.Number, name: currentCard.Name, isFoil: isFoil, timestamp: Date.now()
+          quantity: newQuantity, set: currentCard.Set, number: currentCard.Number, name: currentCard.Name, isFoil: isFoil, timestamp: Date.now()
         }, { merge: true });
       } else {
         await deleteDoc(docRef);
