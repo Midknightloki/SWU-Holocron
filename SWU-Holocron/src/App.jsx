@@ -369,12 +369,11 @@ export default function App() {
 
   // Compute available SETS based on discovered sets
   const visibleSets = useMemo(() => {
-    const allOption = { code: 'ALL', name: 'All Sets' };
     if (availableSets.length === 0) {
-      return [allOption, ...SETS.filter(s => s.code !== 'ALL')];
+      return SETS;
     }
-    const filtered = SETS.filter(s => s.code === 'ALL' || availableSets.includes(s.code));
-    return filtered.length > 1 ? filtered : [allOption, ...SETS.filter(s => s.code !== 'ALL')];
+    const filtered = SETS.filter(s => availableSets.includes(s.code));
+    return filtered.length > 0 ? filtered : SETS;
   }, [availableSets]);
 
   return (
