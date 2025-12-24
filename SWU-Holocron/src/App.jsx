@@ -149,51 +149,6 @@ export default function App() {
     setReconstructedData(false);
 
     try {
-      // Load all sets if 'ALL' is selected
-      if (activeSet === 'ALL') {
-        const cacheKey = 'swu-cards-ALL';
-        const local = localStorage.getItem(cacheKey);
-        
-        if (!force && local) {
-          setCards(JSON.parse(local));
-          setLoading(false);
-          return;
-        }
-
-        // Load all available sets in parallel
-        const setsToLoad = availableSets.length > 0 
-          ? availableSets 
-          : SETS.filter(s => s.code !== 'ALL').map(s => s.code);
-        
-        const setPromises = setsToLoad.map(setCode => 
-          CardService.fetchSetData(setCode)
-            .then(result => result.data)
-            .catch(err => {
-              console.warn(`Failed to load ${setCode}: ${err.message}`);
-              return []; // Return empty array for failed sets
-            })
-        );
-        
-        const allSetsData = await Promise.all(setPromises);
-        const allCards = allSetsData.flat().filter(card => card); // Remove any null/undefined
-        
-        if (allCards.length === 0) {
-          throw new Error('No card data could be loaded');
-        }
-        
-        allCards.sort((a, b) => {
-          const setCompare = a.Set.localeCompare(b.Set);
-          if (setCompare !== 0) return setCompare;
-          return a.Number.localeCompare(b.Number, undefined, { numeric: true });
-        });
-        
-        setCards(allCards);
-        setLastSync('firestore');
-        localStorage.setItem(cacheKey, JSON.stringify(allCards));
-        setLoading(false);
-        return;
-      }
-
       // 1. Try Local Cache
       const cacheKey = `swu-cards-${activeSet}`;
       const local = localStorage.getItem(cacheKey);
@@ -397,8 +352,8 @@ export default function App() {
     if (!Array.isArray(cards)) return [];
     return cards.filter(card => {
       if (!card) return false;
-      // When viewing a specific set, only show cards from that set
-      if (activeSet !== 'ALL' && card.Set !== activeSet) return false;
+      // Only show cards from the current set
+      if (card.Set !== activeSet) return false;
       const matchSearch = card.Name?.toLowerCase().includes(searchTerm.toLowerCase());
       const matchAspect = selectedAspect === 'All' || (card.Aspects && card.Aspects.includes(selectedAspect));
       const matchType = selectedType === 'All' || card.Type === selectedType;

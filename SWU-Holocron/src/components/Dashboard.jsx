@@ -12,19 +12,6 @@ export default function Dashboard({ setCode, cards, collectionData, onImport, on
   }, [syncCode]);
 
   const stats = useMemo(() => {
-    if (setCode === 'ALL') {
-      // For 'All Sets', return aggregated stats
-      const total = cards.length;
-      const owned = cards.filter(c => collectionData[c.id]?.quantity > 0).length;
-      return {
-        total,
-        owned,
-        missing: total - owned,
-        completion: total > 0 ? ((owned / total) * 100).toFixed(1) : 0,
-        totalValue: owned,
-        missingList: cards.filter(c => !collectionData[c.id]?.quantity)
-      };
-    }
     return calculateStats(cards, collectionData, setCode);
   }, [cards, collectionData, setCode]);
 
@@ -150,7 +137,6 @@ export default function Dashboard({ setCode, cards, collectionData, onImport, on
               <thead className="bg-gray-800 text-gray-400 text-xs uppercase tracking-wider sticky top-0 z-10">
                 <tr>
                   <th className="p-3 w-10"></th>
-                  {setCode === 'ALL' && <th className="p-3 font-semibold">Set</th>}
                   <th className="p-3 font-semibold">#</th>
                   <th className="p-3 font-semibold">Name</th>
                   <th className="p-3 font-semibold">Rarity</th>
@@ -168,7 +154,6 @@ export default function Dashboard({ setCode, cards, collectionData, onImport, on
                         <Plus size={16} />
                       </button>
                     </td>
-                    {setCode === 'ALL' && <td className="p-3 font-mono text-xs text-gray-400">{card.Set}</td>}
                     <td className="p-3 font-mono text-gray-500 text-xs sm:text-sm">{card.Number}</td>
                     <td 
                       className="p-3 font-medium text-white cursor-pointer hover:text-yellow-400 transition-colors"
