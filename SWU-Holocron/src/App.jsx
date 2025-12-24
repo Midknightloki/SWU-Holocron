@@ -369,11 +369,14 @@ export default function App() {
 
   // Compute available SETS based on discovered sets
   const visibleSets = useMemo(() => {
-    if (availableSets.length === 0) {
-      return SETS;
+    // If we have discovered sets, only show those with cards
+    if (availableSets.length > 0) {
+      const filtered = SETS.filter(s => availableSets.includes(s.code));
+      // If filtering resulted in sets, use them; otherwise show all as fallback
+      return filtered.length > 0 ? filtered : SETS;
     }
-    const filtered = SETS.filter(s => availableSets.includes(s.code));
-    return filtered.length > 0 ? filtered : SETS;
+    // If no discovery data yet, show all sets (will be filtered once discovery completes)
+    return SETS;
   }, [availableSets]);
 
   return (

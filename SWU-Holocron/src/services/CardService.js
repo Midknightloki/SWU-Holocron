@@ -9,45 +9,109 @@ export const CardService = {
   
   getBackImage: (set, number) => `${API_BASE}/cards/${set}/${number}?format=image&face=back`,
 
-  // Get list of available sets from Firestore
-  // TODO: Fix collection path structure - currently getting "odd segments" error
-  // Temporarily disabled until we can verify the correct Firestore schema
+  // Get list of available sets from Firestore or by checking the API
   getAvailableSets: async () => {
-    // Returning empty array will cause fallback to show all SETS from constants
-    return [];
+    // Try to get from cache first
+    const cacheKey = 'swu-available-sets';
+    const cachedData = localStorage.getItem(cacheKey);
+    if (cachedData) {
+      try {
+        const { sets, timestamp } = JSON.parse(cachedData);
+        // Cache for 24 hours
+        if (Date.now() - timestamp < 24 * 60 * 60 * 1000) {
+          console.log('✓ Using cached available sets:', sets);
+          return sets;
+        }
+      } catch (e) {
+        // Invalid cache, continue to fetch
+      }
+    }
+
+    // Check Firestore for available sets
+    if (db && APP_ID) {
+      try {
+        const setsRef = collection(
+          db,
+          'artifacts', APP_ID,
+          'public', 'data',
+          'cardDatabase', 'sets'
+        );
+        
+        const snapshot = await getDocs(setsRef);
+        const availableSets = [];
+        
+        for (const docSnap of snapshot.docs) {
+          const setCode = docSnap.id;
+          // Check if the set has actual data
+          try {
+            const dataDocRef = doc(
+              db,
+              'artifacts', APP_ID,
+              'public', 'data',
+              'cardDatabase', 'sets',
+              setCode, 'data'
+            );
+            const dataSnap = await getDoc(dataDocRef);
+            if (dataSnap.exists() && dataSnap.data().totalCards > 0) {
+              availableSets.push(setCode);
+            }
+          } catch (e) {
+            // Skip sets that can't be read
+            console.warn(`Could not read set ${setCode}:`, e.message);
+          }
+        }
+        
+        if (availableSets.length > 0) {
+          console.log('✓ Available sets from Firestore:', availableSets);
+          // Cache the result
+          localStorage.setItem(cacheKey, JSON.stringify({
+            sets: availableSets,
+            timestamp: Date.now()
+          }));
+          return availableSets;
+        }
+      } catch (error) {
+        console.warn('Could not fetch sets from Firestore:', error.message);
+      }
+    }
+
+    // Fallback: Try to detect sets by attempting to fetch from API
+    // This is a fallback when Firestore isn't available
+    const knownSets = ['SOR', 'SHD', 'TWI', 'JTL', 'LOF', 'SEC', 'ALT'];
+    const availableSets = [];
     
-    /* DISABLED - Collection path has wrong number of segments
-    if (!db || !APP_ID) return [];
-    
-    try {
-      const setsCollectionRef = collection(
-        db, 
-        'artifacts', APP_ID, 
-        'public', 'data', 
-        'cardDatabase', 'sets'
-      );
-      
-      const snapshot = await getDocs(setsCollectionRef);
-      const availableSets = [];
-      
-      for (const docSnap of snapshot.docs) {
-        const setCode = docSnap.id;
-        if (setCode !== 'data') { // Skip any non-set documents
-          // Check if the set has a data subdocument
-          const dataDoc = await getDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'cardDatabase', 'sets', setCode, 'data'));
-          if (dataDoc.exists() && dataDoc.data().totalCards > 0) {
+    for (const setCode of knownSets) {
+      try {
+        const response = await CardService.fetchWithTimeout(
+          `${API_BASE}/cards/${setCode}`,
+          {},
+          5000
+        );
+        if (response.ok) {
+          const data = await response.json();
+          const cardList = Array.isArray(data) ? data : (data.data || []);
+          if (cardList.length > 0) {
             availableSets.push(setCode);
           }
         }
+      } catch (e) {
+        // Set not available, skip
       }
-      
-      console.log('✓ Available sets:', availableSets);
-      return availableSets;
-    } catch (error) {
-      console.error('Error fetching available sets:', error);
-      return [];
     }
-    */
+    
+    if (availableSets.length > 0) {
+      console.log('✓ Available sets from API check:', availableSets);
+      // Cache the result
+      localStorage.setItem(cacheKey, JSON.stringify({
+        sets: availableSets,
+        timestamp: Date.now()
+      }));
+      return availableSets;
+    }
+
+    // Return empty array if nothing works - will fall back to constants
+    console.warn('Could not determine available sets, using defaults');
+    return [];
   },
 
   fetchWithTimeout: async (url, options = {}, timeout = 35000) => {
