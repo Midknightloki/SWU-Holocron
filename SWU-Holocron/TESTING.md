@@ -78,6 +78,11 @@ Tests complete workflows:
 - Collection sync (sync code vs guest mode)
 - Offline data reconstruction
 - Firebase batch operations
+- **Advanced search/filtering** (`advancedSearch.test.js`) - 35+ test cases covering:
+  - Multi-criteria filtering (search + aspect + type + set)
+  - Cross-set search behavior
+  - Multi-aspect card handling
+  - Edge cases and performance testing
 
 **Run**: `npm run test:integration`
 
