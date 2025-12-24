@@ -9,7 +9,7 @@ vi.mock('../../firebase', () => ({
   auth: { currentUser: null },
   db: {},
   APP_ID: 'test-app',
-  isFirebaseConfigured: true
+  isConfigured: true  // Fixed: was isFirebaseConfigured
 }));
 
 // Mock Firebase auth
@@ -52,16 +52,50 @@ vi.mock('../../services/CardService', () => ({
   }
 }));
 
-describe.skip('Landing Flow - React Error #310 Prevention (TODO: Fix mocking)', () => {
+// Mock child components to simplify testing
+vi.mock('../../components/LandingScreen', () => ({
+  default: ({ onStart }) => (
+    <div>
+      <h1>Enter Sync Code</h1>
+      <input placeholder="enter code" data-testid="sync-code-input" />
+      <button onClick={() => onStart(document.querySelector('[data-testid="sync-code-input"]')?.value)}>
+        Start
+      </button>
+      <button onClick={() => onStart('')}>Guest Mode</button>
+    </div>
+  )
+}));
+
+vi.mock('../../components/Dashboard', () => ({
+  default: () => <div>Dashboard</div>
+}));
+
+vi.mock('../../components/CardModal', () => ({
+  default: () => <div>Card Modal</div>
+}));
+
+vi.mock('../../components/PWAUpdatePrompt', () => ({
+  default: () => null
+}));
+
+vi.mock('../../components/InstallPrompt', () => ({
+  default: () => null
+}));
+
+describe.skip('Landing Flow - React Error #310 Prevention (TODO: Complex App testing)', () => {
   beforeEach(() => {
     // Clear localStorage before each test
     localStorage.clear();
     // Suppress console errors during tests
     vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.restoreAllMocks();
+    // Wait for any pending effects to complete
+    await new Promise(resolve => setTimeout(resolve, 100));
   });
 
   it('should not crash when entering sync code on fresh load', async () => {
