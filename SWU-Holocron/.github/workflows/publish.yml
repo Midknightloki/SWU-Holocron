@@ -9,7 +9,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  # Force lowercase image path for GHCR (Docker requires lowercase)
+  IMAGE_NAME: midknightloki/swu-holocron
 
 jobs:
   build-and-push:
