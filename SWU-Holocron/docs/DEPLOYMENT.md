@@ -10,19 +10,23 @@ SWU Holocron is deployed as a Docker container on the `Nidavellir` host within t
 
 ## Deployment Architecture
 
-The application is containerized using Docker and orchestrated via Docker Compose. A Cloudflare Tunnel (`cloudflared`) sidecar container exposes the application securely to the internet without opening inbound ports.
+The application is containerized using Docker and orchestrated via Docker Compose.
 
 ### Components
 
 1.  **Web App Container:**
-    -   Image: Built from `Dockerfile`
+    -   Image: `ghcr.io/midknightloki/swu-holocron:latest`
     -   Port: 5173 (Internal)
-    -   Command: `npm run preview -- --host 0.0.0.0 --port 5173`
+    -   Updates: Managed by Watchtower
 
 2.  **Cloudflare Tunnel:**
     -   Image: `cloudflare/cloudflared:latest`
-    -   Connects to Cloudflare Edge
+    -   Connects to Cloudflare Edge (HTTP2 protocol)
     -   Routes traffic to `web:5173`
+
+3.  **Watchtower:**
+    -   Image: `containrrr/watchtower`
+    -   Monitors for new images and updates the web container automatically.
 
 ## Deployment Process
 
@@ -32,15 +36,16 @@ The deployment is managed via the `Mimir` infrastructure repository.
 Configuration files are located in `Mimir/gitops/swu-holocron/`.
 
 ### Automatic Updates
-The service is configured to auto-sync with the `main` branch of this repository every 5 minutes via a cron job on the host.
+The service is configured to auto-update via **Watchtower**. When a new image is pushed to the GitHub Container Registry (GHCR) by the CI/CD pipeline, Watchtower detects the change (checked every 5 minutes) and restarts the container with the new image.
 
 ### Manual Deployment (On Host)
 
 1.  SSH into Nidavellir.
 2.  Navigate to `/opt/swu-holocron`.
-3.  Run the sync script:
+3.  Pull the latest image and restart:
     ```bash
-    ./monitor-and-sync.sh
+    docker compose pull
+    docker compose up -d
     ```
 
 ## Infrastructure Details
