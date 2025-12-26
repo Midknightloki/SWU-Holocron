@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
-  Layers, RefreshCw, Loader2, Cloud, WifiOff, LayoutGrid, BarChart3,
+  Layers, RefreshCw, Loader2, Cloud, LayoutGrid, BarChart3,
   Search, ChevronUp, ChevronDown, Plus, Minus, Info, AlertCircle
 } from 'lucide-react';
 import { SETS, ASPECTS } from './constants';
-import { auth, db, isConfigured as isFirebaseConfigured, APP_ID } from './firebase';
+import { db, APP_ID } from './firebase';
 import { CardService } from './services/CardService';
 import { collection, doc, onSnapshot, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
-import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { parseCSV, generateCSV } from './utils/csvParser';
 import { getCollectionId, reconstructCardsFromCollection, isHorizontalCard } from './utils/collectionHelpers';
+import { useAuth } from './contexts/AuthContext';
+import { MigrationService } from './services/MigrationService';
 
 import LandingScreen from './components/LandingScreen';
 import Dashboard from './components/Dashboard';
@@ -20,17 +21,17 @@ import InstallPrompt from './components/InstallPrompt';
 
 // Helper to determine collection path
 // @environment:firebase
-const getCollectionRef = (user, syncCode) => {
-  if (!db || !APP_ID) return null;
-  if (!user) return null;
-  if (syncCode) {
-    return collection(db, 'artifacts', APP_ID, 'public', 'data', `sync_${syncCode}`);
-  } else {
-    return collection(db, 'artifacts', APP_ID, 'users', user.uid, 'collection');
+const getCollectionRef = (user, legacySyncCode, useLegacyPath) => {
+  if (!db || !APP_ID || !user) return null;
+  if (useLegacyPath && legacySyncCode) {
+    return collection(db, 'artifacts', APP_ID, 'public', 'data', `sync_${legacySyncCode}`);
   }
+  return collection(db, 'artifacts', APP_ID, 'users', user.uid, 'collection');
 };
 
 export default function App() {
+  const { user, loading: authLoading, loginWithGoogle, loginAnonymously, logout, error: authErrorFromContext } = useAuth();
+
   // Set and Card State
   const [activeSet, setActiveSet] = useState('SOR');
   const [cards, setCards] = useState([]);
@@ -44,12 +45,14 @@ export default function App() {
   });
 
   // Auth and Collection State
-  const [user, setUser] = useState(null);
   const [collectionData, setCollectionData] = useState({});
-  const [authLoading, setAuthLoading] = useState(true);
-  const [syncCode, setSyncCode] = useState(() => localStorage.getItem('swu-sync-code') || '');
-  const [isGuestMode, setIsGuestMode] = useState(() => localStorage.getItem('swu-guest-mode') === 'true');
+  const [legacySyncCode, setLegacySyncCode] = useState(() => localStorage.getItem('swu-sync-code') || '');
+  const [useLegacyPath, setUseLegacyPath] = useState(() => !!localStorage.getItem('swu-sync-code'));
   const [hasVisited, setHasVisited] = useState(() => localStorage.getItem('swu-has-visited') === 'true');
+  const [authError, setAuthError] = useState('');
+  const [migrationState, setMigrationState] = useState('idle');
+  const [migrationMessage, setMigrationMessage] = useState('');
+  const errorMessage = authError || authErrorFromContext?.message || '';
   
   // UI State
   const [view, setView] = useState('binder');
@@ -63,22 +66,82 @@ export default function App() {
 
   const fileInputRef = useRef(null);
 
-  // Auth Init
-  useEffect(() => {
-    if (!isFirebaseConfigured) {
-      setAuthLoading(false);
-      return;
+  const handleGoogleLogin = async () => {
+    setAuthError('');
+    try {
+      await loginWithGoogle();
+      setHasVisited(true);
+      localStorage.setItem('swu-has-visited', 'true');
+    } catch (e) {
+      console.error('Google login failed:', e);
+      setAuthError(e?.message || 'Google sign-in failed. Please try again.');
     }
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-      if (u) {
-        setUser(u);
-        setAuthLoading(false);
-      } else {
-        signInAnonymously(auth).catch(e => console.error(e));
+  };
+
+  const handleGuestLogin = async () => {
+    setAuthError('');
+    try {
+      await loginAnonymously();
+      setHasVisited(true);
+      localStorage.setItem('swu-has-visited', 'true');
+    } catch (e) {
+      console.error('Guest login failed:', e);
+      setAuthError(e?.message || 'Guest mode failed. Please try again.');
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (e) {
+      console.error('Logout failed:', e);
+      setAuthError(e?.message || 'Logout failed.');
+    }
+  };
+
+  // Mark visit once authentication restores an existing session
+  useEffect(() => {
+    if (user && !hasVisited) {
+      setHasVisited(true);
+      localStorage.setItem('swu-has-visited', 'true');
+    }
+  }, [user, hasVisited]);
+
+  // Prompt and run legacy sync migration when signing in with Google
+  useEffect(() => {
+    if (!user || !legacySyncCode || !useLegacyPath) return;
+    if (migrationState === 'running') return;
+    if (user.isAnonymous) return;
+
+    const proceed = window.confirm(`We found a legacy Sync Key (${legacySyncCode}). Import it to your account?`);
+    if (!proceed) return;
+
+    const runMigration = async () => {
+      try {
+        setMigrationState('running');
+        setMigrationMessage('Migrating legacy collection...');
+
+        const { migrated } = await MigrationService.migrateCollection(
+          db,
+          ['artifacts', APP_ID, 'public', 'data', `sync_${legacySyncCode}`],
+          ['artifacts', APP_ID, 'users', user.uid, 'collection']
+        );
+
+        setMigrationMessage(`Imported ${migrated} items from Sync Key ${legacySyncCode}.`);
+        setUseLegacyPath(false);
+        setLegacySyncCode('');
+        localStorage.removeItem('swu-sync-code');
+        setMigrationState('success');
+        setCollectionData({});
+      } catch (e) {
+        console.error('Migration failed', e);
+        setMigrationMessage(`Migration failed: ${e.message}`);
+        setMigrationState('error');
       }
-    });
-    return () => unsubscribe();
-  }, []);
+    };
+
+    runMigration();
+  }, [user, legacySyncCode, useLegacyPath, migrationState]);
 
   // Discover Available Sets
   useEffect(() => {
@@ -90,40 +153,28 @@ export default function App() {
       }
     };
     
-    if (hasVisited && (syncCode || isGuestMode)) {
+    if (hasVisited && user) {
       discoverSets();
       // Refresh available sets every hour
       const interval = setInterval(discoverSets, 60 * 60 * 1000);
       return () => clearInterval(interval);
     }
-  }, [hasVisited, syncCode, isGuestMode]);
-
-  // Sync Code Persistence
-  useEffect(() => {
-    if(syncCode) localStorage.setItem('swu-sync-code', syncCode);
-    else localStorage.removeItem('swu-sync-code');
-  }, [syncCode]);
-
-  // Guest Mode Persistence
-  useEffect(() => {
-    if(isGuestMode) localStorage.setItem('swu-guest-mode', 'true');
-    else localStorage.removeItem('swu-guest-mode');
-  }, [isGuestMode]);
+  }, [hasVisited, user]);
 
   // Collection Data Listener
   useEffect(() => {
-    if (!user || (!syncCode && !isGuestMode)) {
-      console.log('Collection listener not active:', 'user:', !!user, 'syncCode:', !!syncCode, 'isGuestMode:', isGuestMode);
+    if (!user) {
+      console.log('Collection listener not active: no user session');
       return;
     }
     
-    const ref = getCollectionRef(user, syncCode);
+    const ref = getCollectionRef(user, legacySyncCode, useLegacyPath);
     if (!ref) {
       console.error('Failed to get collection ref');
       return;
     }
 
-    console.log('Setting up collection listener - uid:', user.uid, 'syncCode:', syncCode || '(guest)', 'isGuestMode:', isGuestMode);
+    console.log('Setting up collection listener - uid:', user.uid, 'mode:', useLegacyPath ? `legacy:${legacySyncCode}` : 'user');
     
     // Defer the listener setup to avoid React error #310
     // onSnapshot can fire synchronously if there's cached data, which would call
@@ -144,7 +195,7 @@ export default function App() {
       clearTimeout(timer);
       if (timer._unsub) timer._unsub();
     };
-  }, [user, syncCode, isGuestMode]);
+  }, [user, legacySyncCode, useLegacyPath]);
 
   // Clear filters when switching sets
   useEffect(() => {
@@ -155,10 +206,10 @@ export default function App() {
 
   // Data Loading
   useEffect(() => {
-    if (hasVisited && (syncCode || isGuestMode)) {
+    if (hasVisited && user) {
       loadSetData();
     }
-  }, [activeSet, hasVisited, syncCode, isGuestMode]);
+  }, [activeSet, hasVisited, user]);
 
   const loadSetData = async (force = false) => {
     setLoading(true);
@@ -198,24 +249,6 @@ export default function App() {
     }
   };
 
-  const handleStart = (code) => {
-    if (code) {
-      setSyncCode(code);
-      setIsGuestMode(false);
-      // Immediately save to localStorage to ensure persistence
-      localStorage.setItem('swu-sync-code', code);
-      localStorage.removeItem('swu-guest-mode');
-    } else {
-      console.log('Starting in guest mode');
-      setIsGuestMode(true);
-      setSyncCode('');
-      localStorage.setItem('swu-guest-mode', 'true');
-      localStorage.removeItem('swu-sync-code');
-    }
-    setHasVisited(true);
-    localStorage.setItem('swu-has-visited', 'true');
-  };
-
   // CSV Import Handler
   // @environment:web-file-api
   const handleFileUpload = async (event) => {
@@ -237,7 +270,7 @@ export default function App() {
       }
 
       // Batch write to Firestore
-      const ref = getCollectionRef(user, syncCode);
+      const ref = getCollectionRef(user, legacySyncCode, useLegacyPath);
       if (!ref) {
         alert('Not connected to cloud storage');
         return;
@@ -315,12 +348,12 @@ export default function App() {
 
   // Grid Quantity Handler
   const handleGridQuantityChange = async (card, delta) => {
-    if (!db || (!user && !syncCode)) {
+    if (!db || !user) {
       console.error('Cannot update: no db or user');
       return;
     }
 
-    const ref = getCollectionRef(user, syncCode);
+    const ref = getCollectionRef(user, legacySyncCode, useLegacyPath);
     if (!ref) {
       console.error('Cannot get collection ref');
       return;
@@ -385,14 +418,16 @@ export default function App() {
   }, [availableSets]);
 
   // Conditional rendering - MUST be after all hooks
-  if (!hasVisited || (!syncCode && !isGuestMode)) {
-    return <LandingScreen onStart={handleStart} />;
-  }
-
-  // Safety check: Don't render if user is authenticated but syncCode isn't set yet
-  if (user && !syncCode && !isGuestMode) {
-    console.log('Waiting for syncCode to be set...');
-    return <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white">Loading...</div>;
+  if (!user) {
+    return (
+      <LandingScreen
+        onGoogleLogin={handleGoogleLogin}
+        onGuest={handleGuestLogin}
+        loading={authLoading}
+        error={errorMessage}
+        hasLegacySync={!!legacySyncCode}
+      />
+    );
   }
 
   return (
@@ -429,8 +464,8 @@ export default function App() {
                       <Loader2 size={8} className="animate-spin text-gray-400" />
                     ) : (
                       <>
-                        {syncCode ? <Cloud size={8} className="text-yellow-500" /> : (user ? <Cloud size={8} className="text-green-500" /> : <WifiOff size={8} className="text-red-500" />)}
-                        <span>{syncCode ? "Sync Active" : (user ? "Cloud" : "Offline")}</span>
+                        <Cloud size={8} className={user?.isAnonymous ? 'text-yellow-500' : 'text-green-500'} />
+                        <span>{user?.isAnonymous ? 'Guest mode' : 'Cloud'}</span>
                       </>
                     )}
                   </div>
@@ -440,6 +475,20 @@ export default function App() {
 
             {/* View Toggle */}
             <div className="flex items-center gap-2">
+                {user && (
+                  <div className="flex items-center gap-2 bg-gray-800 px-3 py-1.5 rounded-lg border border-gray-700 text-xs text-gray-200">
+                    <div className="flex flex-col leading-tight">
+                      <span className="font-semibold">{user.displayName || 'Guest user'}</span>
+                      <span className="text-[10px] text-gray-400">{user.email || 'Anonymous session'}</span>
+                    </div>
+                    <button
+                      onClick={handleLogout}
+                      className="text-gray-400 hover:text-white text-[11px] font-semibold"
+                    >
+                      Log out
+                    </button>
+                  </div>
+                )}
               <button
                 onClick={() => setIsSearchOpen(true)}
                 className="flex items-center gap-2 px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-all group border border-gray-700 hover:border-blue-500/50"
@@ -549,6 +598,22 @@ export default function App() {
         </div>
       </header>
 
+      {useLegacyPath && legacySyncCode && (
+        <div className="max-w-7xl mx-auto px-4 pt-4">
+          <div className="bg-yellow-900/30 border border-yellow-600/40 text-yellow-100 rounded-xl p-3 text-sm">
+            Using legacy Sync Key storage ({legacySyncCode}). Sign in with Google to import and move to your account.
+          </div>
+        </div>
+      )}
+
+      {migrationMessage && (
+        <div className="max-w-7xl mx-auto px-4 pt-4">
+          <div className={`${migrationState === 'error' ? 'bg-red-900/30 border-red-600/40 text-red-100' : 'bg-blue-900/30 border-blue-600/40 text-blue-100'} border rounded-xl p-3 text-sm`}>
+            {migrationMessage}
+          </div>
+        </div>
+      )}
+
       <main className="max-w-7xl mx-auto p-4 md:p-6">
         {error && (
           <div className="mb-6 p-4 bg-red-900/20 border border-red-500/30 rounded-xl text-red-200 flex items-center gap-2">
@@ -573,8 +638,6 @@ export default function App() {
                 onExport={handleExport}
                 isImporting={importing}
                 hasDataToExport={Object.keys(collectionData).length > 0}
-                syncCode={syncCode || ''}
-                setSyncCode={setSyncCode}
                 onUpdateQuantity={handleGridQuantityChange}
                 onCardClick={setSelectedCard}
               />
@@ -611,7 +674,7 @@ export default function App() {
                             <button
                               onClick={() => handleGridQuantityChange(card, -1)}
                               className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-red-500/20 text-gray-400 hover:text-red-400"
-                              disabled={(!user && !syncCode) || !db}
+                              disabled={!user || !db}
                             >
                               <Minus size={12} />
                             </button>
@@ -622,7 +685,7 @@ export default function App() {
                             <button
                               onClick={() => handleGridQuantityChange(card, 1)}
                               className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-green-500/20 text-gray-400 hover:text-green-400"
-                              disabled={(!user && !syncCode) || !db}
+                              disabled={!user || !db}
                             >
                               <Plus size={12} />
                             </button>
@@ -684,7 +747,6 @@ export default function App() {
           setCode={activeSet}
           user={user}
           collectionData={collectionData}
-          syncCode={syncCode}
           onClose={() => setSelectedCard(null)}
         />
       )}

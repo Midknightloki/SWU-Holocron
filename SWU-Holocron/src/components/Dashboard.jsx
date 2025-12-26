@@ -1,16 +1,10 @@
-import React, { useMemo, useState, useEffect } from 'react';
-import { Database, Upload, Download, Loader2, Key, CheckCircle2, Layers, Trophy, Box, AlertCircle, Plus } from 'lucide-react';
+import React, { useMemo } from 'react';
+import { Database, Upload, Download, Loader2, CheckCircle2, Layers, Trophy, AlertCircle, Plus } from 'lucide-react';
 import { SETS } from '../constants';
 import { calculateStats, calculateGlobalSummary } from '../utils/statsCalculator';
 import { generateMissingCardsCSV } from '../utils/csvParser';
 
-export default function Dashboard({ setCode, cards, collectionData, onImport, onExport, isImporting, hasDataToExport, syncCode, setSyncCode, onUpdateQuantity, onCardClick }) {
-  const [tempCode, setTempCode] = useState(syncCode || '');
-  
-  useEffect(() => {
-    setTempCode(syncCode || '');
-  }, [syncCode]);
-
+export default function Dashboard({ setCode, cards, collectionData, onImport, onExport, isImporting, hasDataToExport, onUpdateQuantity, onCardClick }) {
   const stats = useMemo(() => {
     return calculateStats(cards, collectionData, setCode);
   }, [cards, collectionData, setCode]);
@@ -58,12 +52,6 @@ export default function Dashboard({ setCode, cards, collectionData, onImport, on
             </h2>
             <div className="flex items-center gap-2 mt-1">
                <p className="text-gray-500 text-sm">Manage your collection</p>
-               {syncCode && (
-                 <span className="bg-gray-800 text-yellow-500 text-xs px-2 py-0.5 rounded border border-gray-700 font-mono flex items-center gap-1">
-                   <Key size={10} />
-                   {syncCode}
-                 </span>
-               )}
             </div>
         </div>
         

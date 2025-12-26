@@ -17,8 +17,6 @@ describe('Dashboard Component', () => {
     onExport: vi.fn(),
     isImporting: false,
     hasDataToExport: true,
-    syncCode: 'test-sync',
-    setSyncCode: vi.fn(),
     onUpdateQuantity: vi.fn(),
     onCardClick: vi.fn()
   };
@@ -32,9 +30,9 @@ describe('Dashboard Component', () => {
     expect(screen.getByText('Command Center')).toBeInTheDocument();
   });
 
-  it('should display sync code when provided', () => {
+  it('should render header details without sync key', () => {
     render(<Dashboard {...defaultProps} />);
-    expect(screen.getByText('test-sync')).toBeInTheDocument();
+    expect(screen.getByText('Manage your collection')).toBeInTheDocument();
   });
 
   it('should show loading state when no cards', () => {

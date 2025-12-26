@@ -6,7 +6,7 @@ import { doc, setDoc, deleteDoc, collection } from 'firebase/firestore';
 
 const AspectIcon = ({ aspect }) => { /* ... icon logic ... */ return <span>{aspect}</span> }; // Simplification for brevity in this file block, copy from previous if needed
 
-export default function CardModal({ initialCard, allCards, setCode, user, collectionData, syncCode, onClose }) {
+export default function CardModal({ initialCard, allCards, setCode, user, collectionData, onClose }) {
   const [currentCard, setCurrentCard] = useState(initialCard);
   const [isFlipped, setIsFlipped] = useState(false);
   const [isFoil, setIsFoil] = useState(false);
@@ -31,14 +31,10 @@ export default function CardModal({ initialCard, allCards, setCode, user, collec
   useEffect(() => { setImageLoading(true); setImageError(false); }, [imageUrl]);
 
   const handleQuantityChange = async (delta) => {
-    if (!db || (!user && !syncCode)) return;
+    if (!db || !user) return;
     const newQuantity = ownedCount + delta;
     
-    // Determine path dynamically
-    let collectionRef;
-    if (syncCode) collectionRef = collection(db, 'artifacts', APP_ID, 'public', 'data', `sync_${syncCode}`);
-    else if (user) collectionRef = collection(db, 'artifacts', APP_ID, 'users', user.uid, 'collection');
-    else return;
+    const collectionRef = collection(db, 'artifacts', APP_ID, 'users', user.uid, 'collection');
 
     try {
       const docRef = doc(collectionRef, collectionKey);

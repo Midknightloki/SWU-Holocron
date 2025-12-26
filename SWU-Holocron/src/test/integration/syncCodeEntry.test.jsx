@@ -71,7 +71,7 @@ function MinimalSyncFlow({ onRenderCount }) {
   );
 }
 
-describe('Sync Code Entry Flow', () => {
+describe.skip('Sync Code Entry Flow (legacy sync-key flow, replaced by Google SSO)', () => {
   let consoleErrorSpy;
   let renderCounts = [];
 

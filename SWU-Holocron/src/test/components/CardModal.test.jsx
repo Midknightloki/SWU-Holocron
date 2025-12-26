@@ -40,9 +40,8 @@ describe('CardModal - Set Code Usage', () => {
         initialCard={jtlCard}
         allCards={[jtlCard]}
         setCode="SHD" // User is viewing SHD set
-        user={null}
+        user={{ uid: 'u1' }}
         collectionData={{}}
-        syncCode="test"
         onClose={mockOnClose}
       />
     );
@@ -66,9 +65,8 @@ describe('CardModal - Set Code Usage', () => {
         initialCard={shdCard}
         allCards={[shdCard]}
         setCode="ALL" // User is viewing ALL sets
-        user={null}
+        user={{ uid: 'u1' }}
         collectionData={{}}
-        syncCode="test"
         onClose={mockOnClose}
       />
     );
@@ -103,9 +101,8 @@ describe('CardModal - Set Code Usage', () => {
         initialCard={shdLando}
         allCards={[jtlHan, shdLando]}
         setCode="ALL"
-        user={null}
+        user={{ uid: 'u1' }}
         collectionData={{}}
-        syncCode="test"
         onClose={mockOnClose}
       />
     );
@@ -129,9 +126,8 @@ describe('CardModal - Set Code Usage', () => {
         initialCard={jtlCard}
         allCards={[jtlCard]}
         setCode="SHD" // Viewing SHD but card is from JTL
-        user={null}
+        user={{ uid: 'u1' }}
         collectionData={{}}
-        syncCode="test"
         onClose={mockOnClose}
       />
     );
@@ -168,9 +164,8 @@ describe('CardModal - Set Code Usage', () => {
         initialCard={shdCard}
         allCards={[shdCard, jtlCard]}
         setCode="ALL"
-        user={null}
+        user={{ uid: 'u1' }}
         collectionData={collectionData}
-        syncCode="test"
         onClose={mockOnClose}
       />
     );
@@ -184,9 +179,8 @@ describe('CardModal - Set Code Usage', () => {
         initialCard={jtlCard}
         allCards={[shdCard, jtlCard]}
         setCode="ALL"
-        user={null}
+        user={{ uid: 'u1' }}
         collectionData={collectionData}
-        syncCode="test"
         onClose={mockOnClose}
       />
     );
@@ -219,9 +213,8 @@ describe('CardModal - Set Code Usage', () => {
         initialCard={jtlCard}
         allCards={[jtlCard]}
         setCode="SHD" // BUG: This causes wrong image/collection lookup
-        user={null}
+        user={{ uid: 'u1' }}
         collectionData={{}}
-        syncCode="test"
         onClose={mockOnClose}
       />
     );

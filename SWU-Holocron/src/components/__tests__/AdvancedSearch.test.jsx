@@ -74,7 +74,7 @@ describe('AdvancedSearch', () => {
       render(<AdvancedSearch {...defaultProps} />);
       
       await waitFor(() => {
-        expect(screen.getByPlaceholderText(/search cards/i)).toBeInTheDocument();
+        expect(screen.getByPlaceholderText(/name, text, traits/i)).toBeInTheDocument();
       });
     });
 
@@ -122,7 +122,7 @@ describe('AdvancedSearch', () => {
     it('should search by card name', async () => {
       render(<AdvancedSearch {...defaultProps} />);
       
-      const searchInput = await screen.findByPlaceholderText(/search cards/i);
+      const searchInput = await screen.findByPlaceholderText(/name, text, traits/i);
       fireEvent.change(searchInput, { target: { value: 'Sabine' } });
       
       await waitFor(() => {
@@ -133,7 +133,7 @@ describe('AdvancedSearch', () => {
     it('should search by subtitle', async () => {
       render(<AdvancedSearch {...defaultProps} />);
       
-      const searchInput = await screen.findByPlaceholderText(/search cards/i);
+      const searchInput = await screen.findByPlaceholderText(/name, text, traits/i);
       fireEvent.change(searchInput, { target: { value: 'Explosives Artist' } });
       
       await waitFor(() => {
@@ -144,7 +144,7 @@ describe('AdvancedSearch', () => {
     it('should search by trait (Mandalorian)', async () => {
       render(<AdvancedSearch {...defaultProps} />);
       
-      const searchInput = await screen.findByPlaceholderText(/search cards/i);
+      const searchInput = await screen.findByPlaceholderText(/name, text, traits/i);
       fireEvent.change(searchInput, { target: { value: 'Mandalorian' } });
       
       await waitFor(() => {
@@ -156,7 +156,7 @@ describe('AdvancedSearch', () => {
     it('should search by ability text (indirect damage)', async () => {
       render(<AdvancedSearch {...defaultProps} />);
       
-      const searchInput = await screen.findByPlaceholderText(/search cards/i);
+      const searchInput = await screen.findByPlaceholderText(/name, text, traits/i);
       fireEvent.change(searchInput, { target: { value: 'indirect' } });
       
       await waitFor(() => {
@@ -168,7 +168,7 @@ describe('AdvancedSearch', () => {
     it('should search by keyword (Raid)', async () => {
       render(<AdvancedSearch {...defaultProps} />);
       
-      const searchInput = await screen.findByPlaceholderText(/search cards/i);
+      const searchInput = await screen.findByPlaceholderText(/name, text, traits/i);
       fireEvent.change(searchInput, { target: { value: 'raid' } });
       
       await waitFor(() => {
@@ -179,7 +179,7 @@ describe('AdvancedSearch', () => {
     it('should be case insensitive', async () => {
       render(<AdvancedSearch {...defaultProps} />);
       
-      const searchInput = await screen.findByPlaceholderText(/search cards/i);
+      const searchInput = await screen.findByPlaceholderText(/name, text, traits/i);
       fireEvent.change(searchInput, { target: { value: 'SABINE' } });
       
       await waitFor(() => {
@@ -191,7 +191,7 @@ describe('AdvancedSearch', () => {
       vi.useFakeTimers();
       render(<AdvancedSearch {...defaultProps} />);
       
-      const searchInput = await screen.findByPlaceholderText(/search cards/i);
+      const searchInput = await screen.findByPlaceholderText(/name, text, traits/i);
       
       // Type multiple characters quickly
       fireEvent.change(searchInput, { target: { value: 'S' } });
@@ -223,7 +223,7 @@ describe('AdvancedSearch', () => {
       
       render(<AdvancedSearch {...defaultProps} />);
       
-      const searchInput = await screen.findByPlaceholderText(/search cards/i);
+      const searchInput = await screen.findByPlaceholderText(/name, text, traits/i);
       fireEvent.change(searchInput, { target: { value: 'Sabine' } });
       
       await waitFor(() => {
@@ -237,7 +237,7 @@ describe('AdvancedSearch', () => {
     it('should render quantity controls for each card', async () => {
       render(<AdvancedSearch {...defaultProps} />);
       
-      const searchInput = await screen.findByPlaceholderText(/search cards/i);
+      const searchInput = await screen.findByPlaceholderText(/name, text, traits/i);
       fireEvent.change(searchInput, { target: { value: 'Sabine' } });
       
       await waitFor(() => {
@@ -254,7 +254,7 @@ describe('AdvancedSearch', () => {
       const onUpdateQuantity = vi.fn();
       render(<AdvancedSearch {...defaultProps} onUpdateQuantity={onUpdateQuantity} />);
       
-      const searchInput = await screen.findByPlaceholderText(/search cards/i);
+      const searchInput = await screen.findByPlaceholderText(/name, text, traits/i);
       fireEvent.change(searchInput, { target: { value: 'Sabine' } });
       
       await waitFor(() => {
@@ -291,7 +291,7 @@ describe('AdvancedSearch', () => {
         onUpdateQuantity={onUpdateQuantity} 
       />);
       
-      const searchInput = await screen.findByPlaceholderText(/search cards/i);
+      const searchInput = await screen.findByPlaceholderText(/name, text, traits/i);
       fireEvent.change(searchInput, { target: { value: 'Sabine' } });
       
       await waitFor(() => {
@@ -323,7 +323,7 @@ describe('AdvancedSearch', () => {
       
       render(<AdvancedSearch {...defaultProps} collectionData={collectionData} />);
       
-      const searchInput = await screen.findByPlaceholderText(/search cards/i);
+      const searchInput = await screen.findByPlaceholderText(/name, text, traits/i);
       fireEvent.change(searchInput, { target: { value: 'Sabine' } });
       
       await waitFor(() => {
@@ -345,7 +345,7 @@ describe('AdvancedSearch', () => {
       
       render(<AdvancedSearch {...defaultProps} collectionData={collectionData} />);
       
-      const searchInput = await screen.findByPlaceholderText(/search cards/i);
+      const searchInput = await screen.findByPlaceholderText(/name, text, traits/i);
       fireEvent.change(searchInput, { target: { value: 'Sabine' } });
       
       await waitFor(() => {
@@ -357,7 +357,7 @@ describe('AdvancedSearch', () => {
       const onCardClick = vi.fn();
       render(<AdvancedSearch {...defaultProps} onCardClick={onCardClick} />);
       
-      const searchInput = await screen.findByPlaceholderText(/search cards/i);
+      const searchInput = await screen.findByPlaceholderText(/name, text, traits/i);
       fireEvent.change(searchInput, { target: { value: 'Sabine' } });
       
       await waitFor(() => {
@@ -384,7 +384,7 @@ describe('AdvancedSearch', () => {
       const onCardClick = vi.fn();
       render(<AdvancedSearch {...defaultProps} onCardClick={onCardClick} />);
       
-      const searchInput = await screen.findByPlaceholderText(/search cards/i);
+      const searchInput = await screen.findByPlaceholderText(/name, text, traits/i);
       fireEvent.change(searchInput, { target: { value: 'Sabine' } });
       
       await waitFor(() => {
@@ -404,7 +404,7 @@ describe('AdvancedSearch', () => {
       const onClose = vi.fn();
       render(<AdvancedSearch {...defaultProps} onCardClick={onCardClick} onClose={onClose} />);
       
-      const searchInput = await screen.findByPlaceholderText(/search cards/i);
+      const searchInput = await screen.findByPlaceholderText(/name, text, traits/i);
       fireEvent.change(searchInput, { target: { value: 'Sabine' } });
       
       await waitFor(() => {
@@ -449,7 +449,7 @@ describe('AdvancedSearch', () => {
     it('should show empty state when no results', async () => {
       render(<AdvancedSearch {...defaultProps} />);
       
-      const searchInput = await screen.findByPlaceholderText(/search cards/i);
+      const searchInput = await screen.findByPlaceholderText(/name, text, traits/i);
       fireEvent.change(searchInput, { target: { value: 'NonExistentCard12345' } });
       
       await waitFor(() => {
