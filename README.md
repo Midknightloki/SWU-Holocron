@@ -78,7 +78,8 @@ SWU Holocron is an **offline-first Progressive Web App (PWA)** designed to help 
 ```bash
 # Clone the repository
 git clone https://github.com/Midknightloki/SWU-Holocron.git
-cd SWU-Holocron/SWU-Holocron
+cd SWU-Holocron
+cd SWU-Holocron  # Navigate to the project directory
 
 # Install dependencies
 npm install
@@ -99,7 +100,7 @@ Visit `http://localhost:5173` to see the app running locally.
 3. Copy your Firebase config to `src/firebase.js`
 4. Update Firestore security rules (see `firestore.rules`)
 
-For detailed setup instructions, see [README-SETUP.md](SWU-Holocron/README-SETUP.md).
+For detailed setup instructions, see [README-SETUP.md](./SWU-Holocron/README-SETUP.md).
 
 ## 🛠️ Technology Stack
 
@@ -175,12 +176,12 @@ SWU-Holocron/
 
 ## 📚 Documentation
 
-- **[README-SETUP.md](SWU-Holocron/README-SETUP.md)** - Comprehensive setup and testing guide
-- **[TESTING.md](SWU-Holocron/TESTING.md)** - Testing infrastructure and best practices
-- **[CARD-DATABASE-ARCHITECTURE.md](SWU-Holocron/docs/CARD-DATABASE-ARCHITECTURE.md)** - Database design and sync system
-- **[PLATFORM-ARCHITECTURE-DECISION.md](SWU-Holocron/docs/PLATFORM-ARCHITECTURE-DECISION.md)** - Multi-platform strategy
-- **[IMPLEMENTATION-SUMMARY.md](SWU-Holocron/docs/IMPLEMENTATION-SUMMARY.md)** - Card database implementation details
-- **[SWU-RULES-AND-FORMATS.md](SWU-Holocron/docs/SWU-RULES-AND-FORMATS.md)** - Game rules reference
+- **[README-SETUP.md](./SWU-Holocron/README-SETUP.md)** - Comprehensive setup and testing guide
+- **[TESTING.md](./SWU-Holocron/TESTING.md)** - Testing infrastructure and best practices
+- **[CARD-DATABASE-ARCHITECTURE.md](./SWU-Holocron/docs/CARD-DATABASE-ARCHITECTURE.md)** - Database design and sync system
+- **[PLATFORM-ARCHITECTURE-DECISION.md](./SWU-Holocron/docs/PLATFORM-ARCHITECTURE-DECISION.md)** - Multi-platform strategy
+- **[IMPLEMENTATION-SUMMARY.md](./SWU-Holocron/docs/IMPLEMENTATION-SUMMARY.md)** - Card database implementation details
+- **[SWU-RULES-AND-FORMATS.md](./SWU-Holocron/docs/SWU-RULES-AND-FORMATS.md)** - Game rules reference
 
 ## 🧪 Testing
 
@@ -203,7 +204,7 @@ npm run test:ci
 npm run lint
 ```
 
-See [TESTING.md](SWU-Holocron/TESTING.md) for detailed testing documentation.
+See [TESTING.md](./SWU-Holocron/TESTING.md) for detailed testing documentation.
 
 ## 🔧 Available Scripts
 
