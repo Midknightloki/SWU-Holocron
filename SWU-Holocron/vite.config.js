@@ -86,6 +86,14 @@ export default defineConfig({
       }
     })
   ],
+  server: {
+    allowedHosts: ['swu.holocronlabs.net', 'swu-holocron-web', 'localhost', '127.0.0.1']
+  },
+  preview: {
+    host: true,
+    port: 5173,
+    allowedHosts: ['swu.holocronlabs.net', 'swu-holocron-web', 'localhost', '127.0.0.1']
+  },
   test: {
     globals: true,
     environment: 'happy-dom',
