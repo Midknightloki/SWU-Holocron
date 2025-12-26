@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Layers, RefreshCw, Loader2, Cloud, LayoutGrid, BarChart3,
-  Search, ChevronUp, ChevronDown, Plus, Minus, Info, AlertCircle
+  Search, ChevronUp, ChevronDown, Plus, Minus, Info, AlertCircle, FileText
 } from 'lucide-react';
 import { SETS, ASPECTS } from './constants';
 import { db, APP_ID } from './firebase';
@@ -18,6 +18,7 @@ import CardModal from './components/CardModal';
 import AdvancedSearch from './components/AdvancedSearch';
 import PWAUpdatePrompt from './components/PWAUpdatePrompt';
 import InstallPrompt from './components/InstallPrompt';
+import CardSubmissionForm from './components/CardSubmissionForm';
 
 // Helper to determine collection path
 // @environment:firebase
@@ -53,7 +54,7 @@ export default function App() {
   const [migrationState, setMigrationState] = useState('idle');
   const [migrationMessage, setMigrationMessage] = useState('');
   const errorMessage = authError || authErrorFromContext?.message || '';
-  
+
   // UI State
   const [view, setView] = useState('binder');
   const [searchTerm, setSearchTerm] = useState('');
@@ -152,7 +153,7 @@ export default function App() {
         localStorage.setItem('swu-available-sets', JSON.stringify(sets));
       }
     };
-    
+
     if (hasVisited && user) {
       discoverSets();
       // Refresh available sets every hour
@@ -167,7 +168,7 @@ export default function App() {
       console.log('Collection listener not active: no user session');
       return;
     }
-    
+
     const ref = getCollectionRef(user, legacySyncCode, useLegacyPath);
     if (!ref) {
       console.error('Failed to get collection ref');
@@ -175,7 +176,7 @@ export default function App() {
     }
 
     console.log('Setting up collection listener - uid:', user.uid, 'mode:', useLegacyPath ? `legacy:${legacySyncCode}` : 'user');
-    
+
     // Defer the listener setup to avoid React error #310
     // onSnapshot can fire synchronously if there's cached data, which would call
     // setCollectionData during the render cycle when handleStart triggers this effect
@@ -186,11 +187,11 @@ export default function App() {
         console.log('Collection updated:', Object.keys(data).length, 'items');
         setCollectionData(data);
       }, err => console.error("Collection sync error:", err));
-      
+
       // Store unsub function so we can call it on cleanup
       timer._unsub = unsub;
     }, 0);
-    
+
     return () => {
       clearTimeout(timer);
       if (timer._unsub) timer._unsub();
@@ -512,6 +513,13 @@ export default function App() {
                 >
                   <BarChart3 size={18} />
                 </button>
+                  <button
+                    onClick={() => setView('submit')}
+                    className={`p-2 rounded-md transition-colors ${view === 'submit' ? 'bg-gray-700 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+                    title="Submit Missing Card"
+                  >
+                    <FileText size={18} />
+                  </button>
               </div>
               <button
                 onClick={() => loadSetData(true)}
@@ -641,6 +649,14 @@ export default function App() {
                 onUpdateQuantity={handleGridQuantityChange}
                 onCardClick={setSelectedCard}
               />
+              ) : view === 'submit' ? (
+                <CardSubmissionForm
+                  onSuccess={(submissionId) => {
+                    alert('Card submitted successfully! Submission ID: ' + submissionId);
+                    setView('binder');
+                  }}
+                  onCancel={() => setView('binder')}
+                />
             ) : (
               <>
                 {reconstructedData && (
@@ -753,7 +769,7 @@ export default function App() {
 
       {/* Advanced Search - Full page view */}
       {isSearchOpen && (
-        <AdvancedSearch 
+        <AdvancedSearch
           onCardClick={(card) => {
             setSelectedCard(card);
             // Don't close search - let modal overlay on top of results

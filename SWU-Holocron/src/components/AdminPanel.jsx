@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Database, RefreshCw, Clock, CheckCircle, XCircle, AlertTriangle, Download } from 'lucide-react';
+import { Database, RefreshCw, Clock, CheckCircle, XCircle, AlertTriangle, Download, Shield } from 'lucide-react';
 import { db, APP_ID } from '../firebase';
 import { collection, doc, getDoc, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { seedCardDatabase } from '../../scripts/seedCardDatabase';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function AdminPanel() {
+  const { user, isAdmin, adminLoading } = useAuth();
   const [metadata, setMetadata] = useState(null);
   const [syncLogs, setSyncLogs] = useState([]);
   const [syncing, setSyncing] = useState(false);
@@ -103,7 +105,7 @@ export default function AdminPanel() {
     return `${(ms / 1000).toFixed(1)}s`;
   };
 
-  if (loading) {
+  if (loading || adminLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-900">
         <div className="flex items-center gap-3 text-gray-400">
@@ -114,10 +116,32 @@ export default function AdminPanel() {
     );
   }
 
+  // Auth guard: Show access denied if not admin
+  if (!user || user.isAnonymous || !isAdmin) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-900">
+        <div className="max-w-md w-full bg-gray-800 border border-gray-700 rounded-lg p-8 text-center">
+          <Shield className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-white mb-2">Access Denied</h2>
+          <p className="text-gray-400 mb-6">
+            {!user || user.isAnonymous
+              ? 'You must be signed in with a verified account to access the admin panel.'
+              : 'You do not have administrator privileges.'}
+          </p>
+          {(!user || user.isAnonymous) && (
+            <p className="text-sm text-gray-500">
+              Please sign in with Google using an authorized admin account.
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-900 text-gray-200 p-6">
       <div className="max-w-6xl mx-auto space-y-6">
-        
+
         {/* Header */}
         <div className="border-b border-gray-800 pb-6">
           <h1 className="text-3xl font-bold text-white flex items-center gap-3">
@@ -142,7 +166,7 @@ export default function AdminPanel() {
 
         {/* Status Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          
+
           {/* Sync Status */}
           <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
             <div className="flex items-center justify-between mb-4">
@@ -249,7 +273,7 @@ export default function AdminPanel() {
             <h2 className="text-lg font-semibold">Recent Sync Logs</h2>
             <Clock className="w-5 h-5 text-gray-500" />
           </div>
-          
+
           {syncLogs.length === 0 ? (
             <p className="text-gray-500 text-center py-8">No sync logs found</p>
           ) : (
@@ -271,7 +295,7 @@ export default function AdminPanel() {
                       {new Date(log.timestamp).toLocaleString()}
                     </span>
                   </div>
-                  
+
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mt-3">
                     <div>
                       <div className="text-gray-500 text-xs">Sets</div>
@@ -290,7 +314,7 @@ export default function AdminPanel() {
                       <div className="font-mono">{log.changes?.updated || 0}</div>
                     </div>
                   </div>
-                  
+
                   {log.errors && log.errors.length > 0 && (
                     <div className="mt-3 text-xs text-red-400">
                       {log.errors.length} error(s) - See console

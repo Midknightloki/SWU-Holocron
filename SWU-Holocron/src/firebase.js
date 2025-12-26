@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 
 // Replace this with your actual Firebase config from the console
 const firebaseConfig = {
@@ -12,7 +13,7 @@ const firebaseConfig = {
   appId: "1:151643530726:web:6111fd3f2cc4be2ccde227"
 };
 
-let app, auth, db;
+let app, auth, db, storage;
 let isConfigured = false;
 
 try {
@@ -21,6 +22,7 @@ try {
     app = initializeApp(firebaseConfig);
     auth = getAuth(app);
     db = getFirestore(app);
+    storage = getStorage(app);
     isConfigured = true;
   } else {
     console.warn("Firebase not configured. Please update src/firebase.js");
@@ -29,5 +31,5 @@ try {
   console.error("Firebase init failed:", e);
 }
 
-export { auth, db, isConfigured };
+export { auth, db, storage, isConfigured };
 export const APP_ID = 'swu-holocron-v1'; // Namespace for your database path

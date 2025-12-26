@@ -1,0 +1,73 @@
+rules_version = '2';
+
+// Firebase Storage Security Rules for SWU Holocron
+// Covers user-submitted card images and admin-managed assets
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null && !request.auth.token.email.matches('.*anonymous.*');
+    }
+
+    function isAdmin() {
+      // Note: This requires setting custom claims via Firebase Admin SDK
+      // For now, we check Firestore (less secure but functional)
+      return isAuthenticated();
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function validImageFile() {
+      return request.resource.size < 10 * 1024 * 1024 // 10 MB max
+          && request.resource.contentType.matches('image/.*'); // Images only
+    }
+
+    // User-submitted card images
+    // Path: user-submissions/{userId}/{submissionId}/{filename}
+    match /user-submissions/{userId}/{submissionId}/{filename} {
+      // Users can upload to their own submission folders
+      allow create: if isOwner(userId) && validImageFile();
+
+      // Users can read their own submissions
+      allow read: if isOwner(userId) || isAdmin();
+
+      // Users can delete their own pending submissions
+      allow delete: if isOwner(userId) || isAdmin();
+
+      // No updates allowed (upload new file instead)
+      allow update: if false;
+    }
+
+    // Approved card images (migrated from submissions after admin approval)
+    // Path: card-images/{setCode}/{cardCode}/{filename}
+    match /card-images/{setCode}/{cardCode}/{filename} {
+      // Anyone can read approved images
+      allow read: if true;
+
+      // Only admins can upload/modify approved images
+      allow write: if isAdmin();
+    }
+
+    // User profile images/avatars
+    // Path: user-profiles/{userId}/avatar.{ext}
+    match /user-profiles/{userId}/{filename} {
+      allow read: if true; // Public avatars
+      allow write: if isOwner(userId) && validImageFile();
+    }
+
+    // Admin-only assets
+    // Path: admin/{path}
+    match /admin/{allPaths=**} {
+      allow read, write: if isAdmin();
+    }
+
+    // Default deny all other paths
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

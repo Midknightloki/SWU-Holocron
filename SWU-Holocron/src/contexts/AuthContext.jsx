@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { GoogleAuthProvider, signInAnonymously, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
-import { auth, isConfigured } from '../firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db, isConfigured, APP_ID } from '../firebase';
 
 const AuthContext = createContext(null);
 
@@ -8,6 +9,8 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminLoading, setAdminLoading] = useState(false);
 
   useEffect(() => {
     if (!isConfigured) {
@@ -15,8 +18,33 @@ export const AuthProvider = ({ children }) => {
       return;
     }
 
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
+    const unsubscribe = onAuthStateChanged(auth, async (u) => {
       setUser(u);
+
+      // Check admin status
+      if (u && !u.isAnonymous) {
+        setAdminLoading(true);
+        try {
+          const profileRef = doc(db, `artifacts/${APP_ID}/users/${u.uid}/profile`);
+          const profileSnap = await getDoc(profileRef);
+
+          if (profileSnap.exists()) {
+            const profileData = profileSnap.data();
+            setIsAdmin(profileData.isAdmin === true);
+          } else {
+            setIsAdmin(false);
+          }
+        } catch (error) {
+          console.error('Error checking admin status:', error);
+          setIsAdmin(false);
+        } finally {
+          setAdminLoading(false);
+        }
+      } else {
+        setIsAdmin(false);
+        setAdminLoading(false);
+      }
+
       setLoading(false);
     });
 
@@ -72,7 +100,17 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
-  const value = { user, loading, error, loginWithGoogle, loginAnonymously, logout, isConfigured };
+  const value = {
+    user,
+    loading,
+    error,
+    isAdmin,
+    adminLoading,
+    loginWithGoogle,
+    loginAnonymously,
+    logout,
+    isConfigured
+  };
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
