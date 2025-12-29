@@ -3,7 +3,7 @@ import { GoogleAuthProvider, signInAnonymously, signInWithPopup, signOut, onAuth
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db, isConfigured, APP_ID } from '../firebase';
 
-const AuthContext = createContext(null);
+export const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);

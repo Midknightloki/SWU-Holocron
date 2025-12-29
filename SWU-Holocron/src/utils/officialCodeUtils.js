@@ -41,6 +41,20 @@ const SET_CODE_MAP = {
   'G25': 'PROMO'
 };
 
+const PRINTED_SET_CANDIDATES = [
+  'INTRO-HOTH',
+  'PROMO',
+  'G25',
+  'I01',
+  'SOR',
+  'SHD',
+  'TWI',
+  'JTL',
+  'LOF',
+  'SEC',
+  'ALT'
+];
+
 /**
  * Convert printed official code (G25-3) to full official code (G25090003)
  * @param {string} printedCode - Code as printed on card (e.g., "G25-3", "SOR-042")
@@ -49,17 +63,30 @@ const SET_CODE_MAP = {
  */
 export function printedToFullCode(printedCode, cardType = 'Unit') {
   // Handle codes without hyphens
-  if (!printedCode.includes('-')) {
-    // Try to split based on pattern: letters/digits followed by more digits
-    const match = printedCode.match(/^([A-Z0-9]+?)(\d{1,4})$/);
-    if (match) {
-      printedCode = `${match[1]}-${match[2]}`;
+  let normalized = printedCode.toUpperCase();
+  if (!normalized.includes('-')) {
+    const setMatch = PRINTED_SET_CANDIDATES.find((set) => normalized.startsWith(set));
+    if (setMatch) {
+      const remaining = normalized.substring(setMatch.length);
+      if (!remaining) {
+        throw new Error(`Invalid printed code format: ${printedCode}`);
+      }
+      normalized = `${setMatch}-${remaining}`;
+    } else {
+      const match = normalized.match(/^([A-Z]+)(\d{1,4})$/);
+      if (match) {
+        normalized = `${match[1]}-${match[2]}`;
+      }
     }
   }
 
-  const [setCode, cardNum] = printedCode.split('-');
+  if (!normalized.includes('-')) {
+    throw new Error(`Invalid printed code format: ${printedCode}`);
+  }
 
-  if (!setCode || !cardNum) {
+  const [setCodeRaw, cardNum] = normalized.split('-');
+  const setCode = setCodeRaw.toUpperCase();
+  if (!cardNum) {
     throw new Error(`Invalid printed code format: ${printedCode}`);
   }
 
@@ -115,14 +142,24 @@ export function fullToPrintedCode(fullCode) {
 export function parseOfficialCode(fullCode) {
   if (!fullCode) return null;
 
+  let normalizedCode = fullCode;
+
   // Handle printed format - convert to full first
-  if (isPrintedFormat(fullCode)) {
+  if (isPrintedFormat(normalizedCode)) {
     try {
-      fullCode = printedToFullCode(fullCode);
+      normalizedCode = printedToFullCode(normalizedCode);
+    } catch (e) {
+      return null;
+    }
+  } else if (!isFullFormat(normalizedCode)) {
+    try {
+      normalizedCode = printedToFullCode(normalizedCode);
     } catch (e) {
       return null;
     }
   }
+
+  fullCode = normalizedCode;
 
   // Validate format
   if (!isFullFormat(fullCode)) {
@@ -235,15 +272,13 @@ export function officialToInternal(code) {
  * @returns {string} Printed code format (SOR-042, G25-003)
  */
 export function internalToOfficial(internalSet, number) {
-  // For special internal sets, convert to official code
-  // Otherwise use the internal set code as-is (SOR, SHD, etc.)
-  let displaySet;
-  if (internalSet === 'PROMO') {
+  let displaySet = internalSet;
+  if (/^\d{2}$/.test(internalSet)) {
+    displaySet = SET_CODE_MAP[internalSet] || internalSet;
+  } else if (internalSet === 'PROMO') {
     displaySet = 'G25';
   } else if (internalSet === 'INTRO-HOTH') {
     displaySet = 'I01';
-  } else {
-    displaySet = internalSet;
   }
 
   // Pad to 3 digits for display

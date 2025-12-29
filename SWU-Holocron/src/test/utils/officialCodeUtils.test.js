@@ -83,40 +83,54 @@ describe('officialCodeUtils', () => {
   });
 
   describe('parseOfficialCode', () => {
-    it('should parse standard printed codes', () => {
+    it('should parse printed codes into internal components', () => {
       const result = parseOfficialCode('SOR-042');
       expect(result).toEqual({
-        setCode: 'SOR',
-        cardNumber: '042',
-        productType: '0',
-        cardType: '1',
-        isPrinted: true
+        setCode: '01',
+        internalSet: 'SOR',
+        middleDigits: '01',
+        cardNumber: '0042',
+        actualNumber: '042',
+        paddedNumber: '042',
+        isLeader: false,
+        isSpecial: false
       });
     });
 
-    it('should parse full codes', () => {
-      const result = parseOfficialCode('01010042');
+    it('should parse full codes and detect leaders', () => {
+      const result = parseOfficialCode('01011001');
       expect(result).toEqual({
         setCode: '01',
-        cardNumber: '0042',
-        productType: '0',
-        cardType: '1',
-        isPrinted: false
+        internalSet: 'SOR',
+        middleDigits: '01',
+        cardNumber: '1001',
+        actualNumber: '001',
+        paddedNumber: '001',
+        isLeader: true,
+        isSpecial: false
       });
     });
 
-    it('should parse promo codes', () => {
+    it('should parse promo codes and identify special set formatting', () => {
       const result = parseOfficialCode('G25-3');
       expect(result.setCode).toBe('G25');
-      expect(result.cardNumber).toBe('3');
-      expect(result.isPrinted).toBe(true);
+      expect(result.internalSet).toBe('PROMO');
+      expect(result.cardNumber).toBe('0003');
+      expect(result.actualNumber).toBe('003');
+      expect(result.isSpecial).toBe(true);
     });
 
     it('should parse intro set codes', () => {
       const result = parseOfficialCode('I01-001');
       expect(result.setCode).toBe('I01');
-      expect(result.cardNumber).toBe('001');
-      expect(result.isPrinted).toBe(true);
+      expect(result.internalSet).toBe('INTRO-HOTH');
+      expect(result.cardNumber).toBe('0001');
+    });
+
+    it('should handle promo codes without hyphen', () => {
+      const result = parseOfficialCode('G253');
+      expect(result.setCode).toBe('G25');
+      expect(result.cardNumber).toBe('0003');
     });
 
     it('should return null for invalid codes', () => {

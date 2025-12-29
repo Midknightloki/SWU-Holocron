@@ -110,7 +110,7 @@ export default function AdminPanel() {
       <div className="flex items-center justify-center min-h-screen bg-gray-900">
         <div className="flex items-center gap-3 text-gray-400">
           <RefreshCw className="w-5 h-5 animate-spin" />
-          <span>Loading admin panel...</span>
+          <span>Loading the admin dashboard...</span>
         </div>
       </div>
     );
@@ -151,6 +151,9 @@ export default function AdminPanel() {
           <p className="text-gray-500 mt-2">
             Monitor and manage the card database sync system
           </p>
+          {user?.email && (
+            <p className="text-sm text-gray-400 mt-1">Signed in as {user.email}</p>
+          )}
         </div>
 
         {/* Error Alert */}
