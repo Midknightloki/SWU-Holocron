@@ -101,30 +101,45 @@ export function createSubmission(userId, userEmail, cardData, images) {
 /**
  * Validate submission data before saving
  * @param {Partial<CardSubmission>} submission - Submission to validate
+ * @param {string} [mode='manual'] - Submission mode ('officialUrl' or 'manual')
  * @returns {{ valid: boolean, errors: string[] }}
  */
-export function validateSubmission(submission) {
+export function validateSubmission(submission, mode = 'manual') {
   const errors = [];
 
   // Required user data
   if (!submission.userId) errors.push('User ID is required');
   if (!submission.userEmail) errors.push('User email is required');
 
-  // Required card data
+  // For officialUrl mode, only require the URL
+  if (mode === 'officialUrl') {
+    if (!submission.officialUrl) {
+      errors.push('Official card URL is required');
+    }
+    // Validate URL format
+    if (submission.officialUrl && !submission.officialUrl.includes('starwarsunlimited.com')) {
+      errors.push('URL must be from starwarsunlimited.com');
+    }
+    return {
+      valid: errors.length === 0,
+      errors
+    };
+  }
+
+  // Required card data (manual mode)
   const data = submission.submittedData;
   if (!data) {
     errors.push('Card data is required');
     return { valid: false, errors };
   }
 
-  if (!data.OfficialCode) errors.push('Official code is required');
   if (!data.Name) errors.push('Card name is required');
-  if (!data.Type) errors.push('Card type is required');
-  if (!data.Set) errors.push('Set is required');
-  if (!data.Number) errors.push('Card number is required');
-  if (!data.Rarity) errors.push('Rarity is required');
+  // Official code not required if URL is provided
+  if (!data.OfficialCode && !submission.officialUrl) {
+    errors.push('Official code is required (unless Official URL is provided)');
+  }
 
-  // Type validation
+  // Type validation (optional but if provided must be valid)
   const validTypes = ['Leader', 'Unit', 'Event', 'Upgrade', 'Base'];
   if (data.Type && !validTypes.includes(data.Type)) {
     errors.push(`Invalid card type: ${data.Type}`);
@@ -135,7 +150,7 @@ export function validateSubmission(submission) {
     errors.push(`Invalid rarity: ${data.Rarity}`);
   }
 
-  // Required images
+  // Required images (manual mode)
   if (!submission.images || !submission.images.frontUrl) {
     errors.push('Front card image is required');
   }

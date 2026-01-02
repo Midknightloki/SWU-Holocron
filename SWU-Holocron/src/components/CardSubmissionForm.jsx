@@ -26,6 +26,9 @@ import { checkForDuplicates, getDuplicateWarningMessage } from '../utils/duplica
 export default function CardSubmissionForm({ onSuccess, onCancel }) {
   const { user } = useAuth();
 
+  // Submission mode: 'officialUrl' or 'manual'
+  const [submissionMode, setSubmissionMode] = useState('officialUrl');
+
   // Form state
   const [formData, setFormData] = useState({
     officialCode: '',
@@ -231,78 +234,112 @@ export default function CardSubmissionForm({ onSuccess, onCancel }) {
       return;
     }
 
-    if (!frontImage) {
-      setErrors(['Front card image is required']);
-      return;
+    // Validate based on submission mode
+    if (submissionMode === 'officialUrl') {
+      if (!formData.officialUrl) {
+        setErrors(['Official URL is required when using URL submission mode']);
+        return;
+      }
+      // URL mode doesn't require image or other fields
+    } else {
+      // Manual mode validation
+      if (!frontImage) {
+        setErrors(['Front card image is required for manual submissions']);
+        return;
+      }
+
+      if (formData.doubleSided && !backImage) {
+        setErrors(['Back image is required for double-sided cards']);
+        return;
+      }
+
+      if (!formData.name) {
+        setErrors(['Card name is required for manual submissions']);
+        return;
+      }
     }
 
-    if (formData.doubleSided && !backImage) {
-      setErrors(['Back image is required for double-sided cards']);
-      return;
-    }
-
-    // Check for exact duplicates
-    const exactDuplicate = duplicates.find(d => d.matchScore === 1.0);
-    if (exactDuplicate) {
-      const confirm = window.confirm(
-        `This card (${exactDuplicate.name}) already exists in the database. Do you still want to submit it?`
-      );
-      if (!confirm) return;
+    // Check for exact duplicates (only in manual mode)
+    if (submissionMode === 'manual') {
+      const exactDuplicate = duplicates.find(d => d.matchScore === 1.0);
+      if (exactDuplicate) {
+        const confirm = window.confirm(
+          `This card (${exactDuplicate.name}) already exists in the database. Do you still want to submit it?`
+        );
+        if (!confirm) return;
+      }
     }
 
     setSubmitting(true);
     setProgress(0);
 
     try {
-      // 1. Upload images to Firebase Storage
-      setProgress(20);
-      const submissionId = `${Date.now()}_${user.uid.substring(0, 8)}`;
-      const frontPath = `user-submissions/${user.uid}/${submissionId}/front.jpg`;
-      const frontRef = ref(storage, frontPath);
-      await uploadBytes(frontRef, frontImage);
-      const frontUrl = await getDownloadURL(frontRef);
-
+      let frontUrl = null;
       let backUrl = null;
+      let frontPath = null;
       let backPath = null;
+      let cardData = null;
 
-      if (backImage) {
-        setProgress(40);
-        backPath = `user-submissions/${user.uid}/${submissionId}/back.jpg`;
-        const backRef = ref(storage, backPath);
-        await uploadBytes(backRef, backImage);
-        backUrl = await getDownloadURL(backRef);
+      if (submissionMode === 'officialUrl') {
+        // URL-only submission
+        setProgress(50);
+        cardData = {
+          OfficialUrl: formData.officialUrl,
+          SubmissionMode: 'url',
+          Name: formData.name || 'Unknown',
+          UserSubmitted: true,
+          SubmittedBy: user.uid
+        };
+      } else {
+        // Manual submission with images
+        // 1. Upload images to Firebase Storage
+        setProgress(20);
+        const submissionId = `${Date.now()}_${user.uid.substring(0, 8)}`;
+        frontPath = `user-submissions/${user.uid}/${submissionId}/front.jpg`;
+        const frontRef = ref(storage, frontPath);
+        await uploadBytes(frontRef, frontImage);
+        frontUrl = await getDownloadURL(frontRef);
+
+        if (backImage) {
+          setProgress(40);
+          backPath = `user-submissions/${user.uid}/${submissionId}/back.jpg`;
+          const backRef = ref(storage, backPath);
+          await uploadBytes(backRef, backImage);
+          backUrl = await getDownloadURL(backRef);
+        }
+
+        // 2. Prepare card data
+        setProgress(60);
+        const fullCode = isPrintedFormat(formData.officialCode)
+          ? printedToFullCode(formData.officialCode, formData.type)
+          : formData.officialCode;
+
+        const internal = formData.officialCode ? officialToInternal(fullCode) : {};
+
+        cardData = {
+          OfficialCode: formData.officialCode || undefined,
+          OfficialCodeFull: fullCode || undefined,
+          Set: internal.set || formData.set,
+          Number: internal.number || formData.number,
+          Name: formData.name,
+          Subtitle: formData.subtitle || undefined,
+          Type: formData.type,
+          Aspects: formData.aspects,
+          Traits: formData.traits.length > 0 ? formData.traits : undefined,
+          Cost: formData.cost ? parseInt(formData.cost) : null,
+          Power: formData.power ? parseInt(formData.power) : null,
+          HP: formData.hp ? parseInt(formData.hp) : null,
+          Text: formData.text || undefined,
+          DoubleSided: formData.doubleSided,
+          Unique: formData.unique,
+          Rarity: formData.rarity,
+          Artist: formData.artist || undefined,
+          ImageSource: 'user-upload',
+          SubmissionMode: 'manual',
+          UserSubmitted: true,
+          SubmittedBy: user.uid
+        };
       }
-
-      // 2. Prepare card data
-      setProgress(60);
-      const fullCode = isPrintedFormat(formData.officialCode)
-        ? printedToFullCode(formData.officialCode, formData.type)
-        : formData.officialCode;
-
-      const internal = officialToInternal(fullCode);
-
-      const cardData = {
-        OfficialCode: formData.officialCode,
-        OfficialCodeFull: fullCode,
-        Set: internal.set,
-        Number: internal.number,
-        Name: formData.name,
-        Subtitle: formData.subtitle || undefined,
-        Type: formData.type,
-        Aspects: formData.aspects,
-        Traits: formData.traits.length > 0 ? formData.traits : undefined,
-        Cost: formData.cost ? parseInt(formData.cost) : null,
-        Power: formData.power ? parseInt(formData.power) : null,
-        HP: formData.hp ? parseInt(formData.hp) : null,
-        Text: formData.text || undefined,
-        DoubleSided: formData.doubleSided,
-        Unique: formData.unique,
-        Rarity: formData.rarity,
-        Artist: formData.artist || undefined,
-        ImageSource: 'user-upload',
-        UserSubmitted: true,
-        SubmittedBy: user.uid
-      };
 
       // 3. Create submission object
       const submission = createSubmission(
@@ -317,11 +354,12 @@ export default function CardSubmissionForm({ onSuccess, onCancel }) {
         }
       );
 
+      submission.submissionMode = submissionMode;
       submission.officialUrl = formData.officialUrl || null;
-      submission.possibleDuplicates = duplicates;
+      submission.possibleDuplicates = submissionMode === 'manual' ? duplicates : [];
 
       // 4. Validate submission
-      const validation = validateSubmission(submission);
+      const validation = validateSubmission(submission, submissionMode);
       if (!validation.valid) {
         setErrors(validation.errors);
         setSubmitting(false);
@@ -381,8 +419,43 @@ export default function CardSubmissionForm({ onSuccess, onCancel }) {
             starwarsunlimited.com/cards
             <ExternalLink className="w-3 h-3" />
           </a>
-          {' '}and copy the official code (e.g., "G25-3") from the bottom right of the card.
+          {' '}and provide either the URL to the card or manually enter its details.
         </p>
+      </div>
+
+      {/* Submission Mode Toggle */}
+      <div className="mb-6">
+        <label className="block text-sm font-medium text-gray-300 mb-3">
+          Submission Method *
+        </label>
+        <div className="grid grid-cols-2 gap-4">
+          <button
+            type="button"
+            onClick={() => setSubmissionMode('officialUrl')}
+            className={`p-4 rounded-lg border-2 transition-all ${
+              submissionMode === 'officialUrl'
+                ? 'border-blue-500 bg-blue-900/30 text-blue-300'
+                : 'border-gray-600 bg-gray-800 text-gray-400 hover:border-gray-500'
+            }`}
+          >
+            <ExternalLink className="w-6 h-6 mx-auto mb-2" />
+            <div className="font-semibold">Official URL</div>
+            <div className="text-xs mt-1">Provide link from starwarsunlimited.com</div>
+          </button>
+          <button
+            type="button"
+            onClick={() => setSubmissionMode('manual')}
+            className={`p-4 rounded-lg border-2 transition-all ${
+              submissionMode === 'manual'
+                ? 'border-blue-500 bg-blue-900/30 text-blue-300'
+                : 'border-gray-600 bg-gray-800 text-gray-400 hover:border-gray-500'
+            }`}
+          >
+            <FileImage className="w-6 h-6 mx-auto mb-2" />
+            <div className="font-semibold">Manual Entry</div>
+            <div className="text-xs mt-1">Upload images and enter details</div>
+          </button>
+        </div>
       </div>
 
       {/* Errors */}
@@ -433,7 +506,30 @@ export default function CardSubmissionForm({ onSuccess, onCancel }) {
 
       <form onSubmit={handleSubmit} className="space-y-6">
 
-        {/* Camera Modal */}
+        {/* Official URL Field (prominently displayed in URL mode) */}
+        {submissionMode === 'officialUrl' && (
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Official Card URL *
+            </label>
+            <input
+              type="url"
+              value={formData.officialUrl}
+              onChange={(e) => setFormData({ ...formData, officialUrl: e.target.value })}
+              className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
+              placeholder="https://starwarsunlimited.com/cards/..."
+              required
+            />
+            <p className="text-sm text-gray-400 mt-2">
+              Navigate to the card on starwarsunlimited.com and copy the URL from your browser.
+            </p>
+          </div>
+        )}
+
+        {/* Manual Entry Fields */}
+        {submissionMode === 'manual' && (
+          <>
+            {/* Camera Modal */}
         {showCamera && (
           <div className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center p-4">
             <div className="max-w-2xl w-full">
@@ -821,12 +917,14 @@ export default function CardSubmissionForm({ onSuccess, onCancel }) {
             <span className="text-gray-300">Unique Card</span>
           </label>
         </div>
+        </>
+        )}
 
         {/* Submit Buttons */}
         <div className="flex gap-4 pt-4 border-t border-gray-700">
           <button
             type="submit"
-            disabled={submitting || !frontImage}
+            disabled={submitting || (submissionMode === 'manual' && !frontImage) || (submissionMode === 'officialUrl' && !formData.officialUrl)}
             className="flex-1 px-6 py-3 bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white rounded-lg font-semibold flex items-center justify-center gap-2"
           >
             {submitting ? (

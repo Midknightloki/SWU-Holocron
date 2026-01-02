@@ -1,0 +1,58 @@
+
+> swu-holocron@1.0.0 test
+> vitest --run src/test/utils/duplicateDetection.test.js
+
+
+[7m[1m[36m RUN [39m[22m[27m [36mv1.6.1[39m [90mF:/SWU-Holocron/SWU-Holocron[39m
+
+ [33mΓ¥»[39m src/test/utils/duplicateDetection.test.js [2m ([22m[2m18 tests[22m [2m|[22m [31m3 failed[39m[2m)[22m[90m 26[2mms[22m[39m
+[31m   [33mΓ¥»[31m src/test/utils/duplicateDetection.test.js[2m > [22mduplicateDetection[2m > [22mfindPotentialDuplicates[2m > [22mshould search by official code first[39m
+[31m     ΓåÆ expected "spy" to be called at least once[39m
+[31m   [33mΓ¥»[31m src/test/utils/duplicateDetection.test.js[2m > [22mduplicateDetection[2m > [22mfindPotentialDuplicates[2m > [22mshould include match scores with results[39m
+[31m     ΓåÆ expected 0 to be greater than 0[39m
+[31m   [33mΓ¥»[31m src/test/utils/duplicateDetection.test.js[2m > [22mduplicateDetection[2m > [22msearchBySetAndNumber[2m > [22mshould normalize set codes[39m
+[31m     ΓåÆ expected "spy" to be called 2 times, but got 5 times[39m
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ» Failed Tests 3 ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»
+
+ FAIL  src/test/utils/duplicateDetection.test.js > duplicateDetection > findPotentialDuplicates > should search by official code first
+AssertionError: expected "spy" to be called at least once
+ Γ¥» src/test/utils/duplicateDetection.test.js:172:23
+    170| 
+    171|       // Verify search was attempted
+    172|       expect(getDocs).toHaveBeenCalled();
+       |                       ^
+    173|     });
+    174| 
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[1/3]ΓÄ»
+
+ FAIL  src/test/utils/duplicateDetection.test.js > duplicateDetection > findPotentialDuplicates > should include match scores with results
+AssertionError: expected 0 to be greater than 0
+ Γ¥» src/test/utils/duplicateDetection.test.js:220:29
+    218|       const result = await findPotentialDuplicates(submissionData);
+    219| 
+    220|       expect(result.length).toBeGreaterThan(0);
+       |                             ^
+    221|       if (result.length > 0) {
+    222|         expect(result[0]).toHaveProperty('matchScore');
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[2/3]ΓÄ»
+
+ FAIL  src/test/utils/duplicateDetection.test.js > duplicateDetection > searchBySetAndNumber > should normalize set codes
+AssertionError: expected "spy" to be called 2 times, but got 5 times
+ Γ¥» src/test/utils/duplicateDetection.test.js:359:23
+    357|       await searchBySetAndNumber('SOR', '042');
+    358| 
+    359|       expect(getDocs).toHaveBeenCalledTimes(2);
+       |                       ^
+    360|     });
+    361|   });
+
+ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[3/3]ΓÄ»
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m3 failed[39m[22m[2m | [22m[1m[32m15 passed[39m[22m[90m (18)[39m
+[2m   Start at [22m 01:08:50
+[2m   Duration [22m 2.14s[2m (transform 89ms, setup 596ms, collect 66ms, tests 26ms, environment 343ms, prepare 202ms)[22m
+
