@@ -15,7 +15,7 @@
 /**
  * Set code mappings between internal format and official format
  */
-const SET_CODE_MAP = {
+export const SET_CODE_MAP = {
   // Internal -> Official numeric
   'SOR': '01', // Spark of Rebellion
   'SHD': '02', // Shadows of the Galaxy

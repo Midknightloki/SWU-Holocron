@@ -26,13 +26,13 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
         }
       }
     };
-    
+
     loadAllSets();
   }, []); // Empty dependency - only run once on mount
 
   const loadSetCards = async (setCode) => {
     if (loadedSets.has(setCode)) return;
-    
+
     try {
       const { data } = await CardService.fetchSetData(setCode);
       console.log(`✓ Loaded ${data.length} cards from ${setCode}`);
@@ -54,7 +54,7 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
         }
       }
     };
-    
+
     loadSelectedSets();
   }, [selectedSets, loadedSets]);
 
@@ -66,7 +66,7 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
   // Perform search with debounce
   useEffect(() => {
     const debounce = setTimeout(() => {
-      if (searchText.trim() || selectedSets.length > 0 || selectedAspects.length > 0 || 
+      if (searchText.trim() || selectedSets.length > 0 || selectedAspects.length > 0 ||
           selectedTypes.length > 0 || costMin || costMax) {
         performSearch();
       } else {
@@ -79,13 +79,13 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
 
   const performSearch = () => {
     setIsSearching(true);
-    
+
     try {
       console.log('🔍 Searching in', allCards.length, 'cards');
       if (allCards.length > 0) {
         console.log('📝 Sample card structure:', allCards[0]);
       }
-      
+
       const filtered = allCards.filter(card => {
         // Text search across ALL text fields for comprehensive fuzzy matching
         if (searchText.trim()) {
@@ -97,7 +97,7 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
           const matchesTraits = card.Traits?.some(t => t.toLowerCase().includes(text));
           const matchesKeywords = card.Keywords?.some(k => k.toLowerCase().includes(text));
           const matchesArenas = card.Arenas?.some(a => a.toLowerCase().includes(text));
-          
+
           if (!matchesName && !matchesSubtitle && !matchesFrontText && !matchesBackText && !matchesTraits && !matchesKeywords && !matchesArenas) {
             return false;
           }
@@ -110,7 +110,12 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
 
         // Aspect filter
         if (selectedAspects.length > 0) {
-          if (!card.Aspects || !selectedAspects.some(a => card.Aspects.includes(a))) {
+          const isNeutral = !card.Aspects || card.Aspects.length === 0;
+          const hasSelectedAspect = selectedAspects.some(a => {
+            if (a === 'Neutral') return isNeutral;
+            return card.Aspects && card.Aspects.includes(a);
+          });
+          if (!hasSelectedAspect) {
             return false;
           }
         }
@@ -134,7 +139,7 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
       // Deduplicate by card name (keep first occurrence of each unique name)
       const uniqueCards = [];
       const seenNames = new Set();
-      
+
       for (const card of filtered) {
         const nameKey = `${card.Name}${card.Subtitle || ''}`;
         if (!seenNames.has(nameKey)) {
@@ -155,24 +160,24 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
   };
 
   const toggleSet = (setCode) => {
-    setSelectedSets(prev => 
-      prev.includes(setCode) 
+    setSelectedSets(prev =>
+      prev.includes(setCode)
         ? prev.filter(s => s !== setCode)
         : [...prev, setCode]
     );
   };
 
   const toggleAspect = (aspect) => {
-    setSelectedAspects(prev => 
-      prev.includes(aspect) 
+    setSelectedAspects(prev =>
+      prev.includes(aspect)
         ? prev.filter(a => a !== aspect)
         : [...prev, aspect]
     );
   };
 
   const toggleType = (type) => {
-    setSelectedTypes(prev => 
-      prev.includes(type) 
+    setSelectedTypes(prev =>
+      prev.includes(type)
         ? prev.filter(t => t !== type)
         : [...prev, type]
     );
@@ -193,7 +198,7 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
     // Keep search open so user can continue browsing results
   };
 
-  const activeFiltersCount = 
+  const activeFiltersCount =
     (searchText.trim() ? 1 : 0) +
     selectedSets.length +
     selectedAspects.length +
@@ -266,8 +271,8 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
                     </span>
                   )}
                 </div>
-                <ChevronDown 
-                  size={20} 
+                <ChevronDown
+                  size={20}
                   className={`transition-transform ${filtersExpanded ? 'rotate-180' : ''}`}
                 />
               </button>
@@ -414,7 +419,7 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
                     <p className="text-sm">Try adjusting your filters</p>
                   </div>
                 )}
-                
+
                 {searchResults.length === 0 && !isSearching && activeFiltersCount === 0 && (
                   <div className="text-center py-12 text-gray-500">
                     <Search size={48} className="mx-auto mb-4 opacity-30" />
@@ -426,7 +431,7 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
                 {searchResults.map(card => {
                   const collectionId = CardService.getCollectionId(card.Set, card.Number, card.FrontImage || '', card.BackImage || '');
                   const owned = collectionData?.[collectionId]?.quantity || 0;
-                  
+
                   return (
                     <button
                       key={`${card.Set}-${card.Number}`}
@@ -441,7 +446,7 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
                           loading="lazy"
                         />
                       </div>
-                      
+
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start gap-2 mb-1">
                           <span className="flex-shrink-0 text-xs font-bold px-2 py-0.5 rounded bg-blue-600 text-white">
@@ -451,11 +456,11 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
                             {card.Name}
                           </h4>
                         </div>
-                        
+
                         {card.Subtitle && (
                           <p className="text-sm text-gray-400 truncate mb-1">{card.Subtitle}</p>
                         )}
-                        
+
                         <div className="flex items-center gap-3 text-xs text-gray-500">
                           <span>{card.Type}</span>
                           {card.Cost !== undefined && <span>Cost: {card.Cost}</span>}
@@ -463,7 +468,7 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
                             <span>{card.Aspects.join(', ')}</span>
                           )}
                         </div>
-                        
+
                         {card.Traits && card.Traits.length > 0 && (
                           <div className="flex flex-wrap gap-1 mt-2">
                             {card.Traits.map(trait => (
@@ -474,7 +479,7 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
                           </div>
                         )}
                       </div>
-                      
+
                       <div className="flex-shrink-0 flex items-center gap-2">
                         <button
                           onClick={(e) => {
@@ -486,9 +491,9 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
                         >
                           <Minus size={14} />
                         </button>
-                        
+
                         <span className="min-w-[2rem] text-center font-bold text-white">{owned}</span>
-                        
+
                         <button
                           onClick={(e) => {
                             e.stopPropagation();

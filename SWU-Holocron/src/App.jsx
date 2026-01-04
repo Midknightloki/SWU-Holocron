@@ -9,6 +9,7 @@ import { CardService } from './services/CardService';
 import { collection, doc, onSnapshot, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 import { parseCSV, generateCSV } from './utils/csvParser';
 import { getCollectionId, reconstructCardsFromCollection, isHorizontalCard } from './utils/collectionHelpers';
+import { isSpecialSet, SET_CODE_MAP } from './utils/officialCodeUtils';
 import { useAuth } from './contexts/AuthContext';
 import { MigrationService } from './services/MigrationService';
 
@@ -394,7 +395,10 @@ export default function App() {
       // Only show cards from the current set
       if (card.Set !== activeSet) return false;
       const matchSearch = card.Name?.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchAspect = selectedAspect === 'All' || (card.Aspects && card.Aspects.includes(selectedAspect));
+      // Handle Neutral aspect filter for cards with no aspects
+      const isNeutral = !card.Aspects || card.Aspects.length === 0;
+      const matchAspect = selectedAspect === 'All' ||
+        (selectedAspect === 'Neutral' ? isNeutral : (card.Aspects && card.Aspects.includes(selectedAspect)));
       const matchType = selectedType === 'All' || card.Type === selectedType;
       return matchSearch && matchAspect && matchType;
     });
@@ -406,16 +410,35 @@ export default function App() {
     return ['All', ...types].sort();
   }, [cards]);
 
-  // Compute available SETS based on discovered sets
+  // Compute available SETS based on discovered sets - fully dynamic
   const visibleSets = useMemo(() => {
-    // If we have discovered sets, only show those with cards
-    if (availableSets.length > 0) {
-      const filtered = SETS.filter(s => availableSets.includes(s.code));
-      // If filtering resulted in sets, use them; otherwise show all as fallback
-      return filtered.length > 0 ? filtered : SETS;
+    // If no discovery data yet, use fallback SETS constant
+    if (availableSets.length === 0) {
+      return SETS;
     }
-    // If no discovery data yet, show all sets (will be filtered once discovery completes)
-    return SETS;
+
+    // Build set objects dynamically from discovered sets
+    const dynamicSets = availableSets.map(code => {
+      // Try to find metadata in known SETS constant
+      const knownSet = SETS.find(s => s.code === code);
+      return knownSet || { code, name: code }; // Fallback for unknown sets
+    });
+
+    // Separate mainline and special sets
+    const mainlineSets = dynamicSets
+      .filter(s => !isSpecialSet(s.code))
+      .sort((a, b) => {
+        const numA = parseInt(SET_CODE_MAP[a.code] || '99');
+        const numB = parseInt(SET_CODE_MAP[b.code] || '99');
+        return numA - numB;
+      });
+
+    const specialSets = dynamicSets
+      .filter(s => isSpecialSet(s.code))
+      .sort((a, b) => a.code.localeCompare(b.code));
+
+    // Return mainline sets first, then special sets
+    return [...mainlineSets, ...specialSets];
   }, [availableSets]);
 
   // Conditional rendering - MUST be after all hooks

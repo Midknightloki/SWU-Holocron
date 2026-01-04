@@ -1,4 +1,4 @@
-import { Sword, Shield, Crown, Zap, Star, Skull, Info } from 'lucide-react';
+import { Sword, Shield, Crown, Zap, Star, Skull, Circle, Info } from 'lucide-react';
 
 export const API_BASE = 'https://api.swu-db.com';
 
@@ -10,6 +10,7 @@ export const SETS = [
   { code: 'LOF', name: 'Legends of the Force' },
   { code: 'SEC', name: 'Secrets of Power' },
   { code: 'ALT', name: 'A Lawless Time' },
+  { code: 'PROMO', name: 'Promotional Cards' },
 ];
 
 export const ASPECTS = [
@@ -19,6 +20,7 @@ export const ASPECTS = [
   { name: 'Cunning', icon: Zap, color: 'text-yellow-500', bg: 'bg-yellow-500/10', border: 'border-yellow-500/30' },
   { name: 'Heroism', icon: Star, color: 'text-white', bg: 'bg-white/10', border: 'border-white/30' },
   { name: 'Villainy', icon: Skull, color: 'text-zinc-950', bg: 'bg-zinc-200', border: 'border-zinc-400' },
+  { name: 'Neutral', icon: Circle, color: 'text-gray-500', bg: 'bg-gray-500/10', border: 'border-gray-500/30' },
 ];
 
 export const FALLBACK_DATA = [
