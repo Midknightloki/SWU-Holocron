@@ -20,13 +20,13 @@ export const SETS = [
 ];
 
 export const ASPECTS = [
-  { name: 'Aggression', icon: AggressionIcon, hexColor: '#ef4444', color: 'text-red-500', bg: 'bg-red-500/10', border: 'border-red-500/30' },
-  { name: 'Vigilance', icon: VigilanceIcon, hexColor: '#3b82f6', color: 'text-blue-500', bg: 'bg-blue-500/10', border: 'border-blue-500/30' },
-  { name: 'Command', icon: CommandIcon, hexColor: '#22c55e', color: 'text-green-500', bg: 'bg-green-500/10', border: 'border-green-500/30' },
-  { name: 'Cunning', icon: CunningIcon, hexColor: '#eab308', color: 'text-yellow-500', bg: 'bg-yellow-500/10', border: 'border-yellow-500/30' },
-  { name: 'Heroism', icon: HeroismIcon, hexColor: '#ffffff', color: 'text-white', bg: 'bg-white/10', border: 'border-white/30' },
-  { name: 'Villainy', icon: VillainyIcon, hexColor: '#09090b', color: 'text-zinc-950', bg: 'bg-zinc-200', border: 'border-zinc-400' },
-  { name: 'Neutral', icon: NeutralIcon, hexColor: '#7e7e7c', color: 'text-gray-500', bg: 'bg-gray-500/10', border: 'border-gray-500/30' },
+  { name: 'Aggression', icon: AggressionIcon, hexColor: '#ef4444', textColor: '#ffffff', color: 'text-red-500', bg: 'bg-red-500/10', border: 'border-red-500/30' },
+  { name: 'Vigilance', icon: VigilanceIcon, hexColor: '#3b82f6', textColor: '#ffffff', color: 'text-blue-500', bg: 'bg-blue-500/10', border: 'border-blue-500/30' },
+  { name: 'Command', icon: CommandIcon, hexColor: '#22c55e', textColor: '#ffffff', color: 'text-green-500', bg: 'bg-green-500/10', border: 'border-green-500/30' },
+  { name: 'Cunning', icon: CunningIcon, hexColor: '#eab308', textColor: '#000000', color: 'text-yellow-500', bg: 'bg-yellow-500/10', border: 'border-yellow-500/30' },
+  { name: 'Heroism', icon: HeroismIcon, hexColor: '#ffffff', textColor: '#000000', color: 'text-white', bg: 'bg-white/10', border: 'border-white/30' },
+  { name: 'Villainy', icon: VillainyIcon, hexColor: '#09090b', textColor: '#ffffff', color: 'text-zinc-950', bg: 'bg-zinc-200', border: 'border-zinc-400' },
+  { name: 'Neutral', icon: NeutralIcon, hexColor: '#7e7e7c', textColor: '#ffffff', color: 'text-gray-500', bg: 'bg-gray-500/10', border: 'border-gray-500/30' },
 ];
 
 export const FALLBACK_DATA = [

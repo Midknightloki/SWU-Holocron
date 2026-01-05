@@ -315,18 +315,19 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
                     <button
                       key={aspect.name}
                       onClick={() => toggleAspect(aspect.name)}
-                      className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border transition-all ${
+                      className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border-2 transition-all ${
                         isSelected
-                          ? 'bg-gray-800/80 shadow-lg shadow-black/20'
-                          : 'bg-gray-850 hover:bg-gray-800'
+                          ? 'shadow-lg shadow-black/30 scale-105'
+                          : 'opacity-90 hover:opacity-100 hover:scale-102'
                       }`}
                       style={{
-                        color: aspect.hexColor,
-                        borderColor: isSelected ? aspect.hexColor : 'transparent'
+                        backgroundColor: aspect.hexColor,
+                        color: aspect.textColor,
+                        borderColor: isSelected ? aspect.textColor : 'transparent'
                       }}
                     >
                       <Icon className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
-                      <span className="truncate">{aspect.name}</span>
+                      <span className="truncate font-bold">{aspect.name}</span>
                     </button>
                   );
                 })}
