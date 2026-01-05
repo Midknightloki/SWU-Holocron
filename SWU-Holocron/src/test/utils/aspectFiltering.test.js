@@ -17,7 +17,7 @@ describe('Aspect Filtering - Neutral Support', () => {
     it('should have icon for Neutral aspect', () => {
       const neutralAspect = ASPECTS.find(a => a.name === 'Neutral');
       expect(neutralAspect.icon).toBeDefined();
-      expect(typeof neutralAspect.icon).toBe('object'); // Lucide React icon
+      expect(['function', 'object']).toContain(typeof neutralAspect.icon); // SVGR/Lucide components
     });
 
     it('should have color styling for Neutral aspect', () => {
