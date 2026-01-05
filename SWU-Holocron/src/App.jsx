@@ -608,6 +608,7 @@ export default function App() {
                           key={aspect.name}
                           onClick={() => setSelectedAspect(aspect.name)}
                           className={`p-1.5 rounded-full transition-all ${selectedAspect === aspect.name ? `${aspect.bg} ${aspect.color} ring-1 ring-inset ${aspect.border} shadow-[0_0_10px_rgba(0,0,0,0.5)]` : `${aspect.color} opacity-70 hover:opacity-100 hover:bg-gray-800`}`}
+                          style={selectedAspect === aspect.name && aspect.hexColor ? { color: aspect.hexColor } : undefined}
                           title={aspect.name}
                         >
                           <Icon className="w-4 h-4" aria-hidden="true" />
