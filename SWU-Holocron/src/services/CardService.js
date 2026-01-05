@@ -4,9 +4,9 @@ import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
 
 export const CardService = {
   getCollectionId: (set, number, isFoil) => `${set}_${number}_${isFoil ? 'foil' : 'std'}`,
-  
+
   getCardImage: (set, number) => `${API_BASE}/cards/${set}/${number}?format=image`,
-  
+
   getBackImage: (set, number) => `${API_BASE}/cards/${set}/${number}?format=image&face=back`,
 
   // Get list of available sets from Firestore or by checking the API
@@ -36,10 +36,10 @@ export const CardService = {
           'public', 'data',
           'cardDatabase', 'sets'
         );
-        
+
         const snapshot = await getDocs(setsRef);
         const availableSets = [];
-        
+
         for (const docSnap of snapshot.docs) {
           const setCode = docSnap.id;
           // Check if the set has actual data
@@ -60,7 +60,7 @@ export const CardService = {
             console.warn(`Could not read set ${setCode}:`, e.message);
           }
         }
-        
+
         if (availableSets.length > 0) {
           console.log('✓ Available sets from Firestore:', availableSets);
           // Cache the result
@@ -77,9 +77,9 @@ export const CardService = {
 
     // Fallback: Try to detect sets by attempting to fetch from API
     // This is a fallback when Firestore isn't available
-    const knownSets = ['SOR', 'SHD', 'TWI', 'JTL', 'LOF', 'SEC', 'ALT'];
+    const knownSets = ['SOR', 'SHD', 'TWI', 'JTL', 'LOF', 'SEC', 'ALT', 'PROMO'];
     const availableSets = [];
-    
+
     for (const setCode of knownSets) {
       try {
         const response = await CardService.fetchWithTimeout(
@@ -98,7 +98,7 @@ export const CardService = {
         // Set not available, skip
       }
     }
-    
+
     if (availableSets.length > 0) {
       console.log('✓ Available sets from API check:', availableSets);
       // Cache the result
@@ -134,19 +134,19 @@ export const CardService = {
       try {
         // Path: artifacts/{APP_ID}/public/data/cardDatabase/sets/{setCode}/data
         const docRef = doc(
-          db, 
-          'artifacts', APP_ID, 
-          'public', 'data', 
+          db,
+          'artifacts', APP_ID,
+          'public', 'data',
           'cardDatabase', 'sets',
           setCode, 'data'
         );
         const docSnap = await getDoc(docRef);
-        
+
         if (docSnap.exists()) {
           const data = docSnap.data();
           console.log(`✓ Loaded ${data.totalCards} cards from Firestore (${setCode})`);
-          return { 
-            data: data.cards, 
+          return {
+            data: data.cards,
             source: 'Firestore Database',
             version: data.syncVersion,
             lastSync: data.lastSync
@@ -183,14 +183,14 @@ export const CardService = {
     // This should rarely be hit if background sync is working
     console.warn(`⚠ No Firestore data found for ${setCode}, attempting direct API fetch`);
     const targetUrl = `${API_BASE}/cards/${setCode}`;
-    
+
     try {
       const response = await CardService.fetchWithTimeout(targetUrl, {}, 10000);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      
+
       const data = await response.json();
       const cardList = Array.isArray(data) ? data : (data.data || []);
-      
+
       if (cardList.length > 0) {
         console.log(`✓ Fetched ${cardList.length} cards from API (${setCode})`);
         return { data: cardList, source: 'Direct API (Fallback)' };
@@ -198,7 +198,7 @@ export const CardService = {
     } catch (e) {
       console.error(`Direct API fetch failed for ${setCode}:`, e.message);
     }
-    
+
     throw new Error(`Unable to load card data for ${setCode}. Database may need seeding.`);
   }
 };

@@ -416,17 +416,22 @@ export default function App() {
 
   // Compute available SETS based on discovered sets - fully dynamic
   const visibleSets = useMemo(() => {
-    // If no discovery data yet, use fallback SETS constant
+    // If no discovery data yet, use fallback SETS constant (excluding ALT and PROMO initially)
     if (availableSets.length === 0) {
-      return SETS;
+      return SETS.filter(s => s.code !== 'ALT' && s.code !== 'PROMO');
     }
 
-    // Build set objects dynamically from discovered sets
-    const dynamicSets = availableSets.map(code => {
-      // Try to find metadata in known SETS constant
-      const knownSet = SETS.find(s => s.code === code);
-      return knownSet || { code, name: code }; // Fallback for unknown sets
-    });
+    // Build set objects dynamically from discovered sets (only if they have cards)
+    const dynamicSets = availableSets
+      .filter(code => {
+        // Always include discovered sets that have cards
+        return true;
+      })
+      .map(code => {
+        // Try to find metadata in known SETS constant
+        const knownSet = SETS.find(s => s.code === code);
+        return knownSet || { code, name: code }; // Fallback for unknown sets
+      });
 
     // Separate mainline and special sets
     const mainlineSets = dynamicSets
