@@ -308,19 +308,28 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
                 Aspects
               </label>
               <div className="grid grid-cols-2 gap-2">
-                {ASPECTS.map(aspect => (
-                  <button
-                    key={aspect.name}
-                    onClick={() => toggleAspect(aspect.name)}
-                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                      selectedAspects.includes(aspect.name)
-                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
-                        : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white'
-                    }`}
-                  >
-                    {aspect.name}
-                  </button>
-                ))}
+                {ASPECTS.map(aspect => {
+                  const Icon = aspect.icon;
+                  const isSelected = selectedAspects.includes(aspect.name);
+                  return (
+                    <button
+                      key={aspect.name}
+                      onClick={() => toggleAspect(aspect.name)}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border transition-all ${
+                        isSelected
+                          ? 'bg-gray-800/80 shadow-lg shadow-black/20'
+                          : 'bg-gray-850 hover:bg-gray-800'
+                      }`}
+                      style={{
+                        color: aspect.hexColor,
+                        borderColor: isSelected ? aspect.hexColor : 'transparent'
+                      }}
+                    >
+                      <Icon className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+                      <span className="truncate">{aspect.name}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
