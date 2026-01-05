@@ -21,6 +21,10 @@ import PWAUpdatePrompt from './components/PWAUpdatePrompt';
 import InstallPrompt from './components/InstallPrompt';
 import CardSubmissionForm from './components/CardSubmissionForm';
 
+// Version info
+const VERSION = __APP_VERSION__;
+const BUILD_TIME = __BUILD_TIME__;
+
 // Helper to determine collection path
 // @environment:firebase
 const getCollectionRef = (user, legacySyncCode, useLegacyPath) => {
@@ -808,6 +812,12 @@ export default function App() {
       {/* PWA Components */}
       <PWAUpdatePrompt />
       <InstallPrompt />
+
+      {/* Version Footer */}
+      <footer className="text-center py-4 text-xs text-gray-500">
+        <div>v{VERSION}</div>
+        <div className="text-gray-600">{BUILD_TIME}</div>
+      </footer>
     </div>
   );
 }
