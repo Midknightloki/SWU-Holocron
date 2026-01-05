@@ -170,7 +170,7 @@ export async function findExactByOfficialCode(officialCode) {
       : officialCode;
 
     // Search all sets for cards with matching official code
-    const setsRef = collection(db, `artifacts/${APP_ID}/public/data/cardDatabase/sets`);
+    const setsRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'cardDatabase', 'sets');
     const setsSnap = await getDocs(setsRef);
 
     for (const setDoc of setsSnap.docs) {
@@ -206,7 +206,7 @@ export async function findExactByOfficialCode(officialCode) {
  */
 export async function findExactBySetNumber(set, number) {
   try {
-    const setRef = collection(db, `artifacts/${APP_ID}/public/data/cardDatabase/sets/${set}/data`);
+    const setRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'cardDatabase', 'sets', set, 'data');
     const setSnap = await getDocs(setRef);
 
     if (setSnap.empty) return null;
@@ -244,7 +244,7 @@ export async function findFuzzyByName(cardName, subtitle = '', threshold = 0.8) 
     const matches = [];
 
     // Search all sets
-    const setsRef = collection(db, `artifacts/${APP_ID}/public/data/cardDatabase/sets`);
+    const setsRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'cardDatabase', 'sets');
     const setsSnap = await getDocs(setsRef);
 
     for (const setDoc of setsSnap.docs) {
