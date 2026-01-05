@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Layers, RefreshCw, Loader2, Cloud, LayoutGrid, BarChart3,
-  Search, ChevronUp, ChevronDown, Plus, Minus, Info, AlertCircle, FileText
+  Search, ChevronUp, ChevronDown, Plus, Minus, Info, AlertCircle, FileText,
+  User, Menu, X
 } from 'lucide-react';
 import { SETS, ASPECTS } from './constants';
 import { db, APP_ID } from './firebase';
@@ -69,6 +70,7 @@ export default function App() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isHeaderExpanded, setIsHeaderExpanded] = useState(true);
   const [importing, setImporting] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
   const fileInputRef = useRef(null);
 
@@ -104,6 +106,18 @@ export default function App() {
       setAuthError(e?.message || 'Logout failed.');
     }
   };
+
+  // Close user menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (isUserMenuOpen && !event.target.closest('.user-menu-container')) {
+        setIsUserMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isUserMenuOpen]);
 
   // Mark visit once authentication restores an existing session
   useEffect(() => {
@@ -509,17 +523,70 @@ export default function App() {
             {/* View Toggle */}
             <div className="flex items-center gap-2">
                 {user && (
-                  <div className="flex items-center gap-2 bg-gray-800 px-3 py-1.5 rounded-lg border border-gray-700 text-xs text-gray-200">
-                    <div className="flex flex-col leading-tight">
-                      <span className="font-semibold">{user.displayName || 'Guest user'}</span>
-                      <span className="text-[10px] text-gray-400">{user.email || 'Anonymous session'}</span>
-                    </div>
+                  <div className="relative user-menu-container">
+                    {/* Mobile User Menu Button */}
                     <button
-                      onClick={handleLogout}
-                      className="text-gray-400 hover:text-white text-[11px] font-semibold"
+                      onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                      className="md:hidden flex items-center gap-2 bg-gray-800 px-2 py-2 rounded-lg border border-gray-700 hover:border-gray-600 transition-colors"
+                      title="User menu"
                     >
-                      Log out
+                      <User className="text-gray-400" size={18} />
                     </button>
+                    
+                    {/* Desktop User Info - Always visible on md+ screens */}
+                    <div className="hidden md:flex items-center gap-2 bg-gray-800 px-3 py-1.5 rounded-lg border border-gray-700 text-xs text-gray-200">
+                      <div className="flex flex-col leading-tight">
+                        <span className="font-semibold">{user.displayName || 'Guest user'}</span>
+                        <span className="text-[10px] text-gray-400">{user.email || 'Anonymous session'}</span>
+                      </div>
+                      <button
+                        onClick={handleLogout}
+                        className="text-gray-400 hover:text-white text-[11px] font-semibold"
+                      >
+                        Log out
+                      </button>
+                    </div>
+                    
+                    {/* Mobile User Menu Dropdown */}
+                    {isUserMenuOpen && (
+                      <div className="md:hidden absolute right-0 top-full mt-2 w-64 bg-gray-800 rounded-lg border border-gray-700 shadow-xl z-50 overflow-hidden">
+                        <div className="p-4 border-b border-gray-700">
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex-1">
+                              <div className="font-semibold text-sm text-white mb-1">{user.displayName || 'Guest user'}</div>
+                              <div className="text-xs text-gray-400">{user.email || 'Anonymous session'}</div>
+                            </div>
+                            <button
+                              onClick={() => setIsUserMenuOpen(false)}
+                              className="text-gray-400 hover:text-white p-1"
+                            >
+                              <X size={16} />
+                            </button>
+                          </div>
+                          <div className="flex items-center gap-2 mt-3 text-xs">
+                            {authLoading ? (
+                              <Loader2 size={12} className="animate-spin text-gray-400" />
+                            ) : (
+                              <>
+                                <Cloud size={12} className={user?.isAnonymous ? 'text-yellow-500' : 'text-green-500'} />
+                                <span className="text-gray-300">{user?.isAnonymous ? 'Guest mode' : 'Cloud sync active'}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        <div className="p-2">
+                          <button
+                            onClick={() => {
+                              handleLogout();
+                              setIsUserMenuOpen(false);
+                            }}
+                            className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 rounded-lg transition-colors"
+                          >
+                            Log out
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               <button
