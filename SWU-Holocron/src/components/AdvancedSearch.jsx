@@ -309,7 +309,6 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
               </label>
               <div className="grid grid-cols-2 gap-2">
                 {ASPECTS.map(aspect => {
-                  const Icon = aspect.icon;
                   const isSelected = selectedAspects.includes(aspect.name);
                   return (
                     <button
@@ -326,7 +325,7 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
                         borderColor: isSelected ? aspect.textColor : 'transparent'
                       }}
                     >
-                      <Icon className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+                      <img src={aspect.iconUrl} alt="" className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
                       <span className="truncate font-bold">{aspect.name}</span>
                     </button>
                   );
