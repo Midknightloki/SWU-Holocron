@@ -2,9 +2,9 @@ import AggressionIcon from './assets/aspects/Aggression.svg?react';
 import CommandIcon from './assets/aspects/Command.svg?react';
 import CunningIcon from './assets/aspects/Cunning.svg?react';
 import HeroismIcon from './assets/aspects/Heroism.svg?react';
+import NeutralIcon from './assets/aspects/Neutral.svg?react';
 import VigilanceIcon from './assets/aspects/Vigilence.svg?react';
 import VillainyIcon from './assets/aspects/Villany.svg?react';
-import { Circle } from 'lucide-react';
 
 export const API_BASE = 'https://api.swu-db.com';
 
@@ -26,7 +26,7 @@ export const ASPECTS = [
   { name: 'Cunning', icon: CunningIcon, color: 'text-yellow-500', bg: 'bg-yellow-500/10', border: 'border-yellow-500/30' },
   { name: 'Heroism', icon: HeroismIcon, color: 'text-white', bg: 'bg-white/10', border: 'border-white/30' },
   { name: 'Villainy', icon: VillainyIcon, color: 'text-zinc-950', bg: 'bg-zinc-200', border: 'border-zinc-400' },
-  { name: 'Neutral', icon: Circle, color: 'text-gray-500', bg: 'bg-gray-500/10', border: 'border-gray-500/30' },
+  { name: 'Neutral', icon: NeutralIcon, color: 'text-gray-500', bg: 'bg-gray-500/10', border: 'border-gray-500/30' },
 ];
 
 export const FALLBACK_DATA = [
