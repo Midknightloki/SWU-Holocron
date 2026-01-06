@@ -232,6 +232,45 @@ describe('CardSubmissionForm', () => {
   });
 
   describe('Form Submission', () => {
+    it('should use correct Firestore collection path with 3 segments (not 4)', async () => {
+      const { addDoc, collection } = await import('firebase/firestore');
+      const { APP_ID } = await import('../../firebase');
+
+      addDoc.mockResolvedValue({ id: 'submission-123' });
+      collection.mockReturnValue({});
+
+      const user = userEvent.setup();
+      renderForm();
+
+      const urlInput = screen.getByPlaceholderText(/https:\/\/starwarsunlimited\.com/);
+      await user.type(urlInput, 'https://starwarsunlimited.com/cards?cid=1223885175#information');
+
+      const submitButton = screen.getByRole('button', { name: /Submit/i });
+
+      await waitFor(() => {
+        expect(submitButton).not.toBeDisabled();
+      }, { timeout: 3000 });
+
+      await user.click(submitButton);
+
+      await waitFor(() => {
+        // Verify collection is called with exactly 3 path segments
+        // This prevents the "odd number of segments" Firebase error
+        expect(collection).toHaveBeenCalledWith(
+          expect.anything(), // db
+          'artifacts',
+          APP_ID,
+          'submissions'
+          // NOT 'pending' - that should be a field, not a path segment
+        );
+
+        // Verify addDoc includes status field
+        expect(addDoc).toHaveBeenCalled();
+        const submissionData = addDoc.mock.calls[0][1];
+        expect(submissionData).toHaveProperty('status', 'pending');
+      }, { timeout: 5000 });
+    });
+
     it('should submit form with valid data in Official URL mode', async () => {
       const { addDoc } = await import('firebase/firestore');
       addDoc.mockResolvedValue({ id: 'submission-123' });

@@ -368,9 +368,10 @@ export default function CardSubmissionForm({ onSuccess, onCancel }) {
 
       // 5. Save to Firestore
       setProgress(80);
-      const submissionsRef = collection(db, 'artifacts', APP_ID, 'submissions', 'pending');
+      const submissionsRef = collection(db, 'artifacts', APP_ID, 'submissions');
       const docRef = await addDoc(submissionsRef, {
         ...submission,
+        status: 'pending',
         submittedAt: serverTimestamp()
       });
 

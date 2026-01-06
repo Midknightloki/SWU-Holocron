@@ -1,7 +1,8 @@
 /**
  * Type definitions and utilities for card submissions
  *
- * Schema for Firestore collection: artifacts/{APP_ID}/submissions/pending/{submissionId}
+ * Schema for Firestore collection: artifacts/{APP_ID}/submissions/{submissionId}
+ * Status is stored as a field in the document (pending, approved, rejected, processing)
  */
 
 /**
