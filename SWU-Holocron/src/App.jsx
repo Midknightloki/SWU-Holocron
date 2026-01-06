@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Layers, RefreshCw, Loader2, Cloud, LayoutGrid, BarChart3,
   Search, ChevronUp, ChevronDown, Plus, Minus, Info, AlertCircle, FileText,
-  User, Menu, X
+  User, Menu, X, Shield
 } from 'lucide-react';
 import { SETS, ASPECTS } from './constants';
 import { db, APP_ID } from './firebase';
@@ -21,6 +21,7 @@ import AdvancedSearch from './components/AdvancedSearch';
 import PWAUpdatePrompt from './components/PWAUpdatePrompt';
 import InstallPrompt from './components/InstallPrompt';
 import CardSubmissionForm from './components/CardSubmissionForm';
+import AdminPanel from './components/AdminPanel';
 
 // Version info
 const VERSION = __APP_VERSION__;
@@ -37,7 +38,7 @@ const getCollectionRef = (user, legacySyncCode, useLegacyPath) => {
 };
 
 export default function App() {
-  const { user, loading: authLoading, loginWithGoogle, loginAnonymously, logout, error: authErrorFromContext } = useAuth();
+  const { user, isAdmin, loading: authLoading, loginWithGoogle, loginAnonymously, logout, error: authErrorFromContext } = useAuth();
 
   // Set and Card State
   const [activeSet, setActiveSet] = useState('SOR');
@@ -73,6 +74,13 @@ export default function App() {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
   const fileInputRef = useRef(null);
+
+  // Prevent non-admins from staying on the admin view if status changes
+  useEffect(() => {
+    if (view === 'admin' && !isAdmin) {
+      setView('binder');
+    }
+  }, [view, isAdmin]);
 
   const handleGoogleLogin = async () => {
     setAuthError('');
@@ -545,13 +553,22 @@ export default function App() {
                 >
                   <BarChart3 size={18} />
                 </button>
+                <button
+                  onClick={() => setView('submit')}
+                  className={`p-2 rounded-md transition-colors ${view === 'submit' ? 'bg-gray-700 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+                  title="Submit Missing Card"
+                >
+                  <FileText size={18} />
+                </button>
+                {isAdmin && (
                   <button
-                    onClick={() => setView('submit')}
-                    className={`p-2 rounded-md transition-colors ${view === 'submit' ? 'bg-gray-700 text-white shadow' : 'text-gray-400 hover:text-white'}`}
-                    title="Submit Missing Card"
+                    onClick={() => setView('admin')}
+                    className={`p-2 rounded-md transition-colors ${view === 'admin' ? 'bg-gray-700 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+                    title="Admin"
                   >
-                    <FileText size={18} />
+                    <Shield size={18} />
                   </button>
+                )}
               </div>
               <button
                 onClick={() => loadSetData(true)}
@@ -571,7 +588,7 @@ export default function App() {
                   >
                     <User className="text-gray-400" size={18} />
                   </button>
-                  
+
                   {/* Desktop User Info - Always visible on md+ screens */}
                   <div className="hidden md:flex items-center gap-2 bg-gray-800 px-3 py-1.5 rounded-lg border border-gray-700 text-xs text-gray-200">
                     <div className="flex flex-col leading-tight">
@@ -585,7 +602,7 @@ export default function App() {
                       Log out
                     </button>
                   </div>
-                  
+
                   {/* Mobile User Menu Dropdown */}
                   {isUserMenuOpen && (
                     <div className="md:hidden absolute right-0 top-full mt-2 w-64 bg-gray-800 rounded-lg border border-gray-700 shadow-xl z-50 overflow-hidden">
@@ -759,7 +776,9 @@ export default function App() {
                   }}
                   onCancel={() => setView('binder')}
                 />
-            ) : (
+              ) : view === 'admin' && isAdmin ? (
+                <AdminPanel />
+              ) : (
               <>
                 {reconstructedData && (
                   <div className="bg-yellow-900/20 border border-yellow-600/50 p-4 rounded-xl mb-4 flex items-center gap-3 text-yellow-200 text-sm">
