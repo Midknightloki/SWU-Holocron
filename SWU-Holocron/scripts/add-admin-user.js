@@ -83,8 +83,7 @@ async function addAdminUser(userId, email = null) {
     }
 
     // Create/update user profile in Firestore
-    // Store profile directly on the user document for an even-length doc path
-    const profileRef = db.doc(`artifacts/${APP_ID}/users/${userId}`);
+    const profileRef = db.doc(`artifacts/${APP_ID}/users/${userId}/profile`);
 
     await profileRef.set({
       isAdmin: true,
@@ -110,7 +109,7 @@ async function removeAdminUser(userId) {
   try {
     console.log(`\n🔐 Revoking admin privileges from user: ${userId}`);
 
-    const profileRef = db.doc(`artifacts/${APP_ID}/users/${userId}`);
+    const profileRef = db.doc(`artifacts/${APP_ID}/users/${userId}/profile`);
 
     await profileRef.update({
       isAdmin: false,
@@ -133,16 +132,17 @@ async function listAdminUsers() {
   try {
     console.log('\n📋 Listing all admin users...\n');
 
-    const usersRef = db.collection(`artifacts/${APP_ID}/users`);
-    const snapshot = await usersRef.get();
+    const usersRef = db.collectionGroup('profile');
+    const snapshot = await usersRef.where('isAdmin', '==', true).get();
 
     const admins = [];
 
     for (const doc of snapshot.docs) {
       const profile = doc.data();
+      const userId = doc.ref.parent.parent.id;
       if (profile?.isAdmin) {
         admins.push({
-          uid: doc.id,
+          uid: userId,
           email: profile.email,
           grantedAt: profile.grantedAt?.toDate()
         });
