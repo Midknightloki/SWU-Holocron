@@ -9,6 +9,13 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(process.env.npm_package_version),
     __BUILD_TIME__: JSON.stringify(new Date().toISOString().split('T')[0] + ' ' + new Date().toISOString().split('T')[1].split('.')[0] + ' UTC'),
   },
+  build: {
+    rollupOptions: {
+      external: [
+        /^scripts\//  // Exclude admin scripts from browser bundle
+      ]
+    }
+  },
   plugins: [
     svgr(),
     react(),

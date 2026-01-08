@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Database, RefreshCw, Clock, CheckCircle, XCircle, AlertTriangle, Download, Shield } from 'lucide-react';
 import { db, APP_ID } from '../firebase';
 import { collection, doc, getDoc, getDocs, query, orderBy, limit } from 'firebase/firestore';
-import { seedCardDatabase } from '../../scripts/seedCardDatabase';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function AdminPanel() {
@@ -59,6 +58,10 @@ export default function AdminPanel() {
   };
 
   const handleManualSync = async () => {
+    alert('Card database sync must be run server-side using the admin script:\n\nnode scripts/seedCardDatabase.js\n\nThis requires Firebase Admin SDK credentials.');
+    return;
+
+    /* Disabled - requires server-side execution
     if (!window.confirm('This will fetch all card sets from the API and update Firestore. Continue?')) {
       return;
     }
@@ -85,6 +88,7 @@ export default function AdminPanel() {
     } finally {
       setSyncing(false);
     }
+    */
   };
 
   const formatTimestamp = (timestamp) => {
