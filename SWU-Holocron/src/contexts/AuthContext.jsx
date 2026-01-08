@@ -25,7 +25,7 @@ export const AuthProvider = ({ children }) => {
       if (u && !u.isAnonymous) {
         setAdminLoading(true);
         try {
-          const profileRef = doc(db, 'artifacts', APP_ID, 'users', u.uid, 'profile');
+          const profileRef = doc(db, 'artifacts', APP_ID, 'users', u.uid);
           const profileSnap = await getDoc(profileRef);
 
           if (profileSnap.exists()) {

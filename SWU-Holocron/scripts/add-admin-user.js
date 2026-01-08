@@ -83,7 +83,7 @@ async function addAdminUser(userId, email = null) {
     }
 
     // Create/update user profile in Firestore
-    const profileRef = db.doc(`artifacts/${APP_ID}/users/${userId}/profile`);
+    const profileRef = db.doc(`artifacts/${APP_ID}/users/${userId}`);
 
     await profileRef.set({
       isAdmin: true,
@@ -93,7 +93,7 @@ async function addAdminUser(userId, email = null) {
     }, { merge: true });
 
     console.log('✅ Admin privileges granted successfully!');
-    console.log(`\n📋 Profile created at: artifacts/${APP_ID}/users/${userId}/profile`);
+    console.log(`\n📋 Profile created at: artifacts/${APP_ID}/users/${userId}`);
     console.log('\n🎉 User can now access the admin panel after refreshing the app.');
 
   } catch (error) {
@@ -109,7 +109,7 @@ async function removeAdminUser(userId) {
   try {
     console.log(`\n🔐 Revoking admin privileges from user: ${userId}`);
 
-    const profileRef = db.doc(`artifacts/${APP_ID}/users/${userId}/profile`);
+    const profileRef = db.doc(`artifacts/${APP_ID}/users/${userId}`);
 
     await profileRef.update({
       isAdmin: false,
@@ -132,17 +132,16 @@ async function listAdminUsers() {
   try {
     console.log('\n📋 Listing all admin users...\n');
 
-    const usersRef = db.collectionGroup('profile');
+    const usersRef = db.collection(`artifacts/${APP_ID}/users`);
     const snapshot = await usersRef.where('isAdmin', '==', true).get();
 
     const admins = [];
 
     for (const doc of snapshot.docs) {
       const profile = doc.data();
-      const userId = doc.ref.parent.parent.id;
       if (profile?.isAdmin) {
         admins.push({
-          uid: userId,
+          uid: doc.id,
           email: profile.email,
           grantedAt: profile.grantedAt?.toDate()
         });
