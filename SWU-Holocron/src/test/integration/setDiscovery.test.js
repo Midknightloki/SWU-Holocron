@@ -110,7 +110,7 @@ describe('Set Discovery Integration', () => {
 
   describe('ALL Sets Loading', () => {
     it('should only load available sets when ALL is selected', () => {
-      const allSetCodes = ['SOR', 'SHD', 'TWI', 'JTL', 'LOF', 'SEC', 'ALT'];
+      const allSetCodes = ['SOR', 'SHD', 'TWI', 'JTL', 'LOF', 'SEC', 'LAW'];
       const availableSets = ['SOR', 'SHD', 'TWI', 'JTL', 'LOF', 'SEC'];
 
       // Simulate loading logic

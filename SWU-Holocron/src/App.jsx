@@ -440,7 +440,7 @@ export default function App() {
   const visibleSets = useMemo(() => {
     // If no discovery data yet, use fallback SETS constant (excluding ALT and PROMO initially)
     if (availableSets.length === 0) {
-      return SETS.filter(s => s.code !== 'ALT' && s.code !== 'PROMO');
+      return SETS.filter(s => s.code !== 'LAW' && s.code !== 'PROMO');
     }
 
     // Build set objects dynamically from discovered sets (only if they have cards)

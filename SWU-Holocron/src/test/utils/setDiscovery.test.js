@@ -16,7 +16,7 @@ describe('Dynamic Set Discovery', () => {
     });
 
     it('should include all mainline sets', () => {
-      const mainlineCodes = ['SOR', 'SHD', 'TWI', 'JTL', 'LOF', 'SEC', 'ALT'];
+      const mainlineCodes = ['SOR', 'SHD', 'TWI', 'JTL', 'LOF', 'SEC', 'LAW'];
       mainlineCodes.forEach(code => {
         const set = SETS.find(s => s.code === code);
         expect(set).toBeDefined();

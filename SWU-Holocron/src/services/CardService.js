@@ -77,7 +77,7 @@ export const CardService = {
 
     // Fallback: Try to detect sets by attempting to fetch from API
     // This is a fallback when Firestore isn't available
-    const knownSets = ['SOR', 'SHD', 'TWI', 'JTL', 'LOF', 'SEC', 'ALT', 'PROMO'];
+    const knownSets = ['SOR', 'SHD', 'TWI', 'JTL', 'LOF', 'SEC', 'LAW', 'PROMO'];
     const availableSets = [];
 
     for (const setCode of knownSets) {

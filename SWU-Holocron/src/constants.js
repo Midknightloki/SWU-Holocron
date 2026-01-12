@@ -24,7 +24,7 @@ export const SETS = [
   { code: 'JTL', name: 'Jump to Lightspeed' },
   { code: 'LOF', name: 'Legends of the Force' },
   { code: 'SEC', name: 'Secrets of Power' },
-  { code: 'ALT', name: 'A Lawless Time' },
+  { code: 'LAW', name: 'A Lawless Time' },
   { code: 'PROMO', name: 'Promotional Cards' },
 ];
 

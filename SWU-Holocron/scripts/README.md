@@ -77,6 +77,87 @@ Summary:
 
 ---
 
+### `scrapeOfficialCards.js`
+
+Scrapes card data from the official starwarsunlimited.com website to capture promotional and special cards.
+
+**Usage:**
+```powershell
+# Scrape all cards
+npm run admin:scrape-official
+
+# Scrape promotional cards only
+npm run admin:scrape-promo
+
+# Dry run (preview without saving)
+npm run admin:scrape-dry-run
+
+# Advanced usage
+node scripts/scrapeOfficialCards.js --promo-only --dry-run
+```
+
+**When to use:**
+- After new promotional cards are announced
+- When promo cards are missing from SWU-DB API
+- To verify official site has latest data
+- Special edition cards (convention exclusives, judge promos, gift box cards)
+
+**Requirements:**
+- Firebase Admin SDK credentials (`firebase-admin-key.json`)
+- Network access to starwarsunlimited.com
+- Firestore write permissions
+- **Dependencies**: `playwright`, `jsdom`, `node-fetch`
+
+**Duration:** ~15-30 seconds depending on network
+
+**What it does:**
+1. Fetches HTML from starwarsunlimited.com/cards
+2. Extracts embedded Next.js data (`__NEXT_DATA__`)
+3. Parses card information from all expansions
+4. Maps official card format to internal schema
+5. Filters promotional cards (if `--promo-only`)
+6. Saves to Firestore collection: `cardDatabase/sets/{SET}/official-data`
+7. Preserves original SWU-DB data (saves separately)
+
+**Promotional Set Codes Detected:**
+- `PROMO`, `P25` - General promotional cards
+- `J25`, `J24` - Judge program rewards
+- `C25`, `C24` - Convention exclusives
+- `G25` - Gift box promos
+- `GG` - Gamegenic promos
+- `IBH` - Intro Battle: Hoth
+
+**Output Example:**
+```
+Fetching: https://starwarsunlimited.com/cards
+Found 10 expansions
+  SOR: 258 cards
+  PROMO: 12 cards
+  G25: 6 cards
+  ...
+
+Cards to process: 18
+Promo sets found: PROMO, G25, C24
+
+Saving 18 cards to Firestore...
+  ✓ Saved 12 cards to PROMO
+  ✓ Saved 6 cards to G25
+
+Summary:
+  ✓ Scraped: 1200 cards
+  ✓ Processed: 18 cards
+  ✓ Saved: 18 cards
+  ⏱ Duration: 18.45s
+```
+
+**Integration with Database:**
+- Stores scraped data in separate `official-data` documents
+- Does NOT overwrite SWU-DB data (kept in `data` documents)
+- Allows comparison between API and official sources
+- Future: Merge/dedupe logic to combine best of both
+
+---
+
 ## Setup
 
 ### 1. Install Firebase Admin SDK

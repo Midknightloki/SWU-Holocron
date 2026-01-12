@@ -23,7 +23,7 @@ export const SET_CODE_MAP = {
   'JTL': '04', // Jump to Lightspeed
   'LOF': '05', // Legends of the Force
   'SEC': '06', // Secrets of Power
-  'ALT': '07', // A Lawless Time
+  'LAW': '07', // A Lawless Time
 
   // Special sets
   'INTRO-HOTH': 'I01', // Intro Battle: Hoth
