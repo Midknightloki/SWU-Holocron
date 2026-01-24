@@ -207,21 +207,19 @@ export default function App() {
     // Defer the listener setup to avoid React error #310
     // onSnapshot can fire synchronously if there's cached data, which would call
     // setCollectionData during the render cycle when handleStart triggers this effect
+    let unsubscribe = null;
     const timer = setTimeout(() => {
-      const unsub = onSnapshot(ref, (snap) => {
+      unsubscribe = onSnapshot(ref, (snap) => {
         const data = {};
         snap.forEach(d => data[d.id] = d.data());
         console.log('Collection updated:', Object.keys(data).length, 'items');
         setCollectionData(data);
       }, err => console.error("Collection sync error:", err));
-
-      // Store unsub function so we can call it on cleanup
-      timer._unsub = unsub;
     }, 0);
 
     return () => {
       clearTimeout(timer);
-      if (timer._unsub) timer._unsub();
+      if (unsubscribe) unsubscribe();
     };
   }, [user, legacySyncCode, useLegacyPath]);
 

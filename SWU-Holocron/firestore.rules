@@ -8,6 +8,12 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
+    // Public card database: read-only access to cardDatabase for all authenticated users
+    match /artifacts/{appId}/public/data/cardDatabase/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
     // Temporary legacy read-only access for sync_* collections during migration
     match /artifacts/{appId}/public/data/{syncId}/{document=**} {
       allow read: if request.auth != null && request.time < timestamp.date(2025, 2, 1);

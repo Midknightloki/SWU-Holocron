@@ -30,12 +30,10 @@ export const CardService = {
     // Check Firestore for available sets
     if (db && APP_ID) {
       try {
-        const setsRef = collection(
-          db,
-          'artifacts', APP_ID,
-          'public', 'data',
-          'cardDatabase', 'sets'
-        );
+        // Path: /artifacts/{APP_ID}/public/data/cardDatabase/sets/{setCode}
+        // Using doc() because the parent must be a document, not a collection
+        const cardDbRef = doc(db, 'artifacts', APP_ID, 'public/data/cardDatabase');
+        const setsRef = collection(cardDbRef, 'sets');
 
         const snapshot = await getDocs(setsRef);
         const availableSets = [];
@@ -44,13 +42,8 @@ export const CardService = {
           const setCode = docSnap.id;
           // Check if the set has actual data
           try {
-            const dataDocRef = doc(
-              db,
-              'artifacts', APP_ID,
-              'public', 'data',
-              'cardDatabase', 'sets',
-              setCode, 'data'
-            );
+            const setsCollRef = collection(cardDbRef, 'sets');
+            const dataDocRef = doc(setsCollRef, setCode, 'data');
             const dataSnap = await getDoc(dataDocRef);
             if (dataSnap.exists() && dataSnap.data().totalCards > 0) {
               availableSets.push(setCode);
@@ -133,13 +126,9 @@ export const CardService = {
     if (db) {
       try {
         // Path: artifacts/{APP_ID}/public/data/cardDatabase/sets/{setCode}/data
-        const docRef = doc(
-          db,
-          'artifacts', APP_ID,
-          'public', 'data',
-          'cardDatabase', 'sets',
-          setCode, 'data'
-        );
+        const cardDbRef = doc(db, 'artifacts', APP_ID, 'public/data/cardDatabase');
+        const setsCollRef = collection(cardDbRef, 'sets');
+        const docRef = doc(setsCollRef, setCode, 'data');
         const docSnap = await getDoc(docRef);
 
         if (docSnap.exists()) {
