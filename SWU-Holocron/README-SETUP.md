@@ -127,7 +127,193 @@ npm run test:coverage
 # Open coverage/index.html in browser
 ```
 
-## 🔄 CI/CD Workflow
+## � Deployment Process
+
+### Architecture
+- **Repository**: Gitea (self-hosted Git)
+- **Container Host**: Nidavellir (Docker host at 192.168.1.30)
+- **Deployment Tool**: Watchtower (automatic container updates)
+- **Container**: Docker with Nginx (Alpine-based)
+
+### Deployment Flow
+
+```
+Git Push → Gitea → Watchtower → Container Rebuild → Nginx Serve
+  ↓         ↓         ↓              ↓                ↓
+Local    Self-hosted  Watches for   Pulls new     App available
+Changes   Git Server   image changes image via     at nidavellir
+                                    Watchtower
+```
+
+### Deployment Steps
+
+1. **Make Code Changes**
+   ```powershell
+   # Edit files locally
+   npm run build    # Verify build succeeds
+   npm run test:ci  # Verify tests pass
+   ```
+
+2. **Commit to Git**
+   ```powershell
+   git add .
+   git commit -m "fix: Firebase collection path and timer cleanup errors"
+   ```
+
+3. **Push to Gitea**
+   ```powershell
+   git push origin main
+   # Or push to your feature branch first, then create PR
+   ```
+
+4. **Watchtower Automatic Deployment** ⏱️ (5-10 minutes)
+   - Watchtower polls Gitea for new commits
+   - Detects image needs rebuild (Git SHA changed)
+   - Rebuilds Docker image on Nidavellir
+   - Stops old container, starts new container
+   - Health checks verify new container is healthy
+
+5. **Verify Deployment**
+   - Open browser to: `https://swu.holocronlabs.net`
+   - Hard refresh (`Ctrl+Shift+R`) to clear cache
+   - Check browser console for new logs (should not have old errors)
+
+### Deployment Details
+
+#### Docker Build Process
+The Dockerfile uses multi-stage build:
+1. **Build Stage** (Node.js 20 Alpine)
+   - Installs dependencies
+   - Runs `npm run build` to create `dist/` folder
+2. **Production Stage** (Nginx Alpine)
+   - Copies only the built `dist/` folder
+   - Serves via Nginx with SPA routing support
+   - Includes health check for Watchtower
+
+#### Watchtower Configuration
+- **Host**: Nidavellir (192.168.1.30)
+- **Repository**: `ghcr.io/midknightloki/swu-holocron:latest` (or your registry)
+- **Update Check**: Every 5 minutes
+- **Action**: Pull new image, stop old container, start new container
+
+### Firestore Rules Deployment
+
+**Note**: Firestore rules are separate from the application code and don't need to be redeployed with the app.
+
+To deploy/update Firestore rules:
+1. **Via Firebase Console** (Recommended):
+   - Go to: https://console.firebase.google.com/project/swu-holocron-93a18/firestore
+   - Click **Rules** tab
+   - Click **Edit Rules**
+   - Paste updated content from `firestore.rules`
+   - Click **Publish**
+
+2. **Via Firebase CLI** (When working):
+   ```powershell
+   firebase deploy --only firestore:rules
+   ```
+
+### Verifying Deployment Success
+
+#### Server-side Checks
+1. **Container is running**
+   ```powershell
+   # On Nidavellir host
+   docker ps | grep swu-holocron
+   ```
+
+2. **Nginx is serving** 
+   ```powershell
+   curl https://swu.holocronlabs.net/
+   # Should return HTML index
+   ```
+
+3. **Check logs**
+   ```powershell
+   # On Nidavellir host
+   docker logs <container-id> -f
+   ```
+
+#### Browser-side Checks
+1. **Clear cache completely**
+   - Press `Ctrl+Shift+Delete` to open clear cache dialog
+   - Select "All time" and "Cached images and files"
+   - Click "Clear now"
+
+2. **Hard refresh**
+   - Press `Ctrl+Shift+R` to force refresh
+
+3. **Check browser console** (F12)
+   - Should NOT see:
+     - `Invalid collection reference - 6 segments`
+     - `Cannot create property '_unsub' on number`
+     - `Missing or insufficient permissions`
+   - SHOULD see:
+     - `✓ Available sets from Firestore`
+     - `Setting up collection listener`
+     - `✓ Loaded X cards from Firestore`
+
+4. **Test functionality**
+   - Log in with Google account
+   - Select a set (e.g., SOR)
+   - Verify cards load
+   - Try adding a card to your collection
+   - Refresh page - collection should persist
+
+### Troubleshooting Deployment
+
+#### App still shows old errors after push
+1. **Wait for Watchtower** - Can take 5-10 minutes to detect and rebuild
+2. **Force cache clear**
+   - DevTools → Application → Clear storage → Clear site data
+   - Or open in incognito window
+3. **Check Watchtower logs** (if you have access to Nidavellir)
+   ```powershell
+   docker logs watchtower -f
+   ```
+
+#### New version didn't deploy
+1. **Verify Git push** - Check Gitea web UI for new commits
+2. **Check Watchtower is running** - Ask admin to verify
+3. **Manual trigger** - Ask admin to manually restart container
+4. **Check Docker logs** - Ask admin to check for build errors
+
+#### Firestore errors persist after code deployment
+1. **Firestore rules might not be deployed**
+   - Code fixes are deployed, but rules weren't updated
+   - Go to Firebase Console → Firestore → Rules and deploy manually
+2. **User session issue**
+   - Clear browser cache completely
+   - Log out, clear cookies, log back in
+   - Try incognito window
+
+### Rollback Procedure
+
+If the deployed version has critical issues:
+
+1. **Identify the problem commit**
+   ```powershell
+   git log --oneline | head -10
+   ```
+
+2. **Revert the commit**
+   ```powershell
+   git revert <bad-commit-hash>
+   git push origin main
+   ```
+
+3. **Watchtower will auto-deploy** the reverted version (5-10 min)
+
+### CI/CD Considerations
+
+**Note**: This repository doesn't use GitHub Actions for deployment (that would deploy to Firebase Hosting). Instead:
+- GitHub Actions runs **tests only**
+- Deployment happens via Gitea + Watchtower → Docker on Nidavellir
+- Manual Firebase Console deployment for Firestore rules
+
+---
+
+## �🔄 CI/CD Workflow
 
 ### GitHub Actions Pipeline
 
