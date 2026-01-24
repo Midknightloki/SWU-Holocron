@@ -32,7 +32,8 @@ export const CardService = {
       try {
         // Path: /artifacts/{APP_ID}/public/data/cardDatabase/sets/{setCode}
         // Using doc() because the parent must be a document, not a collection
-        const cardDbRef = doc(db, 'artifacts', APP_ID, 'public/data/cardDatabase');
+        // Path segments: artifacts(1), APP_ID(2), public(3), data(4), cardDatabase(5) - must be 6 for doc()
+        const cardDbRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'cardDatabase');
         const setsRef = collection(cardDbRef, 'sets');
 
         const snapshot = await getDocs(setsRef);
@@ -126,7 +127,7 @@ export const CardService = {
     if (db) {
       try {
         // Path: artifacts/{APP_ID}/public/data/cardDatabase/sets/{setCode}/data
-        const cardDbRef = doc(db, 'artifacts', APP_ID, 'public/data/cardDatabase');
+        const cardDbRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'cardDatabase');
         const setsCollRef = collection(cardDbRef, 'sets');
         const docRef = doc(setsCollRef, setCode, 'data');
         const docSnap = await getDoc(docRef);
