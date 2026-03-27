@@ -12,7 +12,7 @@
  *   Or run in browser with admin auth
  */
 
-import { SETS } from '../src/constants.js';
+import { SETS } from '../src/cardData.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';

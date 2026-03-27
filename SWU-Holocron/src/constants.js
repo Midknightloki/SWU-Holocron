@@ -15,18 +15,8 @@ import NeutralIconUrl from './assets/aspects/Neutral.svg?url';
 import VigilanceIconUrl from './assets/aspects/Vigilence.svg?url';
 import VillainyIconUrl from './assets/aspects/Villany.svg?url';
 
-export const API_BASE = 'https://api.swu-db.com';
-
-export const SETS = [
-  { code: 'SOR', name: 'Spark of Rebellion' },
-  { code: 'SHD', name: 'Shadows of the Galaxy' },
-  { code: 'TWI', name: 'Twilight of the Republic' },
-  { code: 'JTL', name: 'Jump to Lightspeed' },
-  { code: 'LOF', name: 'Legends of the Force' },
-  { code: 'SEC', name: 'Secrets of Power' },
-  { code: 'LAW', name: 'A Lawless Time' },
-  { code: 'PROMO', name: 'Promotional Cards' },
-];
+// Re-export pure data constants (Node-compatible, no SVG deps)
+export { API_BASE, SETS, FALLBACK_DATA } from './cardData.js';
 
 export const ASPECTS = [
   { name: 'Aggression', icon: AggressionIcon, iconUrl: AggressionIconUrl, hexColor: '#ef4444', textColor: '#ffffff', color: 'text-red-500', bg: 'bg-red-500/10', border: 'border-red-500/30' },
@@ -36,10 +26,4 @@ export const ASPECTS = [
   { name: 'Heroism', icon: HeroismIcon, iconUrl: HeroismIconUrl, hexColor: '#ffffff', textColor: '#000000', color: 'text-white', bg: 'bg-white/10', border: 'border-white/30' },
   { name: 'Villainy', icon: VillainyIcon, iconUrl: VillainyIconUrl, hexColor: '#09090b', textColor: '#ffffff', color: 'text-zinc-950', bg: 'bg-zinc-200', border: 'border-zinc-400' },
   { name: 'Neutral', icon: NeutralIcon, iconUrl: NeutralIconUrl, hexColor: '#7e7e7c', textColor: '#ffffff', color: 'text-gray-500', bg: 'bg-gray-500/10', border: 'border-gray-500/30' },
-];
-
-export const FALLBACK_DATA = [
-  { Number: "001", Name: "Director Krennic", Subtitle: "Aspiring to Authority", Type: "Leader", Aspects: ["Villainy", "Vigilance"], Cost: null, Rarity: "Rare" },
-  { Number: "002", Name: "Iden Versio", Subtitle: "Inferno Squad Commander", Type: "Leader", Aspects: ["Villainy", "Vigilance"], Cost: null, Rarity: "Common" },
-  { Number: "003", Name: "Chewbacca", Subtitle: "Walking Carpet", Type: "Unit", Aspects: ["Heroism", "Vigilance"], Cost: 9, Power: 6, HP: 9, Rarity: "Uncommon" },
 ];
