@@ -2,11 +2,12 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Layers, RefreshCw, Loader2, Cloud, LayoutGrid, BarChart3,
   Search, ChevronUp, ChevronDown, Plus, Minus, Info, AlertCircle, FileText,
-  User, Menu, X, Shield
+  User, Menu, X, Shield, Swords
 } from 'lucide-react';
 import { SETS, ASPECTS } from './constants';
 import { db, APP_ID } from './firebase';
 import { CardService } from './services/CardService';
+import { DeckService } from './services/DeckService';
 import { collection, doc, onSnapshot, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 import { parseCSV, generateCSV } from './utils/csvParser';
 import { getCollectionId, reconstructCardsFromCollection, isHorizontalCard } from './utils/collectionHelpers';
@@ -22,6 +23,8 @@ import PWAUpdatePrompt from './components/PWAUpdatePrompt';
 import InstallPrompt from './components/InstallPrompt';
 import CardSubmissionForm from './components/CardSubmissionForm';
 import AdminPanel from './components/AdminPanel';
+import DeckManager from './components/DeckManager';
+import DeckBuilder from './components/DeckBuilder';
 
 // Version info
 const VERSION = __APP_VERSION__;
@@ -72,6 +75,7 @@ export default function App() {
   const [isHeaderExpanded, setIsHeaderExpanded] = useState(true);
   const [importing, setImporting] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [activeDeck, setActiveDeck] = useState(null);
 
   const fileInputRef = useRef(null);
 
@@ -552,6 +556,13 @@ export default function App() {
                   <BarChart3 size={18} />
                 </button>
                 <button
+                  onClick={() => setView('decks')}
+                  className={`p-2 rounded-md transition-colors ${view === 'decks' ? 'bg-gray-700 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+                  title="My Decks"
+                >
+                  <Swords size={18} />
+                </button>
+                <button
                   onClick={() => setView('submit')}
                   className={`p-2 rounded-md transition-colors ${view === 'submit' ? 'bg-gray-700 text-white shadow' : 'text-gray-400 hover:text-white'}`}
                   title="Submit Missing Card"
@@ -766,6 +777,31 @@ export default function App() {
                 onUpdateQuantity={handleGridQuantityChange}
                 onCardClick={setSelectedCard}
               />
+              ) : view === 'decks' ? (
+                <DeckManager
+                  user={user}
+                  collectionData={collectionData}
+                  onOpenDeck={(deck) => {
+                    setActiveDeck(deck);
+                    setView('deckbuilder');
+                  }}
+                  onCreateDeck={() => {
+                    setActiveDeck(null);
+                    setView('deckbuilder');
+                  }}
+                />
+              ) : view === 'deckbuilder' ? (
+                <DeckBuilder
+                  deck={activeDeck}
+                  collectionData={collectionData}
+                  onClose={() => {
+                    setActiveDeck(null);
+                    setView('decks');
+                  }}
+                  onSaved={(savedDeck) => {
+                    setActiveDeck(savedDeck);
+                  }}
+                />
               ) : view === 'submit' ? (
                 <CardSubmissionForm
                   onSuccess={(submissionId) => {

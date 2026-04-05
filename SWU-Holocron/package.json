@@ -19,7 +19,9 @@
     "admin:verify-db": "node scripts/verifyCardDatabase.js",
     "admin:scrape-official": "node scripts/scrapeOfficialCards.js",
     "admin:scrape-promo": "node scripts/scrapeOfficialCards.js --promo-only",
-    "admin:scrape-dry-run": "node scripts/scrapeOfficialCards.js --dry-run"
+    "admin:scrape-dry-run": "node scripts/scrapeOfficialCards.js --dry-run",
+    "admin:merge-sources": "node scripts/mergeCardSources.js",
+    "admin:merge-dry-run": "node scripts/mergeCardSources.js --dry-run"
   },
   "dependencies": {
     "@dataconnect/admin-generated": "file:src/dataconnect-admin-generated",
