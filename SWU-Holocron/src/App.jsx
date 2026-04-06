@@ -76,6 +76,9 @@ export default function App() {
   const [importing, setImporting] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [activeDeck, setActiveDeck] = useState(null);
+  const [sortBy, setSortBy] = useState('number'); // 'number' | 'cost' | 'recent'
+  const [sortDir, setSortDir] = useState('asc');   // 'asc' | 'desc'
+  const [showMyCollection, setShowMyCollection] = useState(false);
 
   const fileInputRef = useRef(null);
 
@@ -175,6 +178,11 @@ export default function App() {
     runMigration();
   }, [user, legacySyncCode, useLegacyPath, migrationState]);
 
+  // Sync showMyCollection with auth state
+  useEffect(() => {
+    setShowMyCollection(!!user);
+  }, [user]);
+
   // Discover Available Sets
   useEffect(() => {
     const discoverSets = async () => {
@@ -247,6 +255,28 @@ export default function App() {
     setReconstructedData(false);
 
     try {
+      // Special case: "All Sets" — combine data from per-set caches
+      if (activeSet === 'ALL') {
+        const allCards = [];
+        for (const setCode of availableSets) {
+          const cacheKey = `swu-cards-${setCode}`;
+          const local = localStorage.getItem(cacheKey);
+          if (local) {
+            try { allCards.push(...JSON.parse(local)); } catch (_) {}
+          }
+        }
+        if (allCards.length > 0) {
+          allCards.sort((a, b) => String(a.Number).localeCompare(String(b.Number), undefined, { numeric: true }));
+          setCards(allCards);
+        } else {
+          // No individual sets cached yet — nudge the user to browse a set first
+          setCards([]);
+          setError('Browse individual sets first to cache card data, then "All Sets" will work offline.');
+        }
+        setLoading(false);
+        return;
+      }
+
       // 1. Try Local Cache
       const cacheKey = `swu-cards-${activeSet}`;
       const local = localStorage.getItem(cacheKey);
@@ -420,17 +450,49 @@ export default function App() {
     if (!Array.isArray(cards)) return [];
     return cards.filter(card => {
       if (!card) return false;
-      // Only show cards from the current set
-      if (card.Set !== activeSet) return false;
+      // Only show cards from the current set (skip if 'ALL' is selected)
+      if (activeSet !== 'ALL' && card.Set !== activeSet) return false;
       const matchSearch = card.Name?.toLowerCase().includes(searchTerm.toLowerCase());
       // Handle Neutral aspect filter for cards with no aspects
       const isNeutral = !card.Aspects || card.Aspects.length === 0;
       const matchAspect = selectedAspect === 'All' ||
         (selectedAspect === 'Neutral' ? isNeutral : (card.Aspects && card.Aspects.includes(selectedAspect)));
       const matchType = selectedType === 'All' || card.Type === selectedType;
+
+      // Filter by collection ownership if showMyCollection is true
+      if (showMyCollection) {
+        const hasStandard = (collectionData[getCollectionId(card.Set, card.Number, false)]?.quantity ?? 0) > 0;
+        const hasFoil = (collectionData[getCollectionId(card.Set, card.Number, true)]?.quantity ?? 0) > 0;
+        if (!hasStandard && !hasFoil) return false;
+      }
+
       return matchSearch && matchAspect && matchType;
     });
-  }, [cards, searchTerm, selectedAspect, selectedType, activeSet]);
+  }, [cards, searchTerm, selectedAspect, selectedType, activeSet, showMyCollection, collectionData]);
+
+  // Sort Logic
+  const sortedCards = useMemo(() => {
+    const dir = sortDir === 'asc' ? 1 : -1;
+    return [...filteredCards].sort((a, b) => {
+      if (sortBy === 'cost') {
+        const aCost = a.Cost ?? Infinity;
+        const bCost = b.Cost ?? Infinity;
+        if (aCost !== bCost) return (aCost - bCost) * dir;
+        // tie-break by card number
+        return String(a.Number).localeCompare(String(b.Number), undefined, { numeric: true });
+      }
+      if (sortBy === 'recent') {
+        const aKey = getCollectionId(a.Set, a.Number, false);
+        const bKey = getCollectionId(b.Set, b.Number, false);
+        const aTime = collectionData[aKey]?.timestamp ?? 0;
+        const bTime = collectionData[bKey]?.timestamp ?? 0;
+        if (aTime !== bTime) return (bTime - aTime) * dir; // higher timestamp = more recent, so invert for asc
+        return String(a.Number).localeCompare(String(b.Number), undefined, { numeric: true });
+      }
+      // default: 'number'
+      return String(a.Number).localeCompare(String(b.Number), undefined, { numeric: true }) * dir;
+    });
+  }, [filteredCards, collectionData, sortBy, sortDir]);
 
   const uniqueTypes = useMemo(() => {
     if (!Array.isArray(cards)) return ['All'];
@@ -668,38 +730,78 @@ export default function App() {
           </div>
 
           {/* Expandable Controls */}
-          <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isHeaderExpanded ? 'max-h-[500px] opacity-100 mt-2' : 'max-h-0 opacity-0'}`}>
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-2">
-              {/* Set Tabs */}
-              <div className="flex bg-gray-800 p-1 rounded-lg overflow-x-auto no-scrollbar max-w-full">
-                {visibleSets.map(set => (
-                  <button
-                    key={set.code}
-                    onClick={() => setActiveSet(set.code)}
-                    className={`px-4 py-2 rounded-md text-sm font-medium transition-all whitespace-nowrap ${activeSet === set.code ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/50'}`}
-                  >
-                    {set.code}
-                  </button>
-                ))}
-              </div>
-            </div>
-
+          <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isHeaderExpanded ? 'max-h-[600px] opacity-100 mt-2' : 'max-h-0 opacity-0'}`}>
             {/* Filters (Only in Binder View) */}
             {view === 'binder' && (
-              <div className="mt-2 flex flex-col md:flex-row gap-4 items-center justify-between pb-2 border-t border-gray-800 pt-4">
-                <div className="flex gap-3 items-center w-full md:w-auto">
-                  <div className="relative flex-1 md:w-64 group">
+              <div className="mt-2 flex flex-col gap-3 pb-2">
+                {/* Row 1: Set selector + Search */}
+                <div className="flex gap-2 items-center">
+                  <select
+                    value={activeSet}
+                    onChange={(e) => setActiveSet(e.target.value)}
+                    className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-yellow-500/50 cursor-pointer shrink-0"
+                  >
+                    <option value="ALL">All Sets</option>
+                    {visibleSets.map(set => (
+                      <option key={set.code} value={set.code}>{set.name || set.code}</option>
+                    ))}
+                  </select>
+                  <div className="relative flex-1 group">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-yellow-500 transition-colors" size={16} />
                     <input
                       type="text"
                       placeholder="Search cards..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full bg-gray-800/50 border border-gray-700 rounded-full pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-yellow-500/50 focus:ring-1 focus:ring-yellow-500/50 transition-all placeholder:text-gray-600"
-                  />
+                      className="w-full bg-gray-800/50 border border-gray-700 rounded-full pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-yellow-500/50 focus:ring-1 focus:ring-yellow-500/50 transition-all placeholder:text-gray-600"
+                    />
+                  </div>
                 </div>
-              </div>
-                <div className="flex items-center gap-3 overflow-x-auto w-full md:w-auto pb-2 md:pb-0 no-scrollbar">
+                {/* Row 2: Sort controls + My Collection toggle */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-1">
+                    <select
+                      value={sortBy}
+                      onChange={(e) => setSortBy(e.target.value)}
+                      className="bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-yellow-500/50 cursor-pointer"
+                    >
+                      <option value="number">Card #</option>
+                      <option value="cost">Cost</option>
+                      <option
+                        value="recent"
+                        disabled={!showMyCollection}
+                        title={!showMyCollection ? 'Switch to My Collection to sort by recently added' : ''}
+                      >
+                        Recently Added
+                      </option>
+                    </select>
+                    <button
+                      onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+                      title={sortDir === 'asc' ? 'Sort ascending' : 'Sort descending'}
+                      className="p-2 bg-gray-800 border border-gray-700 text-gray-300 hover:text-white rounded-lg transition-colors"
+                    >
+                      {sortDir === 'asc' ? '↑' : '↓'}
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const next = !showMyCollection;
+                      setShowMyCollection(next);
+                      // Reset 'recently added' sort when switching away from My Collection
+                      if (!next && sortBy === 'recent') setSortBy('number');
+                    }}
+                    className={`px-3 py-2 rounded-full text-xs font-medium border transition-colors ${
+                      showMyCollection
+                        ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/30'
+                        : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white hover:border-gray-500'
+                    }`}
+                  >
+                    {showMyCollection ? '★ My Collection' : '☆ All Cards'}
+                  </button>
+                </div>
+
+                {/* Row 3: Aspect filter + Type filter */}
+                <div className="flex items-center gap-3 overflow-x-auto w-full md:w-auto pb-1 no-scrollbar">
                   <div className="flex items-center gap-1 bg-gray-800/50 rounded-full p-1 border border-gray-700">
                     <button
                       onClick={() => setSelectedAspect('All')}
@@ -822,11 +924,24 @@ export default function App() {
                 )}
 
                 <div className="mb-4 text-gray-500 text-sm font-medium">
-                  Showing {filteredCards.length} cards from <span className="text-yellow-500">{SETS.find(s => s.code === activeSet)?.name}</span>
+                  Showing {sortedCards.length} cards
+                  {activeSet !== 'ALL' && <> from <span className="text-yellow-500">{visibleSets.find(s => s.code === activeSet)?.name || activeSet}</span></>}
                 </div>
 
+                {showMyCollection && sortedCards.length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-20 text-center">
+                    <p className="text-gray-400 text-sm mb-4">No cards in your collection for this set — try browsing all cards.</p>
+                    <button
+                      onClick={() => setShowMyCollection(false)}
+                      className="px-4 py-2 bg-yellow-500/20 border border-yellow-500/40 text-yellow-400 rounded-full text-sm hover:bg-yellow-500/30 transition-colors"
+                    >
+                      Show All Cards
+                    </button>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6">
-                  {filteredCards.map((card) => {
+                  {sortedCards.map((card) => {
                     const isHoriz = isHorizontalCard(card.Type);
                     const stdKey = getCollectionId(card.Set, card.Number, false);
                     const foilKey = getCollectionId(card.Set, card.Number, true);
@@ -893,7 +1008,7 @@ export default function App() {
                   })}
                 </div>
 
-                {filteredCards.length === 0 && (
+                {sortedCards.length === 0 && (
                   <div className="py-20 text-center text-gray-500">
                     <p className="text-lg">No cards found matching your criteria.</p>
                     <button
