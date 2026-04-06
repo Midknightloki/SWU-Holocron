@@ -2,6 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Prevent horizontal page scroll on narrow viewports */
+html {
+  overflow-x: clip;
+}
+
+/* Hide scrollbar utility — used for set tabs, filter rows, etc.
+   Must override the global ::-webkit-scrollbar rule below */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none !important;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
 /* Custom Scrollbar for dark theme */
 ::-webkit-scrollbar {
   width: 8px;
