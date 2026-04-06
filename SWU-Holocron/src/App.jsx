@@ -734,18 +734,8 @@ export default function App() {
             {/* Filters (Only in Binder View) */}
             {view === 'binder' && (
               <div className="mt-2 flex flex-col gap-3 pb-2">
-                {/* Row 1: Set selector + Search */}
+                {/* Row 1: Search (fills space) + My Collection toggle */}
                 <div className="flex gap-2 items-center">
-                  <select
-                    value={activeSet}
-                    onChange={(e) => setActiveSet(e.target.value)}
-                    className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-yellow-500/50 cursor-pointer shrink-0"
-                  >
-                    <option value="ALL">All Sets</option>
-                    {visibleSets.map(set => (
-                      <option key={set.code} value={set.code}>{set.name || set.code}</option>
-                    ))}
-                  </select>
                   <div className="relative flex-1 group">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-yellow-500 transition-colors" size={16} />
                     <input
@@ -756,41 +746,13 @@ export default function App() {
                       className="w-full bg-gray-800/50 border border-gray-700 rounded-full pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-yellow-500/50 focus:ring-1 focus:ring-yellow-500/50 transition-all placeholder:text-gray-600"
                     />
                   </div>
-                </div>
-                {/* Row 2: Sort controls + My Collection toggle */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  <div className="flex items-center gap-1">
-                    <select
-                      value={sortBy}
-                      onChange={(e) => setSortBy(e.target.value)}
-                      className="bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-yellow-500/50 cursor-pointer"
-                    >
-                      <option value="number">Card #</option>
-                      <option value="cost">Cost</option>
-                      <option
-                        value="recent"
-                        disabled={!showMyCollection}
-                        title={!showMyCollection ? 'Switch to My Collection to sort by recently added' : ''}
-                      >
-                        Recently Added
-                      </option>
-                    </select>
-                    <button
-                      onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
-                      title={sortDir === 'asc' ? 'Sort ascending' : 'Sort descending'}
-                      className="p-2 bg-gray-800 border border-gray-700 text-gray-300 hover:text-white rounded-lg transition-colors"
-                    >
-                      {sortDir === 'asc' ? '↑' : '↓'}
-                    </button>
-                  </div>
                   <button
                     onClick={() => {
                       const next = !showMyCollection;
                       setShowMyCollection(next);
-                      // Reset 'recently added' sort when switching away from My Collection
                       if (!next && sortBy === 'recent') setSortBy('number');
                     }}
-                    className={`px-3 py-2 rounded-full text-xs font-medium border transition-colors ${
+                    className={`shrink-0 px-3 py-2 rounded-full text-xs font-medium border transition-colors ${
                       showMyCollection
                         ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/30'
                         : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white hover:border-gray-500'
@@ -800,8 +762,56 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* Row 3: Aspect filter + Type filter */}
-                <div className="flex items-center gap-3 overflow-x-auto w-full md:w-auto pb-1 no-scrollbar">
+                {/* Row 2: Set · Sort · Direction · Type · Aspect (wraps on small screens) */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Set selector */}
+                  <select
+                    value={activeSet}
+                    onChange={(e) => setActiveSet(e.target.value)}
+                    className="bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-yellow-500/50 cursor-pointer"
+                  >
+                    <option value="ALL">All Sets</option>
+                    {visibleSets.map(set => (
+                      <option key={set.code} value={set.code}>{set.name || set.code}</option>
+                    ))}
+                  </select>
+
+                  {/* Sort option */}
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                    className="bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-yellow-500/50 cursor-pointer"
+                  >
+                    <option value="number">Card #</option>
+                    <option value="cost">Cost</option>
+                    <option
+                      value="recent"
+                      disabled={!showMyCollection}
+                      title={!showMyCollection ? 'Switch to My Collection to sort by recently added' : ''}
+                    >
+                      Recently Added
+                    </option>
+                  </select>
+
+                  {/* Sort direction */}
+                  <button
+                    onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+                    title={sortDir === 'asc' ? 'Sort ascending' : 'Sort descending'}
+                    className="p-2 bg-gray-800 border border-gray-700 text-gray-300 hover:text-white rounded-lg transition-colors"
+                  >
+                    {sortDir === 'asc' ? '↑' : '↓'}
+                  </button>
+
+                  {/* Type filter */}
+                  <select
+                    value={selectedType}
+                    onChange={(e) => setSelectedType(e.target.value)}
+                    className="bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-yellow-500/50 cursor-pointer"
+                  >
+                    {uniqueTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+
+                  {/* Aspect filter */}
                   <div className="flex items-center gap-1 bg-gray-800/50 rounded-full p-1 border border-gray-700">
                     <button
                       onClick={() => setSelectedAspect('All')}
@@ -809,26 +819,17 @@ export default function App() {
                     >
                       All
                     </button>
-                    {ASPECTS.map(aspect => {
-                      return (
-                        <button
-                          key={aspect.name}
-                          onClick={() => setSelectedAspect(aspect.name)}
-                          className={`p-1.5 rounded-full transition-all ${selectedAspect === aspect.name ? `${aspect.bg} ring-1 ring-inset ${aspect.border} shadow-[0_0_10px_rgba(0,0,0,0.5)]` : `opacity-70 hover:opacity-100 hover:bg-gray-800`}`}
-                          title={aspect.name}
-                        >
-                          <img src={aspect.iconUrl} alt="" className="w-4 h-4" aria-hidden="true" />
-                        </button>
-                      );
-                    })}
+                    {ASPECTS.map(aspect => (
+                      <button
+                        key={aspect.name}
+                        onClick={() => setSelectedAspect(aspect.name)}
+                        className={`p-1.5 rounded-full transition-all ${selectedAspect === aspect.name ? `${aspect.bg} ring-1 ring-inset ${aspect.border} shadow-[0_0_10px_rgba(0,0,0,0.5)]` : `opacity-70 hover:opacity-100 hover:bg-gray-800`}`}
+                        title={aspect.name}
+                      >
+                        <img src={aspect.iconUrl} alt="" className="w-4 h-4" aria-hidden="true" />
+                      </button>
+                    ))}
                   </div>
-                  <select
-                    value={selectedType}
-                    onChange={(e) => setSelectedType(e.target.value)}
-                    className="bg-gray-800/50 text-gray-300 text-xs font-medium px-3 py-2 rounded-full border border-gray-700 focus:outline-none focus:border-yellow-500 cursor-pointer"
-                  >
-                    {uniqueTypes.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
                 </div>
               </div>
             )}
