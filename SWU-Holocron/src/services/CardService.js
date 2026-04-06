@@ -1,6 +1,6 @@
 import { API_BASE } from '../constants';
 import { db, APP_ID } from '../firebase';
-import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 export const CardService = {
   getCollectionId: (set, number, isFoil) => `${set}_${number}_${isFoil ? 'foil' : 'std'}`,
@@ -28,36 +28,27 @@ export const CardService = {
     }
 
     // Check Firestore for available sets
+    // Actual path: artifacts/{APP_ID}/public/data/cardDatabase/sets/{setCode}/data
+    // Structure: cardDatabase is a collection(5), sets is a doc(6), setCode is a collection(7), data is a doc(8)
+    // Client SDK cannot list sub-collections, so we probe each known set directly.
     if (db && APP_ID) {
       try {
-        // Path: /artifacts/{APP_ID}/public/data/cardDatabase/sets/{setCode}
-        // Using doc() because the parent must be a document, not a collection
-        // Path segments: artifacts(1), APP_ID(2), public(3), data(4), cardDatabase(5) - must be 6 for doc()
-        const cardDbRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'cardDatabase');
-        const setsRef = collection(cardDbRef, 'sets');
-
-        const snapshot = await getDocs(setsRef);
+        const knownSets = ['SOR', 'SHD', 'TWI', 'JTL', 'LOF', 'SEC', 'LAW', 'PROMO'];
         const availableSets = [];
-
-        for (const docSnap of snapshot.docs) {
-          const setCode = docSnap.id;
-          // Check if the set has actual data
+        for (const setCode of knownSets) {
           try {
-            const setsCollRef = collection(cardDbRef, 'sets');
-            const dataDocRef = doc(setsCollRef, setCode, 'data');
+            const dataDocRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'cardDatabase', 'sets', setCode, 'data');
             const dataSnap = await getDoc(dataDocRef);
             if (dataSnap.exists() && dataSnap.data().totalCards > 0) {
               availableSets.push(setCode);
             }
           } catch (e) {
             // Skip sets that can't be read
-            console.warn(`Could not read set ${setCode}:`, e.message);
           }
         }
 
         if (availableSets.length > 0) {
           console.log('✓ Available sets from Firestore:', availableSets);
-          // Cache the result
           localStorage.setItem(cacheKey, JSON.stringify({
             sets: availableSets,
             timestamp: Date.now()
@@ -126,10 +117,9 @@ export const CardService = {
     // @environment:firebase
     if (db) {
       try {
-        // Path: artifacts/{APP_ID}/public/data/cardDatabase/sets/{setCode}/data
-        const cardDbRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'cardDatabase');
-        const setsCollRef = collection(cardDbRef, 'sets');
-        const docRef = doc(setsCollRef, setCode, 'data');
+        // Path: artifacts/{APP_ID}/public/data/cardDatabase/sets/{setCode}/data (8 segments = valid doc ref)
+        // cardDatabase(col) → sets(doc) → {setCode}(col) → data(doc)
+        const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'cardDatabase', 'sets', setCode, 'data');
         const docSnap = await getDoc(docRef);
 
         if (docSnap.exists()) {
