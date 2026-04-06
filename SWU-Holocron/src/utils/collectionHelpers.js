@@ -12,10 +12,13 @@
  * @returns {string} Collection ID (e.g., 'SOR_001_std' or 'SOR_001_foil')
  */
 export const getCollectionId = (set, number, isFoil) => {
-  if (!set || !number) {
+  if (!set || number === undefined || number === null || number === '') {
     throw new Error('Set and number are required');
   }
-  return `${set}_${number}_${isFoil ? 'foil' : 'std'}`;
+  // Normalize to padded string: integer 1 → "001", "001" → "001", 1122 → "1122"
+  // This ensures consistent keys regardless of whether card.Number is an int or string.
+  const normalizedNumber = String(number).padStart(3, '0');
+  return `${set}_${normalizedNumber}_${isFoil ? 'foil' : 'std'}`;
 };
 
 /**

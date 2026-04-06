@@ -731,9 +731,23 @@ export default function App() {
 
           {/* Expandable Controls */}
           <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isHeaderExpanded ? 'max-h-[600px] opacity-100 mt-2' : 'max-h-0 opacity-0'}`}>
-            {/* Filters (Only in Binder View) */}
+            {/* Set selector — visible on all views so dashboard can switch sets */}
+            <div className="mt-2 pb-2">
+              <select
+                value={activeSet}
+                onChange={(e) => setActiveSet(e.target.value)}
+                className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-yellow-500/50 cursor-pointer"
+              >
+                <option value="ALL">All Sets</option>
+                {visibleSets.map(set => (
+                  <option key={set.code} value={set.code}>{set.name || set.code}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Binder-only filters */}
             {view === 'binder' && (
-              <div className="mt-2 flex flex-col gap-3 pb-2">
+              <div className="flex flex-col gap-3 pb-2">
                 {/* Row 1: Search (fills space) + My Collection toggle */}
                 <div className="flex gap-2 items-center">
                   <div className="relative flex-1 group">
@@ -762,20 +776,8 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* Row 2: Set · Sort · Direction · Type · Aspect (wraps on small screens) */}
+                {/* Row 2: Sort · Direction · Type · Aspect (wraps on small screens) */}
                 <div className="flex items-center gap-2 flex-wrap">
-                  {/* Set selector */}
-                  <select
-                    value={activeSet}
-                    onChange={(e) => setActiveSet(e.target.value)}
-                    className="bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-yellow-500/50 cursor-pointer"
-                  >
-                    <option value="ALL">All Sets</option>
-                    {visibleSets.map(set => (
-                      <option key={set.code} value={set.code}>{set.name || set.code}</option>
-                    ))}
-                  </select>
-
                   {/* Sort option */}
                   <select
                     value={sortBy}
