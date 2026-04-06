@@ -20,7 +20,7 @@ export default function CardModal({ initialCard, allCards, setCode, user, collec
     if (!allCards || !initialCard) return [];
     return allCards
       .filter(c => c.Name === initialCard.Name && c.Subtitle === initialCard.Subtitle)
-      .sort((a, b) => a.Number.localeCompare(b.Number, undefined, { numeric: true }));
+      .sort((a, b) => String(a.Number).localeCompare(String(b.Number), undefined, { numeric: true }));
   }, [allCards, initialCard]);
 
   useEffect(() => { setCurrentCard(initialCard); setIsFlipped(false); setIsFoil(false); }, [initialCard]);

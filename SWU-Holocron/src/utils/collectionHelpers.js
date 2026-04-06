@@ -72,7 +72,7 @@ export const reconstructCardsFromCollection = (collectionData, setCode) => {
   });
 
   return Array.from(cardMap.values()).sort((a, b) => 
-    a.Number.localeCompare(b.Number, undefined, { numeric: true })
+    String(a.Number).localeCompare(String(b.Number), undefined, { numeric: true })
   );
 };
 

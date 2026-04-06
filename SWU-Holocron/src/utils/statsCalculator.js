@@ -65,7 +65,7 @@ export const calculateStats = (cards, collectionData, setCode) => {
 
   // Sort missing cards by number
   missingList.sort((a, b) => 
-    a.Number.localeCompare(b.Number, undefined, { numeric: true })
+    String(a.Number).localeCompare(String(b.Number), undefined, { numeric: true })
   );
 
   const percentComplete = totalUniqueCards > 0 

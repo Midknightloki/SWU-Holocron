@@ -258,7 +258,7 @@ export default function App() {
 
       // 2. Fetch from Service
       const { data, source } = await CardService.fetchSetData(activeSet);
-      data.sort((a, b) => a.Number.localeCompare(b.Number, undefined, { numeric: true }));
+      data.sort((a, b) => String(a.Number).localeCompare(String(b.Number), undefined, { numeric: true }));
       setCards(data);
       setLastSync(source);
       localStorage.setItem(cacheKey, JSON.stringify(data));
