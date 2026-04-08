@@ -52,7 +52,14 @@ export default function App() {
   const [reconstructedData, setReconstructedData] = useState(false);
   const [availableSets, setAvailableSets] = useState(() => {
     const cached = localStorage.getItem('swu-available-sets');
-    return cached ? JSON.parse(cached) : [];
+    if (!cached) return [];
+    try {
+      const parsed = JSON.parse(cached);
+      // CardService writes { sets, timestamp }; handle both formats defensively
+      return Array.isArray(parsed) ? parsed : (parsed?.sets ?? []);
+    } catch (_) {
+      return [];
+    }
   });
 
   // Auth and Collection State
@@ -269,8 +276,8 @@ export default function App() {
               const { data } = await CardService.fetchSetData(setCode);
               allCards.push(...data);
               localStorage.setItem(cacheKey, JSON.stringify(data));
-            } catch (_) {
-              // Skip sets that can't be fetched — partial results are better than none
+            } catch (e) {
+              console.warn(`[All Sets] Could not fetch ${setCode}:`, e);
             }
           }
         }
