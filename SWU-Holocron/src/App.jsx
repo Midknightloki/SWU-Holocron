@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Layers, RefreshCw, Loader2, Cloud, LayoutGrid, BarChart3,
-  Search, ChevronUp, ChevronDown, Plus, Minus, Info, AlertCircle, FileText,
+  Search, Plus, Minus, Info, AlertCircle, FileText,
   User, Menu, X, Shield, Swords
 } from 'lucide-react';
 import { SETS, ASPECTS } from './constants';
@@ -72,7 +72,6 @@ export default function App() {
   const [selectedType, setSelectedType] = useState('All');
   const [selectedCard, setSelectedCard] = useState(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [isHeaderExpanded, setIsHeaderExpanded] = useState(true);
   const [importing, setImporting] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [activeDeck, setActiveDeck] = useState(null);
@@ -563,8 +562,8 @@ export default function App() {
       <header className="sticky top-0 z-40 bg-gray-900/90 backdrop-blur-md border-b border-gray-800 shadow-xl transition-all duration-300">
         <div className="max-w-7xl mx-auto px-4 py-2">
           {/* Top Bar */}
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-4 flex-1">
+          <div className="flex items-center justify-between gap-2 md:gap-4">
+            <div className="flex items-center gap-2 md:gap-4 flex-1 min-w-0">
               <div className="w-8 h-8 bg-yellow-500 rounded-lg flex items-center justify-center shadow-lg shadow-yellow-500/20">
                 <Layers className="text-black" size={20} />
               </div>
@@ -593,7 +592,7 @@ export default function App() {
             </div>
 
             {/* View Toggle */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 md:gap-2">
               <button
                 onClick={() => setIsSearchOpen(true)}
                 className="flex items-center gap-2 px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-all group border border-gray-700 hover:border-blue-500/50"
@@ -719,65 +718,54 @@ export default function App() {
             </div>
           </div>
 
-          {/* Header Controls Toggle (below buttons for better mobile usability) */}
-          <div className="flex justify-end mt-2">
-            <button
-              onClick={() => setIsHeaderExpanded(!isHeaderExpanded)}
-              className="p-2 text-gray-400 hover:text-white bg-gray-800/50 hover:bg-gray-800 rounded-full transition-colors"
-            >
-              {isHeaderExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-            </button>
-          </div>
+          {/* Filter Controls */}
+          <div className="mt-2">
+            {/* Binder-only Row 1: Search + My Collection toggle */}
+            {view === 'binder' && (
+              <div className="flex gap-2 items-center mb-3">
+                <div className="relative flex-1 group">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-yellow-500 transition-colors" size={16} />
+                  <input
+                    type="text"
+                    placeholder="Search cards..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full bg-gray-800/50 border border-gray-700 rounded-full pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-yellow-500/50 focus:ring-1 focus:ring-yellow-500/50 transition-all placeholder:text-gray-600"
+                  />
+                </div>
+                <button
+                  onClick={() => {
+                    const next = !showMyCollection;
+                    setShowMyCollection(next);
+                    if (!next && sortBy === 'recent') setSortBy('number');
+                  }}
+                  className={`shrink-0 px-3 py-2 rounded-full text-xs font-medium border transition-colors ${
+                    showMyCollection
+                      ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/30'
+                      : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white hover:border-gray-500'
+                  }`}
+                >
+                  {showMyCollection ? '★ My Collection' : '☆ All Cards'}
+                </button>
+              </div>
+            )}
 
-          {/* Expandable Controls */}
-          <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isHeaderExpanded ? 'max-h-[600px] opacity-100 mt-2' : 'max-h-0 opacity-0'}`}>
-            {/* Set selector — visible on all views so dashboard can switch sets */}
-            <div className="mt-2 pb-2">
+            {/* Row 2: Set selector (all views) · Sort · Direction · Type · Aspect (binder only) */}
+            <div className="flex items-center gap-2 flex-wrap pb-2">
+              {/* Set selector — always visible so dashboard can switch sets */}
               <select
                 value={activeSet}
                 onChange={(e) => setActiveSet(e.target.value)}
-                className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-yellow-500/50 cursor-pointer"
+                className="bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-yellow-500/50 cursor-pointer"
               >
                 <option value="ALL">All Sets</option>
                 {visibleSets.map(set => (
                   <option key={set.code} value={set.code}>{set.name || set.code}</option>
                 ))}
               </select>
-            </div>
 
-            {/* Binder-only filters */}
-            {view === 'binder' && (
-              <div className="flex flex-col gap-3 pb-2">
-                {/* Row 1: Search (fills space) + My Collection toggle */}
-                <div className="flex gap-2 items-center">
-                  <div className="relative flex-1 group">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-yellow-500 transition-colors" size={16} />
-                    <input
-                      type="text"
-                      placeholder="Search cards..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full bg-gray-800/50 border border-gray-700 rounded-full pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-yellow-500/50 focus:ring-1 focus:ring-yellow-500/50 transition-all placeholder:text-gray-600"
-                    />
-                  </div>
-                  <button
-                    onClick={() => {
-                      const next = !showMyCollection;
-                      setShowMyCollection(next);
-                      if (!next && sortBy === 'recent') setSortBy('number');
-                    }}
-                    className={`shrink-0 px-3 py-2 rounded-full text-xs font-medium border transition-colors ${
-                      showMyCollection
-                        ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/30'
-                        : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white hover:border-gray-500'
-                    }`}
-                  >
-                    {showMyCollection ? '★ My Collection' : '☆ All Cards'}
-                  </button>
-                </div>
-
-                {/* Row 2: Sort · Direction · Type · Aspect (wraps on small screens) */}
-                <div className="flex items-center gap-2 flex-wrap">
+              {view === 'binder' && (
+                <>
                   {/* Sort option */}
                   <select
                     value={sortBy}
@@ -795,11 +783,11 @@ export default function App() {
                     </option>
                   </select>
 
-                  {/* Sort direction */}
+                  {/* Sort direction — text-xs + py-2 to match select heights */}
                   <button
                     onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
                     title={sortDir === 'asc' ? 'Sort ascending' : 'Sort descending'}
-                    className="p-2 bg-gray-800 border border-gray-700 text-gray-300 hover:text-white rounded-lg transition-colors"
+                    className="px-2 py-2 text-xs bg-gray-800 border border-gray-700 text-gray-300 hover:text-white rounded-lg transition-colors"
                   >
                     {sortDir === 'asc' ? '↑' : '↓'}
                   </button>
@@ -832,9 +820,9 @@ export default function App() {
                       </button>
                     ))}
                   </div>
-                </div>
-              </div>
-            )}
+                </>
+              )}
+            </div>
           </div>
         </div>
       </header>
