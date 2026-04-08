@@ -255,7 +255,7 @@ export default function App() {
     setReconstructedData(false);
 
     try {
-      // Special case: "All Sets" — combine data from per-set caches
+      // Special case: "All Sets" — combine data from all available sets
       if (activeSet === 'ALL') {
         const allCards = [];
         for (const setCode of availableSets) {
@@ -263,15 +263,29 @@ export default function App() {
           const local = localStorage.getItem(cacheKey);
           if (local) {
             try { allCards.push(...JSON.parse(local)); } catch (_) {}
+          } else {
+            // Set not cached yet — fetch it now and cache for next time
+            try {
+              const { data } = await CardService.fetchSetData(setCode);
+              allCards.push(...data);
+              localStorage.setItem(cacheKey, JSON.stringify(data));
+            } catch (_) {
+              // Skip sets that can't be fetched — partial results are better than none
+            }
           }
         }
         if (allCards.length > 0) {
-          allCards.sort((a, b) => String(a.Number).localeCompare(String(b.Number), undefined, { numeric: true }));
+          const setOrder = availableSets.reduce((acc, code, i) => { acc[code] = i; return acc; }, {});
+          allCards.sort((a, b) => {
+            const numCmp = String(a.Number).localeCompare(String(b.Number), undefined, { numeric: true });
+            if (numCmp !== 0) return numCmp;
+            // Tie-break by set insertion order so results are deterministic
+            return (setOrder[a.Set] ?? 99) - (setOrder[b.Set] ?? 99);
+          });
           setCards(allCards);
         } else {
-          // No individual sets cached yet — nudge the user to browse a set first
           setCards([]);
-          setError('Browse individual sets first to cache card data, then "All Sets" will work offline.');
+          setError('Unable to load card data. Check your connection and try refreshing.');
         }
         setLoading(false);
         return;
@@ -478,7 +492,9 @@ export default function App() {
         const aCost = a.Cost ?? Infinity;
         const bCost = b.Cost ?? Infinity;
         if (aCost !== bCost) return (aCost - bCost) * dir;
-        // tie-break by card number
+        // tie-break by set, then card number
+        const setCmp = (a.Set || '').localeCompare(b.Set || '');
+        if (setCmp !== 0) return setCmp;
         return String(a.Number).localeCompare(String(b.Number), undefined, { numeric: true });
       }
       if (sortBy === 'recent') {
@@ -487,10 +503,15 @@ export default function App() {
         const aTime = collectionData[aKey]?.timestamp ?? 0;
         const bTime = collectionData[bKey]?.timestamp ?? 0;
         if (aTime !== bTime) return (bTime - aTime) * dir; // higher timestamp = more recent, so invert for asc
+        // tie-break by set, then card number
+        const setCmp = (a.Set || '').localeCompare(b.Set || '');
+        if (setCmp !== 0) return setCmp;
         return String(a.Number).localeCompare(String(b.Number), undefined, { numeric: true });
       }
-      // default: 'number'
-      return String(a.Number).localeCompare(String(b.Number), undefined, { numeric: true }) * dir;
+      // default: 'number' — in All Sets mode, tie-break by set to keep order stable
+      const numCmp = String(a.Number).localeCompare(String(b.Number), undefined, { numeric: true }) * dir;
+      if (numCmp !== 0) return numCmp;
+      return (a.Set || '').localeCompare(b.Set || '');
     });
   }, [filteredCards, collectionData, sortBy, sortDir]);
 
@@ -954,7 +975,7 @@ export default function App() {
 
                     return (
                       <div
-                        key={`${card.Number}-${card.Name}`}
+                        key={`${card.Set}-${card.Number}`}
                         onClick={() => setSelectedCard(card)}
                         className={`group relative bg-gray-800 rounded-xl overflow-hidden cursor-pointer shadow-lg hover:shadow-2xl transition-all hover:-translate-y-2 hover:ring-2 ring-yellow-500/50 ${isHoriz ? 'col-span-2 aspect-[88/63]' : 'col-span-1 aspect-[63/88]'}`}
                       >
