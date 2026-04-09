@@ -7,7 +7,9 @@ import { CardService } from '../services/CardService';
 import { DeckService } from '../services/DeckService';
 import { useAuth } from '../contexts/AuthContext';
 import { getPlaysetQuantity, getCardQuantities } from '../utils/collectionHelpers';
+import { SETS } from '../constants';
 import AdvancedSearch from './AdvancedSearch';
+import CardPickerModal from './CardPickerModal';
 import ShoppingList from './ShoppingList';
 import {
   exportToForcetableJSON,
@@ -36,6 +38,9 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
   const [saveError, setSaveError] = useState('');
   const [loadingCards, setLoadingCards] = useState(false);
 
+  // null | 'Leader' | 'Base' — which picker modal is open
+  const [pickerType, setPickerType] = useState(null);
+
   // Panel state: 'deck' | 'shopping' | 'importexport'
   const [activePanel, setActivePanel] = useState('deck');
   const [importText, setImportText] = useState('');
@@ -47,20 +52,19 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     const loadAllCards = async () => {
       setLoadingCards(true);
       try {
-        const sets = ['SOR', 'TWI', 'SHD', 'UIQ'];
         const cardMap = {};
         const allCardsList = [];
 
-        for (const set of sets) {
+        for (const { code } of SETS) {
           try {
-            const { data } = await CardService.fetchSetData(set);
+            const { data } = await CardService.fetchSetData(code);
             data.forEach(card => {
               const cardId = `${card.Set}_${card.Number}`;
               cardMap[cardId] = card;
               allCardsList.push(card);
             });
           } catch (error) {
-            console.warn(`Failed to load set ${set}:`, error);
+            console.warn(`Failed to load set ${code}:`, error);
           }
         }
 
@@ -143,6 +147,36 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
   }, [getCardOwnership]);
 
   const getDeckCount = useCallback((cardId) => deckCards[cardId] || 0, [deckCards]);
+
+  // Called when a card is selected from CardPickerModal
+  const handlePickerSelect = useCallback((card) => {
+    const cardId = `${card.Set}_${card.Number}`;
+    if (card.Type === 'Leader') {
+      // Remove previous leader from deckCards if any
+      setDeckCards(prev => {
+        const next = { ...prev };
+        if (selectedLeader) delete next[selectedLeader];
+        next[cardId] = 1;
+        return next;
+      });
+      setSelectedLeader(cardId);
+      // Auto-advance: if no base yet, open base picker
+      if (!selectedBase) {
+        setPickerType('Base');
+      } else {
+        setPickerType(null);
+      }
+    } else if (card.Type === 'Base') {
+      setDeckCards(prev => {
+        const next = { ...prev };
+        if (selectedBase) delete next[selectedBase];
+        next[cardId] = 1;
+        return next;
+      });
+      setSelectedBase(cardId);
+      setPickerType(null);
+    }
+  }, [selectedLeader, selectedBase]);
 
   // Handlers
   const handleAddCard = useCallback((card) => {
@@ -309,6 +343,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
   }, [importText]);
 
   return (
+    <>
     <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
       <div className="bg-gray-900 rounded-2xl shadow-2xl w-full max-w-7xl max-h-[90vh] flex flex-col border border-gray-800">
 
@@ -491,18 +526,30 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
                     <div className="flex-1 min-w-0">
                       <p className="text-white font-semibold truncate">{leaderCard.Name}</p>
                       <p className="text-gray-400 text-sm">{leaderCard.Set} - {leaderCard.Number}</p>
-                      <button
-                        onClick={() => handleRemoveCard(selectedLeader)}
-                        className="mt-2 px-3 py-1 bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 transition-colors text-xs font-semibold"
-                      >
-                        Remove
-                      </button>
+                      <div className="flex gap-2 mt-2">
+                        <button
+                          onClick={() => setPickerType('Leader')}
+                          className="px-3 py-1 bg-blue-500/20 text-blue-400 rounded hover:bg-blue-500/30 transition-colors text-xs font-semibold"
+                        >
+                          Change
+                        </button>
+                        <button
+                          onClick={() => handleRemoveCard(selectedLeader)}
+                          className="px-3 py-1 bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 transition-colors text-xs font-semibold"
+                        >
+                          Remove
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ) : (
-                  <div className="h-32 border-2 border-dashed border-gray-600 rounded flex items-center justify-center text-gray-500">
-                    <p>No leader selected</p>
-                  </div>
+                  <button
+                    onClick={() => setPickerType('Leader')}
+                    className="w-full h-32 border-2 border-dashed border-gray-600 hover:border-yellow-500 rounded flex flex-col items-center justify-center gap-2 text-gray-500 hover:text-yellow-400 transition-colors"
+                  >
+                    <Plus size={20} />
+                    <span className="text-sm font-semibold">Select Leader</span>
+                  </button>
                 )}
               </div>
 
@@ -522,18 +569,30 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
                     <div className="flex-1 min-w-0">
                       <p className="text-white font-semibold truncate">{baseCard.Name}</p>
                       <p className="text-gray-400 text-sm">{baseCard.Set} - {baseCard.Number}</p>
-                      <button
-                        onClick={() => handleRemoveCard(selectedBase)}
-                        className="mt-2 px-3 py-1 bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 transition-colors text-xs font-semibold"
-                      >
-                        Remove
-                      </button>
+                      <div className="flex gap-2 mt-2">
+                        <button
+                          onClick={() => setPickerType('Base')}
+                          className="px-3 py-1 bg-blue-500/20 text-blue-400 rounded hover:bg-blue-500/30 transition-colors text-xs font-semibold"
+                        >
+                          Change
+                        </button>
+                        <button
+                          onClick={() => handleRemoveCard(selectedBase)}
+                          className="px-3 py-1 bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 transition-colors text-xs font-semibold"
+                        >
+                          Remove
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ) : (
-                  <div className="h-32 border-2 border-dashed border-gray-600 rounded flex items-center justify-center text-gray-500">
-                    <p>No base selected</p>
-                  </div>
+                  <button
+                    onClick={() => setPickerType('Base')}
+                    className="w-full h-32 border-2 border-dashed border-gray-600 hover:border-yellow-500 rounded flex flex-col items-center justify-center gap-2 text-gray-500 hover:text-yellow-400 transition-colors"
+                  >
+                    <Plus size={20} />
+                    <span className="text-sm font-semibold">Select Base</span>
+                  </button>
                 )}
               </div>
 
@@ -670,5 +729,15 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
         </div>
       </div>
     </div>
+
+    {pickerType && (
+      <CardPickerModal
+        type={pickerType}
+        collectionData={collectionData}
+        onSelect={handlePickerSelect}
+        onClose={() => setPickerType(null)}
+      />
+    )}
+  </>
   );
 }
