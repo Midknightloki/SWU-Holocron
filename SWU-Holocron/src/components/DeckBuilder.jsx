@@ -32,7 +32,6 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
   const [deckCards, setDeckCards] = useState(deck?.cards || {});
   const [allCards, setAllCards] = useState([]);
   const [cardDataMap, setCardDataMap] = useState({}); // cardId -> card object
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [loadingCards, setLoadingCards] = useState(false);
@@ -346,9 +345,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
                 <AdvancedSearch
                   onCardClick={handleAddCard}
                   collectionData={collectionData}
-                  currentSet="SOR"
-                  onClose={() => setIsSearchOpen(false)}
-                  onUpdateQuantity={null}
+                  embedded={true}
                 />
               </div>
             )}

@@ -3,7 +3,7 @@ import { Search, X, Filter, Loader2, Tag, Plus, Minus, ChevronDown } from 'lucid
 import { SETS, ASPECTS } from '../constants';
 import { CardService } from '../services/CardService';
 
-export default function AdvancedSearch({ onCardClick, collectionData, currentSet, onClose, onUpdateQuantity }) {
+export default function AdvancedSearch({ onCardClick, collectionData, currentSet, onClose = () => {}, onUpdateQuantity, embedded = false }) {
   const [searchText, setSearchText] = useState('');
   const [selectedSets, setSelectedSets] = useState([]);
   const [selectedAspects, setSelectedAspects] = useState([]);
@@ -207,37 +207,39 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
     (costMax ? 1 : 0);
 
   return (
-    <div className="fixed inset-0 z-40 bg-gray-950 overflow-y-auto">
-      <div className="min-h-screen">
-        {/* Header */}
-        <div className="sticky top-0 z-10 bg-gray-900/95 backdrop-blur-md border-b border-gray-800">
-          <div className="max-w-7xl mx-auto px-4 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Search className="text-blue-500" size={28} />
-                <div>
-                  <h1 className="text-2xl font-bold text-white">Advanced Search</h1>
-                  <p className="text-sm text-gray-400">Search across all your cards with multiple filters</p>
+    <div className={embedded ? '' : 'fixed inset-0 z-40 bg-gray-950 overflow-y-auto'}>
+      <div className={embedded ? '' : 'min-h-screen'}>
+        {/* Header — hidden when embedded (DeckBuilder provides its own header) */}
+        {!embedded && (
+          <div className="sticky top-0 z-10 bg-gray-900/95 backdrop-blur-md border-b border-gray-800">
+            <div className="max-w-7xl mx-auto px-4 py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Search className="text-blue-500" size={28} />
+                  <div>
+                    <h1 className="text-2xl font-bold text-white">Advanced Search</h1>
+                    <p className="text-sm text-gray-400">Search across all your cards with multiple filters</p>
+                  </div>
+                  {activeFiltersCount > 0 && (
+                    <span className="bg-blue-600 text-white text-sm px-3 py-1 rounded-full font-bold">
+                      {activeFiltersCount} {activeFiltersCount === 1 ? 'filter' : 'filters'}
+                    </span>
+                  )}
                 </div>
-                {activeFiltersCount > 0 && (
-                  <span className="bg-blue-600 text-white text-sm px-3 py-1 rounded-full font-bold">
-                    {activeFiltersCount} {activeFiltersCount === 1 ? 'filter' : 'filters'}
-                  </span>
-                )}
+                <button
+                  onClick={onClose}
+                  className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors border border-gray-700"
+                >
+                  <X size={20} />
+                  <span className="hidden sm:inline">Close</span>
+                </button>
               </div>
-              <button
-                onClick={onClose}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors border border-gray-700"
-              >
-                <X size={20} />
-                <span className="hidden sm:inline">Close</span>
-              </button>
             </div>
           </div>
-        </div>
+        )}
 
-        <div className="max-w-7xl mx-auto px-4 py-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className={embedded ? 'py-2' : 'max-w-7xl mx-auto px-4 py-6'}>
+          <div className={`grid gap-6 ${embedded ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-3'}`}>
             {/* Filters Panel */}
             <div className="space-y-6 lg:col-span-1">
               {/* Text Search - Always Visible */}
@@ -420,7 +422,7 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
               </div>
 
               {/* Results Grid */}
-              <div className="max-h-[600px] overflow-y-auto space-y-2 pr-2">
+              <div className={`${embedded ? '' : 'max-h-[600px] overflow-y-auto'} space-y-2 pr-2`}>
                 {searchResults.length === 0 && !isSearching && activeFiltersCount > 0 && (
                   <div className="text-center py-12 text-gray-500">
                     <Filter size={48} className="mx-auto mb-4 opacity-30" />
@@ -489,30 +491,36 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
                         )}
                       </div>
 
+                      {!embedded && (
                       <div className="flex-shrink-0 flex items-center gap-2">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onUpdateQuantity(card, -1);
-                          }}
-                          disabled={owned === 0}
-                          className="w-8 h-8 bg-red-600/80 hover:bg-red-500 disabled:bg-gray-700 disabled:opacity-30 text-white rounded-full flex items-center justify-center transition-all transform active:scale-95 shadow-md disabled:cursor-not-allowed"
-                        >
-                          <Minus size={14} />
-                        </button>
+                        {onUpdateQuantity && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onUpdateQuantity(card, -1);
+                            }}
+                            disabled={owned === 0}
+                            className="w-8 h-8 bg-red-600/80 hover:bg-red-500 disabled:bg-gray-700 disabled:opacity-30 text-white rounded-full flex items-center justify-center transition-all transform active:scale-95 shadow-md disabled:cursor-not-allowed"
+                          >
+                            <Minus size={14} />
+                          </button>
+                        )}
 
                         <span className="min-w-[2rem] text-center font-bold text-white">{owned}</span>
 
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onUpdateQuantity(card, 1);
-                          }}
-                          className="w-8 h-8 bg-green-600/80 hover:bg-green-500 text-white rounded-full flex items-center justify-center transition-all transform active:scale-95 shadow-md"
-                        >
-                          <Plus size={14} />
-                        </button>
+                        {onUpdateQuantity && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onUpdateQuantity(card, 1);
+                            }}
+                            className="w-8 h-8 bg-green-600/80 hover:bg-green-500 text-white rounded-full flex items-center justify-center transition-all transform active:scale-95 shadow-md"
+                          >
+                            <Plus size={14} />
+                          </button>
+                        )}
                       </div>
+                      )}
                     </button>
                   );
                 })}
