@@ -2,8 +2,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Search, X, Filter, Loader2, Tag, Plus, Minus, ChevronDown } from 'lucide-react';
 import { SETS, ASPECTS } from '../constants';
 import { CardService } from '../services/CardService';
+import { getPlaysetQuantity } from '../utils/collectionHelpers';
 
-export default function AdvancedSearch({ onCardClick, collectionData, currentSet, onClose = () => {}, onUpdateQuantity, embedded = false }) {
+export default function AdvancedSearch({ onCardClick, collectionData, currentSet, onClose = () => {}, onUpdateQuantity, embedded = false, getDeckCount = () => 0 }) {
   const [searchText, setSearchText] = useState('');
   const [selectedSets, setSelectedSets] = useState([]);
   const [selectedAspects, setSelectedAspects] = useState([]);
@@ -442,12 +443,16 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
                 {searchResults.map(card => {
                   const collectionId = CardService.getCollectionId(card.Set, card.Number, card.FrontImage || '', card.BackImage || '');
                   const owned = collectionData?.[collectionId]?.quantity || 0;
+                  const cardId = `${card.Set}_${card.Number}`;
+                  const deckCount = getDeckCount(cardId);
+                  const maxCopies = getPlaysetQuantity(card.Type);
+                  const isAtMax = deckCount >= maxCopies;
 
                   return (
                     <button
                       key={`${card.Set}-${card.Number}`}
                       onClick={() => handleCardClick(card)}
-                      className="w-full flex items-center gap-4 p-3 bg-gray-900 hover:bg-gray-850 border border-gray-700 hover:border-blue-500 rounded-lg transition-all text-left group"
+                      className="w-full flex items-center gap-4 p-3 bg-gray-900 hover:bg-gray-800 border border-gray-700 hover:border-blue-500 rounded-lg transition-all text-left group"
                     >
                       <div className="flex-shrink-0 w-16 h-22 bg-gray-800 rounded overflow-hidden">
                         <img
@@ -491,35 +496,66 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
                         )}
                       </div>
 
+                      {/* Embedded (deck builder): show deck count badge + Add button */}
+                      {embedded && (
+                        <div className="flex-shrink-0 flex items-center gap-2">
+                          {deckCount > 0 && (
+                            <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                              isAtMax
+                                ? 'bg-green-500/20 text-green-400'
+                                : 'bg-yellow-500/20 text-yellow-400'
+                            }`}>
+                              {deckCount}/{maxCopies}
+                            </span>
+                          )}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCardClick(card);
+                            }}
+                            disabled={isAtMax}
+                            title={isAtMax ? `Max ${maxCopies} cop${maxCopies === 1 ? 'y' : 'ies'} already in deck` : 'Add to deck'}
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all active:scale-95 ${
+                              isAtMax
+                                ? 'bg-gray-700 text-gray-500 cursor-not-allowed opacity-40'
+                                : 'bg-yellow-500 hover:bg-yellow-400 text-black'
+                            }`}
+                          >
+                            <Plus size={16} />
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Standalone (collection view): show owned count + optional quantity controls */}
                       {!embedded && (
-                      <div className="flex-shrink-0 flex items-center gap-2">
-                        {onUpdateQuantity && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onUpdateQuantity(card, -1);
-                            }}
-                            disabled={owned === 0}
-                            className="w-8 h-8 bg-red-600/80 hover:bg-red-500 disabled:bg-gray-700 disabled:opacity-30 text-white rounded-full flex items-center justify-center transition-all transform active:scale-95 shadow-md disabled:cursor-not-allowed"
-                          >
-                            <Minus size={14} />
-                          </button>
-                        )}
+                        <div className="flex-shrink-0 flex items-center gap-2">
+                          {onUpdateQuantity && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onUpdateQuantity(card, -1);
+                              }}
+                              disabled={owned === 0}
+                              className="w-8 h-8 bg-red-600/80 hover:bg-red-500 disabled:bg-gray-700 disabled:opacity-30 text-white rounded-full flex items-center justify-center transition-all transform active:scale-95 shadow-md disabled:cursor-not-allowed"
+                            >
+                              <Minus size={14} />
+                            </button>
+                          )}
 
-                        <span className="min-w-[2rem] text-center font-bold text-white">{owned}</span>
+                          <span className="min-w-[2rem] text-center font-bold text-white">{owned}</span>
 
-                        {onUpdateQuantity && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onUpdateQuantity(card, 1);
-                            }}
-                            className="w-8 h-8 bg-green-600/80 hover:bg-green-500 text-white rounded-full flex items-center justify-center transition-all transform active:scale-95 shadow-md"
-                          >
-                            <Plus size={14} />
-                          </button>
-                        )}
-                      </div>
+                          {onUpdateQuantity && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onUpdateQuantity(card, 1);
+                              }}
+                              className="w-8 h-8 bg-green-600/80 hover:bg-green-500 text-white rounded-full flex items-center justify-center transition-all transform active:scale-95 shadow-md"
+                            >
+                              <Plus size={14} />
+                            </button>
+                          )}
+                        </div>
                       )}
                     </button>
                   );

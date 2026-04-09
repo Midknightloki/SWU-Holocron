@@ -142,6 +142,8 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     return 'bg-red-500';
   }, [getCardOwnership]);
 
+  const getDeckCount = useCallback((cardId) => deckCards[cardId] || 0, [deckCards]);
+
   // Handlers
   const handleAddCard = useCallback((card) => {
     const cardId = `${card.Set}_${card.Number}`;
@@ -346,6 +348,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
                   onCardClick={handleAddCard}
                   collectionData={collectionData}
                   embedded={true}
+                  getDeckCount={getDeckCount}
                 />
               </div>
             )}
