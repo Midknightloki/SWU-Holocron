@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   Save, X, Plus, Minus, Search, BarChart3, CheckCircle, AlertCircle,
-  Swords, ChevronDown, Loader2, ShoppingCart, Download, Upload, Copy, ClipboardPaste
+  Swords, ChevronDown, Loader2, ShoppingCart, Download, Upload, Copy, ClipboardPaste,
+  Layers, User, LayoutGrid, Info, Shield
 } from 'lucide-react';
 import { CardService } from '../services/CardService';
 import { DeckService } from '../services/DeckService';
@@ -24,8 +25,12 @@ import {
 export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) {
   const { user } = useAuth();
 
+  // Wizard state
+  const [step, setStep] = useState(deck?.id ? 4 : 0); // 0: Start, 1: Format, 2: Leader, 3: Base, 4: Deck, 5: Analysis
+  const [selectedFormat, setSelectedFormat] = useState(deck?.format || 'Premier');
+
   // Deck state
-  const [deckName, setDeckName] = useState(deck?.name || 'Untitled Deck');
+  const [deckName, setDeckName] = useState(deck?.name || '');
   const [deckDescription, setDeckDescription] = useState(deck?.description || '');
   const [selectedLeader, setSelectedLeader] = useState(deck?.leaderId || null);
   const [selectedBase, setSelectedBase] = useState(deck?.baseId || null);
@@ -47,11 +52,14 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     const loadAllCards = async () => {
       setLoadingCards(true);
       try {
-        const sets = ['SOR', 'TWI', 'SHD', 'UIQ'];
+        const sets = await CardService.getAvailableSets();
+        // If discovery returns nothing, fallback to mainline sets
+        const setsToLoad = sets.length > 0 ? sets : ['SOR', 'SHD', 'TWI', 'UIQ'];
+
         const cardMap = {};
         const allCardsList = [];
 
-        for (const set of sets) {
+        for (const set of setsToLoad) {
           try {
             const { data } = await CardService.fetchSetData(set);
             data.forEach(card => {
@@ -149,24 +157,27 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     const cardId = `${card.Set}_${card.Number}`;
     const currentCount = deckCards[cardId] || 0;
     const maxCopies = getPlaysetQuantity(card.Type);
-    const { total: owned } = getCardOwnership(cardId);
 
     // Cannot exceed max copies
     if (currentCount >= maxCopies) return;
 
     // For leader/base, max 1
     if (card.Type === 'Leader') {
+      setDeckCards(prev => {
+        const next = { ...prev };
+        if (selectedLeader) delete next[selectedLeader];
+        next[cardId] = 1;
+        return next;
+      });
       setSelectedLeader(cardId);
-      setDeckCards(prev => ({
-        ...prev,
-        [cardId]: 1
-      }));
     } else if (card.Type === 'Base') {
+      setDeckCards(prev => {
+        const next = { ...prev };
+        if (selectedBase) delete next[selectedBase];
+        next[cardId] = 1;
+        return next;
+      });
       setSelectedBase(cardId);
-      setDeckCards(prev => ({
-        ...prev,
-        [cardId]: 1
-      }));
     } else {
       // Main deck card
       setDeckCards(prev => ({
@@ -174,24 +185,18 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
         [cardId]: Math.min(currentCount + 1, maxCopies)
       }));
     }
-  }, [deckCards, getCardOwnership]);
+  }, [deckCards, selectedLeader, selectedBase]);
 
   const handleRemoveCard = useCallback((cardId) => {
-    const card = cardDataMap[cardId];
-    if (!card) return;
-
-    if (card.Type === 'Leader') {
-      setSelectedLeader(null);
-    } else if (card.Type === 'Base') {
-      setSelectedBase(null);
-    }
+    if (cardId === selectedLeader) setSelectedLeader(null);
+    if (cardId === selectedBase) setSelectedBase(null);
 
     setDeckCards(prev => {
       const newDeck = { ...prev };
       delete newDeck[cardId];
       return newDeck;
     });
-  }, [cardDataMap]);
+  }, [selectedLeader, selectedBase]);
 
   const handleUpdateCardCount = useCallback((cardId, newCount) => {
     if (newCount <= 0) {
@@ -292,21 +297,39 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     let result;
     if (format === 'forcetable') {
       result = importFromForcetableJSON(importText);
+    } else if (format === 'swucom') {
+      result = importFromSWUComText(importText, allCards);
+    } else if (format === 'melee') {
+      result = importFromMeleeText(importText, allCards);
     } else {
       result = importFromSWUDBText(importText);
     }
+
     if (result.errors && result.errors.length > 0) {
       setImportFeedback({ type: 'error', message: result.errors.join(' ') });
       return;
     }
+
     const imported = result.deck;
     if (imported.leaderId) setSelectedLeader(imported.leaderId);
     if (imported.baseId) setSelectedBase(imported.baseId);
     if (imported.cards) setDeckCards(imported.cards);
     if (imported.name) setDeckName(imported.name);
+    if (imported.format) setSelectedFormat(imported.format);
+
     setImportText('');
     setImportFeedback({ type: 'success', message: 'Deck imported successfully!' });
-  }, [importText]);
+    setStep(4); // Jump to deck building
+  }, [importText, allCards]);
+
+  const steps = [
+    { name: 'Start', icon: <Plus size={18} /> },
+    { name: 'Format', icon: <Layers size={18} /> },
+    { name: 'Leader', icon: <User size={18} /> },
+    { name: 'Base', icon: <LayoutGrid size={18} /> },
+    { name: 'Deck', icon: <Swords size={18} /> },
+    { name: 'Analysis', icon: <BarChart3 size={18} /> }
+  ];
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
@@ -318,16 +341,206 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
             <Swords size={24} className="text-yellow-500" />
             <h2 className="text-xl font-bold text-white">Deck Builder</h2>
           </div>
+
+          {/* Stepper */}
+          <div className="hidden md:flex items-center gap-2">
+            {steps.map((s, idx) => (
+              <React.Fragment key={s.name}>
+                <div
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold transition-all ${
+                    step === idx
+                      ? 'bg-yellow-500 text-black'
+                      : step > idx
+                      ? 'bg-green-500/20 text-green-400'
+                      : 'text-gray-500'
+                  }`}
+                  onClick={() => idx <= step && setStep(idx)}
+                  style={{ cursor: idx <= step ? 'pointer' : 'default' }}
+                >
+                  {step > idx ? <CheckCircle size={14} /> : s.icon}
+                  {s.name}
+                </div>
+                {idx < steps.length - 1 && <div className="w-4 h-px bg-gray-700" />}
+              </React.Fragment>
+            ))}
+          </div>
+
           <button
             onClick={onClose}
             className="p-2 hover:bg-gray-800 rounded-lg transition-colors text-gray-400 hover:text-white"
+            aria-label="Close"
           >
             <X size={20} />
           </button>
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 overflow-hidden flex flex-col lg:flex-row gap-6 p-6">
+        <div className="flex-1 overflow-hidden flex flex-col p-6">
+
+          {loadingCards ? (
+            <div className="flex flex-col items-center justify-center flex-1 gap-4">
+              <Loader2 size={48} className="animate-spin text-yellow-500" />
+              <p className="text-gray-400 animate-pulse">Loading card database...</p>
+            </div>
+          ) : (
+            <>
+              {/* Step 0: Welcome / Import */}
+              {step === 0 && (
+                <div className="flex-1 flex flex-col items-center justify-center max-w-2xl mx-auto w-full text-center space-y-8">
+                  <div>
+                    <h3 className="text-3xl font-bold text-white mb-2">Create New Deck</h3>
+                    <p className="text-gray-400">Choose how you want to start building your Star Wars: Unlimited deck.</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
+                    <button
+                      onClick={() => setStep(1)}
+                      className="flex flex-col items-center gap-4 p-8 bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-yellow-500/50 rounded-2xl transition-all group"
+                    >
+                      <div className="w-16 h-16 bg-yellow-500/10 rounded-full flex items-center justify-center text-yellow-500 group-hover:scale-110 transition-transform">
+                        <Plus size={32} />
+                      </div>
+                      <div>
+                        <span className="block text-xl font-bold text-white">Start from Scratch</span>
+                        <span className="text-sm text-gray-400">Pick format, leader, and base step-by-step</span>
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => setActivePanel('importexport')}
+                      className="flex flex-col items-center gap-4 p-8 bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-blue-500/50 rounded-2xl transition-all group"
+                    >
+                      <div className="w-16 h-16 bg-blue-500/10 rounded-full flex items-center justify-center text-blue-500 group-hover:scale-110 transition-transform">
+                        <Upload size={32} />
+                      </div>
+                      <div>
+                        <span className="block text-xl font-bold text-white">Import Decklist</span>
+                        <span className="text-sm text-gray-400">Paste from SWUDB, Melee, or SWU.com</span>
+                      </div>
+                    </button>
+                  </div>
+
+                  {activePanel === 'importexport' && (
+                    <div className="w-full bg-gray-900 rounded-xl p-6 border border-gray-700 animate-in fade-in slide-in-from-bottom-4">
+                      <h4 className="text-lg font-bold text-white mb-4">Paste Decklist</h4>
+                      {importFeedback && (
+                        <div className={`mb-4 p-3 rounded-lg text-sm flex items-start gap-2 ${
+                          importFeedback.type === 'success' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                        }`}>
+                          {importFeedback.type === 'success' ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
+                          {importFeedback.message}
+                        </div>
+                      )}
+                      <textarea
+                        value={importText}
+                        onChange={(e) => { setImportText(e.target.value); setImportFeedback(null); }}
+                        placeholder="Paste decklist here..."
+                        className="w-full h-48 px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white font-mono text-sm focus:outline-none focus:border-yellow-500 resize-none"
+                      />
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-4">
+                        <button onClick={() => handleImport('swudb')} className="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-lg">SWUDB</button>
+                        <button onClick={() => handleImport('swucom')} className="px-3 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg">SWU.com</button>
+                        <button onClick={() => handleImport('melee')} className="px-3 py-2 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-lg">Melee.gg</button>
+                        <button onClick={() => handleImport('forcetable')} className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg">Forcetable</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Step 1: Format Selection */}
+              {step === 1 && (
+                <div className="flex-1 flex flex-col items-center justify-center max-w-4xl mx-auto w-full text-center space-y-8">
+                  <div>
+                    <h3 className="text-3xl font-bold text-white mb-2">Select Format</h3>
+                    <p className="text-gray-400">Choose the gameplay format for this deck.</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
+                    {[
+                      { id: 'Premier', name: 'Premier', desc: 'Standard 50-card deck, 1 Leader, 1 Base, max 3 copies.' },
+                      { id: 'Twin Suns', name: 'Twin Suns', desc: 'Two Leaders, 1 Base, 50-card deck, singleton (max 1 copy).' },
+                      { id: 'Trilogy', name: 'Trilogy', desc: 'Premier rules, but only using cards from the current block.' }
+                    ].map(f => (
+                      <button
+                        key={f.id}
+                        onClick={() => { setSelectedFormat(f.id); setStep(2); }}
+                        className={`flex flex-col items-start gap-3 p-6 rounded-2xl border-2 transition-all text-left ${
+                          selectedFormat === f.id ? 'bg-yellow-500/10 border-yellow-500' : 'bg-gray-800 border-gray-700 hover:border-gray-600'
+                        }`}
+                      >
+                        <span className={`px-2 py-1 rounded text-[10px] font-black uppercase ${selectedFormat === f.id ? 'bg-yellow-500 text-black' : 'bg-gray-700 text-gray-400'}`}>Format</span>
+                        <span className="text-xl font-bold text-white">{f.name}</span>
+                        <p className="text-sm text-gray-400">{f.desc}</p>
+                      </button>
+                    ))}
+                  </div>
+
+                  <button onClick={() => setStep(0)} className="text-gray-500 hover:text-white transition-colors">Back to Start</button>
+                </div>
+              )}
+
+              {/* Step 2: Leader Selection */}
+              {step === 2 && (
+                <div className="flex-1 flex flex-col min-h-0">
+                  <div className="mb-6 text-center">
+                    <h3 className="text-2xl font-bold text-white">Select Leader</h3>
+                    <p className="text-gray-400">Choose the leader that will lead your deck.</p>
+                  </div>
+
+                  <div className="flex-1 overflow-auto bg-gray-800/50 rounded-2xl border border-gray-700 p-4">
+                    <AdvancedSearch
+                      onCardClick={(card) => {
+                        if (card.Type === 'Leader') {
+                          setSelectedLeader(`${card.Set}_${card.Number}`);
+                          setDeckCards(prev => ({ ...prev, [`${card.Set}_${card.Number}`]: 1 }));
+                          setStep(3);
+                        }
+                      }}
+                      collectionData={collectionData}
+                      embedded={true}
+                      initialFilters={{ types: ['Leader'] }}
+                    />
+                  </div>
+                  <div className="mt-4 flex justify-between">
+                    <button onClick={() => setStep(1)} className="px-6 py-2 text-gray-400 hover:text-white">Back</button>
+                    {selectedLeader && <button onClick={() => setStep(3)} className="px-8 py-2 bg-yellow-500 text-black font-bold rounded-lg">Next: Select Base</button>}
+                  </div>
+                </div>
+              )}
+
+              {/* Step 3: Base Selection */}
+              {step === 3 && (
+                <div className="flex-1 flex flex-col min-h-0">
+                  <div className="mb-6 text-center">
+                    <h3 className="text-2xl font-bold text-white">Select Base</h3>
+                    <p className="text-gray-400">Choose your base of operations.</p>
+                  </div>
+
+                  <div className="flex-1 overflow-auto bg-gray-800/50 rounded-2xl border border-gray-700 p-4">
+                    <AdvancedSearch
+                      onCardClick={(card) => {
+                        if (card.Type === 'Base') {
+                          setSelectedBase(`${card.Set}_${card.Number}`);
+                          setDeckCards(prev => ({ ...prev, [`${card.Set}_${card.Number}`]: 1 }));
+                          setStep(4);
+                        }
+                      }}
+                      collectionData={collectionData}
+                      embedded={true}
+                      initialFilters={{ types: ['Base'] }}
+                    />
+                  </div>
+                  <div className="mt-4 flex justify-between">
+                    <button onClick={() => setStep(2)} className="px-6 py-2 text-gray-400 hover:text-white">Back</button>
+                    {selectedBase && <button onClick={() => setStep(4)} className="px-8 py-2 bg-yellow-500 text-black font-bold rounded-lg">Next: Build Deck</button>}
+                  </div>
+                </div>
+              )}
+
+              {/* Step 4: Deck Construction (Main Builder) */}
+              {step === 4 && (
+                <div className="flex-1 overflow-hidden flex flex-col lg:flex-row gap-6">
 
           {/* Left Panel: Search */}
           <div className="flex-1 min-h-0 flex flex-col bg-gray-800/50 rounded-xl p-4 border border-gray-700">
@@ -349,6 +562,16 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
                   collectionData={collectionData}
                   embedded={true}
                   getDeckCount={getDeckCount}
+                  initialFilters={{
+                    aspects: (() => {
+                      const aspects = new Set();
+                      const leader = cardDataMap[selectedLeader];
+                      const base = cardDataMap[selectedBase];
+                      if (leader?.Aspects) leader.Aspects.forEach(a => aspects.add(a));
+                      if (base?.Aspects) base.Aspects.forEach(a => aspects.add(a));
+                      return Array.from(aspects);
+                    })()
+                  }}
                 />
               </div>
             )}
@@ -624,6 +847,201 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
           </div>
         </div>
 
+            )}
+
+            {/* Step 5: Analysis */}
+            {step === 5 && (
+              <div className="flex-1 overflow-auto">
+                <div className="max-w-5xl mx-auto py-8 space-y-8">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-3xl font-bold text-white">Deck Analysis</h3>
+                    <div className={`px-4 py-1.5 rounded-full font-bold flex items-center gap-2 ${deckStatus.isValid ? 'bg-green-500 text-black' : 'bg-red-500 text-white'}`}>
+                      {deckStatus.isValid ? <CheckCircle size={18} /> : <AlertCircle size={18} />}
+                      {deckStatus.isValid ? 'Format Legal' : 'Illegal Format'}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* Status Overview */}
+                    <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700 space-y-4">
+                      <h4 className="text-sm font-bold uppercase tracking-wider text-gray-400">Deck Status</h4>
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-300">Format</span>
+                          <span className="text-white font-semibold">{selectedFormat}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-300">Main Deck</span>
+                          <span className={`font-semibold ${mainDeckTotal === 50 ? 'text-green-400' : 'text-yellow-400'}`}>{mainDeckTotal} / 50</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-300">Leader</span>
+                          <span className={selectedLeader ? 'text-green-400' : 'text-red-400'}>{selectedLeader ? 'Selected' : 'Missing'}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-300">Base</span>
+                          <span className={selectedBase ? 'text-green-400' : 'text-red-400'}>{selectedBase ? 'Selected' : 'Missing'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Ownership Overview */}
+                    <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700 space-y-4">
+                      <h4 className="text-sm font-bold uppercase tracking-wider text-gray-400">Collection Status</h4>
+                      {(() => {
+                        const totalNeeded = mainDeckTotal + (selectedLeader ? 1 : 0) + (selectedBase ? 1 : 0);
+                        let totalOwned = 0;
+                        mainDeckCards.forEach(({cardId, count}) => {
+                          const { total } = getCardOwnership(cardId);
+                          totalOwned += Math.min(count, total);
+                        });
+                        if (selectedLeader) {
+                          const { total } = getCardOwnership(selectedLeader);
+                          if (total > 0) totalOwned += 1;
+                        }
+                        if (selectedBase) {
+                          const { total } = getCardOwnership(selectedBase);
+                          if (total > 0) totalOwned += 1;
+                        }
+                        const percent = totalNeeded > 0 ? Math.round((totalOwned / totalNeeded) * 100) : 0;
+
+                        return (
+                          <div className="space-y-4">
+                            <div className="flex items-end justify-between">
+                              <span className="text-3xl font-bold text-white">{percent}%</span>
+                              <span className="text-gray-400 text-sm">{totalOwned} / {totalNeeded} cards owned</span>
+                            </div>
+                            <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
+                              <div className="h-full bg-blue-500 transition-all" style={{ width: `${percent}%` }} />
+                            </div>
+                            {percent < 100 && (
+                              <button onClick={() => setActivePanel('shopping')} className="w-full py-2 bg-blue-600/20 text-blue-400 text-sm font-bold rounded-lg border border-blue-500/30 hover:bg-blue-600/30 transition-all">
+                                View Missing Cards
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Mana/Cost Curve Summary */}
+                    <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700 space-y-4">
+                      <h4 className="text-sm font-bold uppercase tracking-wider text-gray-400">Average Cost</h4>
+                      {(() => {
+                        const totalCost = mainDeckCards.reduce((sum, {card, count}) => sum + (card.Cost || 0) * count, 0);
+                        const avg = mainDeckTotal > 0 ? (totalCost / mainDeckTotal).toFixed(2) : '0.00';
+                        return (
+                          <div className="space-y-1">
+                            <div className="text-3xl font-bold text-white">{avg}</div>
+                            <p className="text-xs text-gray-500">Resource cost average (excluding Leader/Base)</p>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Detailed Analysis Reports */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    {/* Cost Curve Graph */}
+                    <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
+                      <h4 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
+                        <BarChart3 className="text-yellow-500" size={20} />
+                        Resource Distribution
+                      </h4>
+                      <div className="flex items-end gap-2 h-48 px-4">
+                        {costCurve.map((count, cost) => (
+                          <div key={cost} className="flex-1 flex flex-col items-center gap-2 group">
+                            <div
+                              className="w-full bg-yellow-500/80 rounded-t-lg transition-all group-hover:bg-yellow-500 relative"
+                              style={{ height: maxCostInCurve > 0 ? `${(count / maxCostInCurve) * 100}%` : '0%' }}
+                            >
+                              {count > 0 && <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-xs font-bold text-white">{count}</span>}
+                            </div>
+                            <span className="text-xs font-bold text-gray-500">{cost === 7 ? '7+' : cost}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Validation & Flags */}
+                    <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
+                      <h4 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
+                        <Shield className="text-blue-500" size={20} />
+                        Deck Validation
+                      </h4>
+                      <div className="space-y-3">
+                        {(() => {
+                          const flags = [];
+                          const leader = cardDataMap[selectedLeader];
+                          const base = cardDataMap[selectedBase];
+                          const deckAspects = new Set();
+                          if (leader?.Aspects) leader.Aspects.forEach(a => deckAspects.add(a));
+                          if (base?.Aspects) base.Aspects.forEach(a => deckAspects.add(a));
+
+                          // Aspect Penalty Check
+                          mainDeckCards.forEach(({card, count}) => {
+                            if (card.Aspects) {
+                              const penalties = card.Aspects.filter(a => !deckAspects.has(a));
+                              if (penalties.length > 0) {
+                                flags.push({
+                                  type: 'warning',
+                                  title: 'Aspect Penalty',
+                                  message: `${card.Name} requires ${penalties.join(', ')} (not provided by Leader/Base).`
+                                });
+                              }
+                            }
+                          });
+
+                          // Synergy/Theme Detection
+                          const traitsCount = {};
+                          mainDeckCards.forEach(({card, count}) => {
+                            if (card.Traits) {
+                              card.Traits.forEach(t => {
+                                traitsCount[t] = (traitsCount[t] || 0) + count;
+                              });
+                            }
+                          });
+
+                          const majorThemes = Object.entries(traitsCount).filter(([t, c]) => c >= 10);
+                          majorThemes.forEach(([trait, count]) => {
+                            flags.push({
+                              type: 'info',
+                              title: `Theme: ${trait}`,
+                              message: `Your deck has a strong ${trait} presence (${count} cards).`
+                            });
+                          });
+
+                          if (mainDeckTotal < 50) flags.push({ type: 'error', title: 'Under Minimum Size', message: `Your deck needs ${50 - mainDeckTotal} more cards.` });
+                          if (mainDeckTotal > 50) flags.push({ type: 'warning', title: 'Over Minimum Size', message: `Your deck is ${mainDeckTotal - 50} cards over the 50-card minimum.` });
+
+                          if (flags.length === 0) return <p className="text-gray-500 italic text-center py-8">No issues detected. Deck looks solid!</p>;
+
+                          return flags.map((f, i) => (
+                            <div key={i} className={`p-4 rounded-xl border flex items-start gap-3 ${
+                              f.type === 'error' ? 'bg-red-500/10 border-red-500/30 text-red-400' :
+                              f.type === 'warning' ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400' :
+                              'bg-blue-500/10 border-blue-500/30 text-blue-400'
+                            }`}>
+                              {f.type === 'error' ? <AlertCircle size={18} className="mt-0.5" /> :
+                               f.type === 'warning' ? <AlertCircle size={18} className="mt-0.5" /> :
+                               <Info size={18} className="mt-0.5" />}
+                              <div>
+                                <div className="font-bold text-sm uppercase tracking-tight">{f.title}</div>
+                                <div className="text-sm opacity-90">{f.message}</div>
+                              </div>
+                            </div>
+                          ));
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+        </div>
+
         {/* Bottom Bar */}
         <div className="border-t border-gray-800 bg-gray-950 px-6 py-4">
           {saveError && (
@@ -634,13 +1052,32 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
           )}
 
           <div className="flex flex-col lg:flex-row gap-4 items-stretch lg:items-center">
-            <input
-              type="text"
-              value={deckName}
-              onChange={(e) => setDeckName(e.target.value)}
-              placeholder="Deck name..."
-              className="flex-1 px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500"
-            />
+            <div className="flex-1 flex gap-2">
+              <input
+                type="text"
+                value={deckName}
+                onChange={(e) => setDeckName(e.target.value)}
+                placeholder="Deck name..."
+                className="flex-1 px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-yellow-500"
+              />
+              {step === 4 && (
+                <button
+                  onClick={() => setStep(5)}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold flex items-center gap-2"
+                >
+                  <BarChart3 size={18} />
+                  Analyze
+                </button>
+              )}
+              {step === 5 && (
+                <button
+                  onClick={() => setStep(4)}
+                  className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg font-semibold"
+                >
+                  Back to Building
+                </button>
+              )}
+            </div>
 
             <div className="flex gap-3">
               <button

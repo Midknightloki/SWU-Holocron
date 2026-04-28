@@ -106,6 +106,129 @@ export const importFromForcetableJSON = (jsonString) => {
 };
 
 /**
+ * Internal helper to resolve card name to ID
+ */
+const resolveCardId = (name, allCards) => {
+  if (!name || !allCards || allCards.length === 0) return null;
+
+  const searchName = name.trim().toLowerCase();
+
+  // Try exact match with Name | Subtitle
+  let found = allCards.find(c => {
+    const fullName = `${c.Name}${c.Subtitle ? ' | ' + c.Subtitle : ''}`.toLowerCase();
+    return fullName === searchName;
+  });
+
+  // Try match with Name only if searchName doesn't have a pipe
+  if (!found && !searchName.includes('|')) {
+    found = allCards.find(c => c.Name.toLowerCase() === searchName);
+  }
+
+  // Try fuzzy match if still not found (e.g. ignoring extra spaces around pipe)
+  if (!found && searchName.includes('|')) {
+    const [namePart, subtitlePart] = searchName.split('|').map(s => s.trim());
+    found = allCards.find(c =>
+      c.Name.toLowerCase() === namePart &&
+      (c.Subtitle || '').toLowerCase() === subtitlePart
+    );
+  }
+
+  return found ? `${found.Set}_${found.Number}` : null;
+};
+
+/**
+ * Import deck from SWU.com format
+ * @param {string} text
+ * @param {Array} allCards
+ * @returns {Object}
+ */
+export const importFromSWUComText = (text, allCards = []) => {
+  const errors = [];
+  let leaderId = '';
+  let baseId = '';
+  const cards = {};
+  const sideboard = {};
+
+  let currentSection = '';
+
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+
+  for (const line of lines) {
+    if (line === 'Leaders') { currentSection = 'leader'; continue; }
+    if (line === 'Base') { currentSection = 'base'; continue; }
+    if (line === 'Deck') { currentSection = 'deck'; continue; }
+    if (line === 'Sideboard') { currentSection = 'sideboard'; continue; }
+
+    const parts = line.split('|').map(p => p.trim());
+    if (parts.length >= 2) {
+      const count = parseInt(parts[0], 10);
+      const name = parts.slice(1).join(' | ');
+      const id = resolveCardId(name, allCards);
+
+      if (id) {
+        if (currentSection === 'leader') leaderId = id;
+        else if (currentSection === 'base') baseId = id;
+        else if (currentSection === 'deck') cards[id] = (cards[id] || 0) + count;
+        else if (currentSection === 'sideboard') sideboard[id] = (sideboard[id] || 0) + count;
+      } else {
+        errors.push(`Could not find card: ${name}`);
+      }
+    }
+  }
+
+  return {
+    deck: { name: '', leaderId, baseId, cards, sideboard, format: 'Premier' },
+    errors
+  };
+};
+
+/**
+ * Import deck from Melee.gg format
+ * @param {string} text
+ * @param {Array} allCards
+ * @returns {Object}
+ */
+export const importFromMeleeText = (text, allCards = []) => {
+  const errors = [];
+  let leaderId = '';
+  let baseId = '';
+  const cards = {};
+  const sideboard = {};
+
+  let currentSection = '';
+
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+
+  for (const line of lines) {
+    if (line === 'MainDeck') { currentSection = 'deck'; continue; }
+    if (line === 'Leader') { currentSection = 'leader'; continue; }
+    if (line === 'Base') { currentSection = 'base'; continue; }
+    if (line === 'Sideboard') { currentSection = 'sideboard'; continue; }
+
+    const match = line.match(/^(\d+)\s+(.+)$/);
+    if (match) {
+      const count = parseInt(match[1], 10);
+      const name = match[2];
+      const id = resolveCardId(name, allCards);
+
+      if (id) {
+        if (currentSection === 'leader') leaderId = id;
+        else if (currentSection === 'base') baseId = id;
+        else if (currentSection === 'deck') cards[id] = (cards[id] || 0) + count;
+        else if (currentSection === 'sideboard') sideboard[id] = (sideboard[id] || 0) + count;
+      } else {
+        errors.push(`Could not find card: ${name}`);
+      }
+    }
+  }
+
+  return {
+    deck: { name: '', leaderId, baseId, cards, sideboard, format: 'Premier' },
+    errors
+  };
+};
+
+/**
  * Export deck to SWU-DB plain text format
  * @param {Object} deck - Internal deck object
  * @param {Object|null} cardDatabase - Optional map of cardId -> { Name } for card names
