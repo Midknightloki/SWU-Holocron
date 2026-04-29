@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   Save, X, Plus, Minus, Search, BarChart3, CheckCircle, AlertCircle,
   Swords, ChevronDown, Loader2, ShoppingCart, Download, Upload, Copy, ClipboardPaste,
-  Layers, User, LayoutGrid, Info, Shield
+  Layers, User, LayoutGrid, Info, Shield, Trash2
 } from 'lucide-react';
 import { CardService } from '../services/CardService';
 import { DeckService } from '../services/DeckService';
@@ -28,6 +28,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
   // Wizard state
   const [step, setStep] = useState(deck?.id ? 4 : 0); // 0: Start, 1: Format, 2: Leader, 3: Base, 4: Deck, 5: Analysis
   const [selectedFormat, setSelectedFormat] = useState(deck?.format || 'Premier');
+  const [mobileTab, setMobileTab] = useState('search'); // 'search' | 'list' (for Step 4 mobile)
 
   // Deck state
   const [deckName, setDeckName] = useState(deck?.name || '');
@@ -40,6 +41,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [loadingCards, setLoadingCards] = useState(false);
+  const [selectedCardForView, setSelectedCardForView] = useState(null);
 
   // Panel state: 'deck' | 'shopping' | 'importexport'
   const [activePanel, setActivePanel] = useState('deck');
@@ -154,6 +156,10 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
 
   // Handlers
   const handleAddCard = useCallback((card) => {
+    if (step === 2 && card.Type !== 'Leader') return;
+    if (step === 3 && card.Type !== 'Base') return;
+    if (step === 4 && (card.Type === 'Leader' || card.Type === 'Base')) return;
+
     const cardId = `${card.Set}_${card.Number}`;
     const currentCount = deckCards[cardId] || 0;
     const maxCopies = getPlaysetQuantity(card.Type);
@@ -212,7 +218,10 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
   }, [cardDataMap, handleRemoveCard]);
 
   const handleSaveDeck = async () => {
-    if (!user || !deckStatus.isValid) return;
+    if (!user || !deckName.trim()) {
+      setSaveError('Please enter a deck name before saving.');
+      return;
+    }
 
     setSaveError('');
     setIsSaving(true);
@@ -328,12 +337,12 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     { name: 'Leader', icon: <User size={18} /> },
     { name: 'Base', icon: <LayoutGrid size={18} /> },
     { name: 'Deck', icon: <Swords size={18} /> },
-    { name: 'Analysis', icon: <BarChart3 size={18} /> }
+    { name: 'Review', icon: <BarChart3 size={18} /> }
   ];
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-      <div className="bg-gray-900 rounded-2xl shadow-2xl w-full max-w-7xl max-h-[90vh] flex flex-col border border-gray-800">
+    <div className="fixed inset-0 z-50 bg-black md:bg-black/80 flex items-center justify-center md:p-4">
+      <div className="bg-gray-900 md:rounded-2xl shadow-2xl w-full h-full md:max-w-7xl md:max-h-[90vh] flex flex-col border-0 md:border md:border-gray-800">
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 bg-gray-950">
@@ -490,7 +499,8 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
 
                   <div className="flex-1 overflow-auto bg-gray-800/50 rounded-2xl border border-gray-700 p-4">
                     <AdvancedSearch
-                      onCardClick={(card) => {
+                      onCardClick={setSelectedCardForView}
+                      onAddClick={(card) => {
                         if (card.Type === 'Leader') {
                           setSelectedLeader(`${card.Set}_${card.Number}`);
                           setDeckCards(prev => ({ ...prev, [`${card.Set}_${card.Number}`]: 1 }));
@@ -519,7 +529,8 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
 
                   <div className="flex-1 overflow-auto bg-gray-800/50 rounded-2xl border border-gray-700 p-4">
                     <AdvancedSearch
-                      onCardClick={(card) => {
+                      onCardClick={setSelectedCardForView}
+                      onAddClick={(card) => {
                         if (card.Type === 'Base') {
                           setSelectedBase(`${card.Set}_${card.Number}`);
                           setDeckCards(prev => ({ ...prev, [`${card.Set}_${card.Number}`]: 1 }));
@@ -540,10 +551,26 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
 
               {/* Step 4: Deck Construction (Main Builder) */}
               {step === 4 && (
-                <div className="flex-1 overflow-hidden flex flex-col lg:flex-row gap-6">
+                <div className="flex-1 overflow-hidden flex flex-col lg:flex-row gap-4 md:gap-6">
+
+                  {/* Mobile Tab Switcher */}
+                  <div className="flex lg:hidden bg-gray-800 p-1 rounded-lg border border-gray-700 mb-2">
+                    <button
+                      onClick={() => setMobileTab('search')}
+                      className={`flex-1 py-2 text-sm font-bold rounded-md transition-colors ${mobileTab === 'search' ? 'bg-yellow-500 text-black' : 'text-gray-400'}`}
+                    >
+                      Add Cards
+                    </button>
+                    <button
+                      onClick={() => setMobileTab('list')}
+                      className={`flex-1 py-2 text-sm font-bold rounded-md transition-colors ${mobileTab === 'list' ? 'bg-yellow-500 text-black' : 'text-gray-400'}`}
+                    >
+                      My Deck ({mainDeckTotal})
+                    </button>
+                  </div>
 
           {/* Left Panel: Search */}
-          <div className="flex-1 min-h-0 flex flex-col bg-gray-800/50 rounded-xl p-4 border border-gray-700">
+          <div className={`flex-1 min-h-0 flex flex-col bg-gray-800/50 md:rounded-xl p-4 border-x-0 md:border border-gray-700 ${mobileTab === 'search' ? 'flex' : 'hidden lg:flex'}`}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-white flex items-center gap-2">
                 <Search size={18} className="text-blue-500" />
@@ -558,19 +585,21 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
             ) : (
               <div className="flex-1 overflow-auto">
                 <AdvancedSearch
-                  onCardClick={handleAddCard}
+                  onCardClick={setSelectedCardForView}
+                  onAddClick={handleAddCard}
                   collectionData={collectionData}
                   embedded={true}
                   getDeckCount={getDeckCount}
                   initialFilters={{
-                    aspects: (() => {
+                    matchAspects: (() => {
                       const aspects = new Set();
                       const leader = cardDataMap[selectedLeader];
                       const base = cardDataMap[selectedBase];
                       if (leader?.Aspects) leader.Aspects.forEach(a => aspects.add(a));
                       if (base?.Aspects) base.Aspects.forEach(a => aspects.add(a));
                       return Array.from(aspects);
-                    })()
+                    })(),
+                    excludeTypes: ['Leader', 'Base']
                   }}
                 />
               </div>
@@ -578,7 +607,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
           </div>
 
           {/* Right Panel: Deck List / Shopping / Import-Export */}
-          <div className="flex-1 min-h-0 flex flex-col bg-gray-800/50 rounded-xl p-4 border border-gray-700 overflow-hidden">
+          <div className={`flex-1 min-h-0 flex flex-col bg-gray-800/50 md:rounded-xl p-4 border-x-0 md:border border-gray-700 overflow-hidden ${mobileTab === 'list' ? 'flex' : 'hidden lg:flex'}`}>
 
             {/* Panel Tabs */}
             <div className="flex items-center gap-1 mb-4 bg-gray-900 rounded-lg p-1 border border-gray-700">
@@ -778,41 +807,55 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
                 </div>
 
                 {mainDeckCards.length === 0 ? (
-                  <p className="text-gray-500 text-sm">No cards added yet</p>
+                  <p className="text-gray-500 text-sm text-center py-8">No cards added yet</p>
                 ) : (
-                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                  <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
                     {mainDeckCards.map(({ cardId, card, count }) => (
-                      <div key={cardId} className="flex items-center gap-3 bg-gray-800 p-3 rounded border border-gray-700 hover:border-gray-600 transition-colors">
-                        <div
-                          className={`w-3 h-3 rounded-full ${getOwnershipColor(cardId, count)}`}
-                          title={`Owned: ${getCardOwnership(cardId).total}`}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-white text-sm font-semibold truncate">{card.Name}</p>
-                          <p className="text-gray-400 text-xs">{cardId}</p>
-                        </div>
-                        <div className="flex items-center gap-2">
+                      <div key={cardId} className="flex flex-col bg-gray-800 rounded-xl border border-gray-700 hover:border-gray-600 transition-all overflow-hidden group">
+                        <div className="flex items-center gap-3 p-3">
+                          <div
+                            className={`shrink-0 w-2 h-10 rounded-full ${getOwnershipColor(cardId, count)}`}
+                            title={`Owned: ${getCardOwnership(cardId).total}`}
+                          />
+                          <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setSelectedCardForView(card)}>
+                            <p className="text-white text-sm font-bold truncate">{card.Name}</p>
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-500 text-[10px] font-mono">{cardId}</span>
+                              {card.Aspects && (
+                                <div className="flex gap-0.5">
+                                  {card.Aspects.map(a => (
+                                    <div key={a} className={`w-1.5 h-1.5 rounded-full ${ASPECTS.find(asp => asp.name === a)?.bg || 'bg-gray-500'}`} />
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center bg-gray-900 rounded-lg p-1 border border-gray-700">
+                            <button
+                              onClick={() => handleUpdateCardCount(cardId, count - 1)}
+                              className="p-1.5 hover:bg-gray-800 rounded transition-colors text-gray-400 hover:text-white"
+                              aria-label="Decrease count"
+                            >
+                              <Minus size={14} />
+                            </button>
+                            <span className="w-8 text-center text-white font-bold text-sm">{count}</span>
+                            <button
+                              onClick={() => handleUpdateCardCount(cardId, count + 1)}
+                              className="p-1.5 hover:bg-gray-800 rounded transition-colors text-gray-400 hover:text-white disabled:opacity-20"
+                              disabled={count >= getPlaysetQuantity(card.Type)}
+                              aria-label="Increase count"
+                            >
+                              <Plus size={14} />
+                            </button>
+                          </div>
                           <button
-                            onClick={() => handleUpdateCardCount(cardId, count - 1)}
-                            className="p-1 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
+                            onClick={() => handleRemoveCard(cardId)}
+                            className="p-2 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white rounded-lg transition-all"
+                            title="Remove all copies"
                           >
-                            <Minus size={14} className="text-gray-300" />
-                          </button>
-                          <span className="w-8 text-center text-white font-semibold">{count}</span>
-                          <button
-                            onClick={() => handleUpdateCardCount(cardId, count + 1)}
-                            className="p-1 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
-                            disabled={count >= getPlaysetQuantity(card.Type)}
-                          >
-                            <Plus size={14} className="text-gray-300" />
+                            <Trash2 size={16} />
                           </button>
                         </div>
-                        <button
-                          onClick={() => handleRemoveCard(cardId)}
-                          className="p-1 bg-red-500/20 hover:bg-red-500/30 rounded transition-colors"
-                        >
-                          <X size={14} className="text-red-400" />
-                        </button>
                       </div>
                     ))}
                   </div>
@@ -1088,9 +1131,9 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
               </button>
               <button
                 onClick={handleSaveDeck}
-                disabled={!deckStatus.isValid || isSaving}
+                disabled={!deckName.trim() || isSaving}
                 className={`flex items-center gap-2 px-6 py-2 rounded-lg font-semibold transition-colors ${
-                  deckStatus.isValid && !isSaving
+                  deckName.trim() && !isSaving
                     ? 'bg-yellow-500 hover:bg-yellow-600 text-black'
                     : 'bg-gray-700 text-gray-400 cursor-not-allowed'
                 }`}
@@ -1100,12 +1143,85 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
                 ) : (
                   <Save size={18} />
                 )}
-                {deckStatus.isValid ? 'Save Deck' : deckStatus.message}
+                {deckStatus.isValid ? 'Save Deck' : 'Save (Illegal)'}
               </button>
             </div>
           </div>
         </div>
       </div>
+      {/* Card Details Quick View Overlay */}
+      {selectedCardForView && (
+        <div className="fixed inset-0 z-[60] bg-black/90 flex items-center justify-center p-4 lg:p-12 animate-in fade-in">
+          <div className="bg-gray-900 rounded-3xl overflow-hidden max-w-4xl w-full flex flex-col lg:flex-row shadow-2xl border border-gray-800 max-h-[90vh]">
+            <div className="lg:w-1/2 bg-black flex items-center justify-center p-6 border-b lg:border-b-0 lg:border-r border-gray-800">
+              <img
+                src={CardService.getCardImage(selectedCardForView.Set, selectedCardForView.Number)}
+                alt={selectedCardForView.Name}
+                className="max-h-[60vh] object-contain shadow-2xl rounded-xl"
+              />
+            </div>
+            <div className="lg:w-1/2 p-8 overflow-auto flex flex-col">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h3 className="text-3xl font-bold text-white mb-1">{selectedCardForView.Name}</h3>
+                  {selectedCardForView.Subtitle && <p className="text-yellow-400 italic">{selectedCardForView.Subtitle}</p>}
+                </div>
+                <button onClick={() => setSelectedCardForView(null)} className="p-2 hover:bg-gray-800 rounded-full text-gray-400 hover:text-white transition-colors">
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div className="flex gap-4 mb-8">
+                <div className="px-4 py-2 bg-gray-800 rounded-xl border border-gray-700">
+                  <span className="block text-[10px] uppercase font-bold text-gray-500 mb-0.5">Type</span>
+                  <span className="text-white font-bold">{selectedCardForView.Type}</span>
+                </div>
+                {selectedCardForView.Cost !== undefined && (
+                  <div className="px-4 py-2 bg-gray-800 rounded-xl border border-gray-700">
+                    <span className="block text-[10px] uppercase font-bold text-gray-500 mb-0.5">Cost</span>
+                    <span className="text-white font-extrabold text-lg">{selectedCardForView.Cost}</span>
+                  </div>
+                )}
+                {selectedCardForView.Aspects && (
+                  <div className="flex gap-1 items-center">
+                    {selectedCardForView.Aspects.map(a => (
+                      <div key={a} className="w-8 h-8 rounded-full border border-gray-700 flex items-center justify-center bg-gray-800 shadow-lg" title={a}>
+                         <div className={`w-3 h-3 rounded-full ${ASPECTS.find(asp => asp.name === a)?.bg || 'bg-gray-500'}`} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-6 flex-1 text-gray-300">
+                {selectedCardForView.FrontText && (
+                  <div>
+                    <h4 className="text-[10px] uppercase font-black text-gray-500 mb-2 tracking-widest">Ability</h4>
+                    <p className="text-lg leading-relaxed whitespace-pre-wrap">{selectedCardForView.FrontText}</p>
+                  </div>
+                )}
+                {selectedCardForView.Traits && (
+                   <div>
+                    <h4 className="text-[10px] uppercase font-black text-gray-500 mb-2 tracking-widest">Traits</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedCardForView.Traits.map(t => (
+                        <span key={t} className="px-3 py-1 bg-blue-600/10 text-blue-400 border border-blue-500/20 rounded-full text-xs font-bold">{t}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <button
+                onClick={() => { handleAddCard(selectedCardForView); setSelectedCardForView(null); }}
+                className="mt-8 w-full py-4 bg-yellow-500 hover:bg-yellow-400 text-black font-black text-lg rounded-2xl transition-all shadow-xl shadow-yellow-500/10"
+              >
+                Add to Deck
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

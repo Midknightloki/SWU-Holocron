@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Copy, Trash2, Loader2, Trophy, History } from 'lucide-react';
+import { Plus, Edit2, Copy, Trash2, Loader2, Trophy, History, AlertTriangle } from 'lucide-react';
 import { DeckService } from '../services/DeckService';
 import { CardService } from '../services/CardService';
 import GameLog from './GameLog';
@@ -181,10 +181,17 @@ export default function DeckManager({ user, collectionData, onOpenDeck, onCreate
                   </p>
 
                   {/* Card count */}
-                  <p className="text-sm text-gray-300 mb-3">
-                    <span className="font-semibold">{deck.totalCards || 0}</span>
-                    <span className="text-gray-500">/50 cards</span>
-                  </p>
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-sm text-gray-300">
+                      <span className="font-semibold">{deck.totalCards || 0}</span>
+                      <span className="text-gray-500">/50 cards</span>
+                    </p>
+                    {(!deck.leaderId || !deck.baseId || deck.totalCards !== 50) && (
+                      <div className="text-yellow-500" title="Illegal deck format">
+                        <AlertTriangle size={16} />
+                      </div>
+                    )}
+                  </div>
 
                   {/* Record badge */}
                   {record && record.total > 0 && (

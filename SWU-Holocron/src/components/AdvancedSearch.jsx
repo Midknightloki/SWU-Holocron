@@ -4,11 +4,12 @@ import { SETS, ASPECTS } from '../constants';
 import { CardService } from '../services/CardService';
 import { getPlaysetQuantity } from '../utils/collectionHelpers';
 
-export default function AdvancedSearch({ onCardClick, collectionData, currentSet, onClose = () => {}, onUpdateQuantity, embedded = false, getDeckCount = () => 0, initialFilters = {} }) {
+export default function AdvancedSearch({ onCardClick, onAddClick, collectionData, currentSet, onClose = () => {}, onUpdateQuantity, embedded = false, getDeckCount = () => 0, initialFilters = {} }) {
   const [searchText, setSearchText] = useState('');
   const [selectedSets, setSelectedSets] = useState(initialFilters.sets || []);
   const [selectedAspects, setSelectedAspects] = useState(initialFilters.aspects || []);
   const [selectedTypes, setSelectedTypes] = useState(initialFilters.types || []);
+  const [matchAspects, setMatchAspects] = useState(initialFilters.matchAspects || []);
   const [costMin, setCostMin] = useState('');
   const [costMax, setCostMax] = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -104,6 +105,13 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
           }
         }
 
+        // Match Aspects (no penalty) filter
+        if (matchAspects.length > 0) {
+          const cardAspects = card.Aspects || [];
+          const hasPenalty = cardAspects.some(a => !matchAspects.includes(a));
+          if (hasPenalty) return false;
+        }
+
         // Set filter
         if (selectedSets.length > 0 && !selectedSets.includes(card.Set)) {
           return false;
@@ -123,6 +131,11 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
 
         // Type filter
         if (selectedTypes.length > 0 && !selectedTypes.includes(card.Type)) {
+          return false;
+        }
+
+        // Exclude Types filter
+        if (initialFilters.excludeTypes && initialFilters.excludeTypes.includes(card.Type)) {
           return false;
         }
 
@@ -204,6 +217,7 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
     selectedSets.length +
     selectedAspects.length +
     selectedTypes.length +
+    (matchAspects.length > 0 ? 1 : 0) +
     (costMin ? 1 : 0) +
     (costMax ? 1 : 0);
 
@@ -304,6 +318,28 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
                 ))}
               </div>
             </div>
+
+            {/* Aspect Match Toggle (Only shown if matchAspects provided) */}
+            {initialFilters.matchAspects && (
+              <div>
+                <label className="flex items-center gap-3 cursor-pointer group">
+                  <div className="relative">
+                    <input
+                      type="checkbox"
+                      className="sr-only"
+                      checked={matchAspects.length > 0}
+                      onChange={(e) => setMatchAspects(e.target.checked ? initialFilters.matchAspects : [])}
+                    />
+                    <div className={`w-10 h-6 rounded-full transition-colors ${matchAspects.length > 0 ? 'bg-yellow-500' : 'bg-gray-700'}`} />
+                    <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${matchAspects.length > 0 ? 'translate-x-4' : ''}`} />
+                  </div>
+                  <span className="text-sm font-bold text-gray-300 group-hover:text-white transition-colors">
+                    Hide Aspect Penalties
+                  </span>
+                </label>
+                <p className="text-[10px] text-gray-500 mt-1">Only show cards matching your Leader/Base aspects.</p>
+              </div>
+            )}
 
             {/* Aspects Filter */}
             <div>
@@ -511,7 +547,8 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleCardClick(card);
+                              if (onAddClick) onAddClick(card);
+                              else handleCardClick(card);
                             }}
                             disabled={isAtMax}
                             title={isAtMax ? `Max ${maxCopies} cop${maxCopies === 1 ? 'y' : 'ies'} already in deck` : 'Add to deck'}
