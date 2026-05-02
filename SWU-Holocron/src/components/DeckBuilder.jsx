@@ -131,6 +131,60 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     loadAllCards();
   }, []);
 
+  // Load shells/packets on first entry into guided mode
+  const handleStartGuided = useCallback(async () => {
+    setGuidedStep('shell');
+    if (shells.length > 0) return;
+    setLoadingGuided(true);
+    try {
+      const [shellList, packetList] = await Promise.all([
+        GuidedModeService.getShells(),
+        GuidedModeService.getPackets(),
+      ]);
+      setShells(shellList);
+      setPackets(packetList);
+    } catch (err) {
+      console.error('Failed to load guided content:', err);
+    } finally {
+      setLoadingGuided(false);
+    }
+  }, [shells.length]);
+
+  const handleShellSelect = useCallback((shell) => {
+    setSelectedShell(shell);
+    setSelectedLeader(shell.leaderId || null);
+    setSelectedBase(shell.baseId || null);
+    setDeckCards(shell.cards || {});
+    setActivePackets({});
+    setGuidedStep('packets');
+  }, []);
+
+  const handleTogglePacket = useCallback((packet) => {
+    setActivePackets(prev => {
+      const isOn = !!prev[packet.id];
+      const next = { ...prev, [packet.id]: !isOn };
+      setDeckCards(prevDeck => {
+        const updated = { ...prevDeck };
+        Object.entries(packet.cards || {}).forEach(([cardId, count]) => {
+          if (isOn) {
+            const shellCount = selectedShell?.cards?.[cardId] || 0;
+            if (shellCount > 0) updated[cardId] = shellCount;
+            else delete updated[cardId];
+          } else {
+            updated[cardId] = count;
+          }
+        });
+        return updated;
+      });
+      return next;
+    });
+  }, [selectedShell]);
+
+  const handleFinishGuided = useCallback(() => {
+    setGuidedStep(null);
+    setStep(4);
+  }, []);
+
   // Computed values
   const mainDeckCards = useMemo(() => {
     return Object.entries(deckCards)
@@ -241,14 +295,34 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     const maxCopies = getPlaysetQuantity(card.Type);
 
     if (card.Type === 'Leader') {
-      if (currentCount >= maxCopies) return;
-      setDeckCards(prev => {
-        const next = { ...prev };
-        if (selectedLeader) delete next[selectedLeader];
-        next[cardId] = 1;
-        return next;
-      });
-      setSelectedLeader(cardId);
+      if (currentCount >= maxCopies) return; // already in deck
+      if (selectedFormat === 'Twin Suns') {
+        if (!selectedLeader) {
+          setSelectedLeader(cardId);
+          setDeckCards(prev => ({ ...prev, [cardId]: 1 }));
+        } else if (!selectedLeader2 && cardId !== selectedLeader) {
+          setSelectedLeader2(cardId);
+          setDeckCards(prev => ({ ...prev, [cardId]: 1 }));
+        } else if (cardId !== selectedLeader && cardId !== selectedLeader2) {
+          // Replace leader1 (FIFO), shift leader2 → leader1
+          setDeckCards(prev => {
+            const next = { ...prev };
+            delete next[selectedLeader];
+            next[cardId] = 1;
+            return next;
+          });
+          setSelectedLeader(selectedLeader2);
+          setSelectedLeader2(cardId);
+        }
+      } else {
+        setDeckCards(prev => {
+          const next = { ...prev };
+          if (selectedLeader) delete next[selectedLeader];
+          next[cardId] = 1;
+          return next;
+        });
+        setSelectedLeader(cardId);
+      }
     } else if (card.Type === 'Base') {
       if (currentCount >= maxCopies) return;
       setDeckCards(prev => {
@@ -286,6 +360,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
 
   const handleRemoveCard = useCallback((cardId) => {
     if (cardId === selectedLeader) setSelectedLeader(null);
+    if (cardId === selectedLeader2) setSelectedLeader2(null);
     if (cardId === selectedBase) setSelectedBase(null);
 
     setDeckCards(prev => {
@@ -376,6 +451,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
         name: deckName || 'Untitled Deck',
         description: deckDescription,
         leaderId: selectedLeader,
+        leaderId2: selectedLeader2 || null,
         baseId: selectedBase,
         cards: deckCards,
         sideboard: sideboardCards,
@@ -540,30 +616,38 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
 
   // ─── Reusable panel fragments ───────────────────────────────────────────────
 
-  const renderDeckPanel = () => (
-    <div className="flex-1 overflow-auto space-y-4">
-      {/* Leader Section */}
-      <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
-        <h4 className="text-xs font-bold uppercase text-gray-400 mb-3">Leader</h4>
-        {leaderCard ? (
+  const renderLeaderSlot = (leaderId, label) => {
+    const card = leaderId ? cardDataMap[leaderId] : null;
+    const violations = leaderId ? legalityResult.cardViolations.get(leaderId) : null;
+    return (
+      <div className={`bg-gray-900 rounded-lg p-4 border ${violations?.length ? 'border-red-500/50' : 'border-gray-700'}`}>
+        <h4 className="text-xs font-bold uppercase text-gray-400 mb-3">{label}</h4>
+        {card ? (
           <div className="flex items-center gap-3">
             <button
-              onClick={() => setPreviewCard(leaderCard)}
+              onClick={() => setPreviewCard(card)}
               className="shrink-0 focus:outline-none focus:ring-2 focus:ring-yellow-500 rounded"
-              aria-label={`Preview ${leaderCard.Name}`}
+              aria-label={`Preview ${card.Name}`}
             >
               <img
-                src={CardService.getCardImage(leaderCard.Set, leaderCard.Number)}
-                alt={leaderCard.Name}
+                src={CardService.getCardImage(card.Set, card.Number)}
+                alt={card.Name}
                 className="w-20 h-28 rounded object-cover border border-gray-600 hover:border-yellow-400 transition-colors"
                 onError={(e) => { e.target.style.display = 'none'; }}
               />
             </button>
             <div className="flex-1 min-w-0">
-              <p className="text-white font-semibold truncate">{leaderCard.Name}</p>
-              <p className="text-gray-400 text-sm">{leaderCard.Set} - {leaderCard.Number}</p>
+              <p className="text-white font-semibold truncate">{card.Name}</p>
+              <p className="text-gray-400 text-sm">{card.Set} - {card.Number}</p>
+              {violations?.length > 0 && (
+                <div className="mt-1 space-y-0.5">
+                  {violations.map((v, i) => (
+                    <span key={i} className="block text-xs text-red-400 font-semibold">{v.message}</span>
+                  ))}
+                </div>
+              )}
               <button
-                onClick={() => handleRemoveCard(selectedLeader)}
+                onClick={() => handleRemoveCard(leaderId)}
                 className="mt-2 px-3 py-2 bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 transition-colors text-xs font-semibold"
                 style={{ minHeight: '44px', minWidth: '44px' }}
               >
@@ -573,10 +657,24 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
           </div>
         ) : (
           <div className="h-32 border-2 border-dashed border-gray-600 rounded flex items-center justify-center text-gray-500">
-            <p>No leader selected</p>
+            <p>No {label.toLowerCase()} selected</p>
           </div>
         )}
       </div>
+    );
+  };
+
+  const renderDeckPanel = () => (
+    <div className="flex-1 overflow-auto space-y-4">
+      {/* Leader Section */}
+      {selectedFormat === 'Twin Suns' ? (
+        <>
+          {renderLeaderSlot(selectedLeader, 'Leader 1')}
+          {renderLeaderSlot(selectedLeader2, 'Leader 2')}
+        </>
+      ) : (
+        renderLeaderSlot(selectedLeader, 'Leader')
+      )}
 
       {/* Base Section */}
       <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
@@ -622,12 +720,10 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
             className={`px-3 py-1 rounded-full text-xs font-bold ${
               deckStatus.isValidCount
                 ? 'bg-green-500/20 text-green-400'
-                : mainDeckTotal > 50
-                ? 'bg-red-500/20 text-red-400'
                 : 'bg-yellow-500/20 text-yellow-400'
             }`}
           >
-            {mainDeckTotal}/50
+            {mainDeckTotal}/{deckStatus.minSize}
           </span>
         </div>
 
@@ -635,43 +731,61 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
           <p className="text-gray-500 text-sm">No cards added yet</p>
         ) : (
           <div className="space-y-2 max-h-60 overflow-y-auto">
-            {mainDeckCards.map(({ cardId, card, count }) => (
-              <div key={cardId} className="flex items-center gap-3 bg-gray-800 p-3 rounded border border-gray-700 hover:border-gray-600 transition-colors">
-                <div
-                  className={`w-3 h-3 rounded-full shrink-0 ${getOwnershipColor(cardId, count)}`}
-                  title={`Owned: ${getCardOwnership(cardId).total}`}
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="text-white text-sm font-semibold truncate">{card.Name}</p>
-                  <p className="text-gray-400 text-xs">{cardId}</p>
-                </div>
-                <div className="flex items-center gap-1">
+            {mainDeckCards.map(({ cardId, card, count }) => {
+              const cardViols = legalityResult.cardViolations.get(cardId) || [];
+              const banStatus = getBanStatus(card, selectedFormat);
+              return (
+                <div key={cardId} className={`flex items-center gap-3 bg-gray-800 p-3 rounded border transition-colors ${cardViols.length ? 'border-red-500/50 bg-red-900/10' : 'border-gray-700 hover:border-gray-600'}`}>
+                  <div
+                    className={`w-3 h-3 rounded-full shrink-0 ${getOwnershipColor(cardId, count)}`}
+                    title={`Owned: ${getCardOwnership(cardId).total}`}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-white text-sm font-semibold truncate">{card.Name}</p>
+                      {banStatus && (
+                        <span className={`text-[10px] font-black uppercase px-1.5 py-0.5 rounded shrink-0 ${
+                          banStatus === 'banned' ? 'bg-red-600 text-white' :
+                          banStatus === 'suspended' ? 'bg-orange-500 text-white' :
+                          'bg-yellow-500 text-black'
+                        }`}>
+                          {banStatus}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-gray-400 text-xs">{cardId}</p>
+                    {cardViols.length > 0 && (
+                      <p className="text-red-400 text-xs mt-0.5">{cardViols[0].message}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleUpdateCardCount(cardId, count - 1)}
+                      className="flex items-center justify-center bg-gray-700 hover:bg-gray-600 rounded transition-colors"
+                      style={{ minWidth: '44px', minHeight: '44px' }}
+                    >
+                      <Minus size={14} className="text-gray-300" />
+                    </button>
+                    <span className="w-8 text-center text-white font-semibold">{count}</span>
+                    <button
+                      onClick={() => handleUpdateCardCount(cardId, count + 1)}
+                      className="flex items-center justify-center bg-gray-700 hover:bg-gray-600 rounded transition-colors"
+                      style={{ minWidth: '44px', minHeight: '44px' }}
+                      disabled={count + (sideboardCards[cardId] || 0) >= getPlaysetQuantity(card.Type)}
+                    >
+                      <Plus size={14} className="text-gray-300" />
+                    </button>
+                  </div>
                   <button
-                    onClick={() => handleUpdateCardCount(cardId, count - 1)}
-                    className="flex items-center justify-center bg-gray-700 hover:bg-gray-600 rounded transition-colors"
+                    onClick={() => handleRemoveCard(cardId)}
+                    className="flex items-center justify-center bg-red-500/20 hover:bg-red-500/30 rounded transition-colors"
                     style={{ minWidth: '44px', minHeight: '44px' }}
                   >
-                    <Minus size={14} className="text-gray-300" />
-                  </button>
-                  <span className="w-8 text-center text-white font-semibold">{count}</span>
-                  <button
-                    onClick={() => handleUpdateCardCount(cardId, count + 1)}
-                    className="flex items-center justify-center bg-gray-700 hover:bg-gray-600 rounded transition-colors"
-                    style={{ minWidth: '44px', minHeight: '44px' }}
-                    disabled={count + (sideboardCards[cardId] || 0) >= getPlaysetQuantity(card.Type)}
-                  >
-                    <Plus size={14} className="text-gray-300" />
+                    <X size={14} className="text-red-400" />
                   </button>
                 </div>
-                <button
-                  onClick={() => handleRemoveCard(cardId)}
-                  className="flex items-center justify-center bg-red-500/20 hover:bg-red-500/30 rounded transition-colors"
-                  style={{ minWidth: '44px', minHeight: '44px' }}
-                >
-                  <X size={14} className="text-red-400" />
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -899,9 +1013,9 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
       <div className="max-w-5xl mx-auto py-8 space-y-8">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <h3 className="text-3xl font-bold text-white">Deck Analysis</h3>
-          <div className={`px-4 py-1.5 rounded-full font-bold flex items-center gap-2 ${deckStatus.isValid ? 'bg-green-500 text-black' : 'bg-red-500 text-white'}`}>
-            {deckStatus.isValid ? <CheckCircle size={18} /> : <AlertCircle size={18} />}
-            {deckStatus.isValid ? 'Format Legal' : 'Illegal Format'}
+          <div className={`px-4 py-1.5 rounded-full font-bold flex items-center gap-2 ${legalityResult.isLegal ? 'bg-green-500 text-black' : 'bg-red-500 text-white'}`}>
+            {legalityResult.isLegal ? <CheckCircle size={18} /> : <AlertCircle size={18} />}
+            {legalityResult.isLegal ? 'Format Legal' : `${legalityResult.violations.filter(v => v.type === 'error').length} Violation${legalityResult.violations.filter(v => v.type === 'error').length !== 1 ? 's' : ''}`}
           </div>
         </div>
 
@@ -916,15 +1030,19 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-gray-300">Main Deck</span>
-                <span className={`font-semibold ${mainDeckTotal === 50 ? 'text-green-400' : 'text-yellow-400'}`}>{mainDeckTotal} / 50</span>
+                <span className={`font-semibold ${deckStatus.isValidCount ? 'text-green-400' : 'text-yellow-400'}`}>{mainDeckTotal} / {deckStatus.minSize}+</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-gray-300">Sideboard</span>
                 <span className={`font-semibold ${sideboardTotal > 10 ? 'text-red-400' : 'text-blue-400'}`}>{sideboardTotal} / 10</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-gray-300">Leader</span>
-                <span className={selectedLeader ? 'text-green-400' : 'text-red-400'}>{selectedLeader ? 'Selected' : 'Missing'}</span>
+                <span className="text-gray-300">{selectedFormat === 'Twin Suns' ? 'Leaders' : 'Leader'}</span>
+                <span className={deckStatus.hasLeader ? 'text-green-400' : 'text-red-400'}>
+                  {selectedFormat === 'Twin Suns'
+                    ? `${[selectedLeader, selectedLeader2].filter(Boolean).length}/2`
+                    : (selectedLeader ? 'Selected' : 'Missing')}
+                </span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-gray-300">Base</span>
@@ -1028,49 +1146,85 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
             <div className="space-y-3">
               {(() => {
                 const flags = [];
+
+                // ── Legality violations from LegalityService ──
+                legalityResult.violations.forEach(v => {
+                  const codeToTitle = {
+                    MISSING_LEADER: 'Missing Leader',
+                    MISSING_BASE: 'Missing Base',
+                    DUPLICATE_LEADER: 'Duplicate Leader',
+                    DECK_TOO_SMALL: 'Deck Too Small',
+                    TOO_MANY_COPIES: 'Too Many Copies',
+                    SIDEBOARD_TOO_LARGE: 'Sideboard Over Limit',
+                    SIDEBOARD_NOT_ALLOWED: 'Sideboard Not Allowed',
+                    BANNED_CARD: 'Banned Card',
+                    SUSPENDED_CARD: 'Suspended Card',
+                    RESTRICTED_CARD: 'Restricted Card',
+                    ROTATED_SET: 'Rotated Set',
+                    TWIN_SUNS_ALIGNMENT: 'Alignment Violation',
+                    TRILOGY_DUPLICATE_LEADER: 'Duplicate Leader',
+                    TRILOGY_DUPLICATE_BASE: 'Duplicate Base',
+                    TRILOGY_TOO_MANY_COPIES: 'Trilogy Copy Limit',
+                  };
+                  flags.push({
+                    type: v.type,
+                    title: codeToTitle[v.code] || v.code,
+                    message: v.message
+                  });
+                });
+
+                // ── Aspect Penalty Check (informational) ──
                 const leader = cardDataMap[selectedLeader];
                 const base = cardDataMap[selectedBase];
                 const deckAspects = new Set();
                 if (leader?.Aspects) leader.Aspects.forEach(a => deckAspects.add(a));
+                if (selectedLeader2) {
+                  const l2 = cardDataMap[selectedLeader2];
+                  if (l2?.Aspects) l2.Aspects.forEach(a => deckAspects.add(a));
+                }
                 if (base?.Aspects) base.Aspects.forEach(a => deckAspects.add(a));
 
-                // Aspect Penalty Check
-                mainDeckCards.forEach(({card, count}) => {
+                mainDeckCards.forEach(({ card }) => {
                   if (card.Aspects) {
-                    const penalties = card.Aspects.filter(a => !deckAspects.has(a));
+                    const penalties = card.Aspects.filter(a => !deckAspects.has(a) && a !== 'Neutral');
                     if (penalties.length > 0) {
                       flags.push({
                         type: 'warning',
                         title: 'Aspect Penalty',
-                        message: `${card.Name} requires ${penalties.join(', ')} (not provided by Leader/Base).`
+                        message: `${card.Name} requires ${penalties.join(', ')} (not covered by Leader/Base).`
                       });
                     }
                   }
                 });
 
-                // Synergy/Theme Detection
+                // ── Synergy/Theme Detection ──
                 const traitsCount = {};
-                mainDeckCards.forEach(({card, count}) => {
+                mainDeckCards.forEach(({ card, count }) => {
                   if (card.Traits) {
                     card.Traits.forEach(t => {
                       traitsCount[t] = (traitsCount[t] || 0) + count;
                     });
                   }
                 });
-
-                const majorThemes = Object.entries(traitsCount).filter(([t, c]) => c >= 10);
-                majorThemes.forEach(([trait, count]) => {
-                  flags.push({
-                    type: 'info',
-                    title: `Theme: ${trait}`,
-                    message: `Your deck has a strong ${trait} presence (${count} cards).`
+                Object.entries(traitsCount)
+                  .filter(([, c]) => c >= 10)
+                  .forEach(([trait, count]) => {
+                    flags.push({
+                      type: 'info',
+                      title: `Theme: ${trait}`,
+                      message: `Strong ${trait} presence (${count} cards).`
+                    });
                   });
-                });
 
-                if (mainDeckTotal < 50) flags.push({ type: 'error', title: 'Under Minimum Size', message: `Your deck needs ${50 - mainDeckTotal} more cards.` });
-                if (mainDeckTotal > 50) flags.push({ type: 'warning', title: 'Over Minimum Size', message: `Your deck is ${mainDeckTotal - 50} cards over the 50-card minimum.` });
-
-                if (flags.length === 0) return <p className="text-gray-500 italic text-center py-8">No issues detected. Deck looks solid!</p>;
+                if (flags.length === 0) {
+                  return (
+                    <div className="flex flex-col items-center gap-3 py-8 text-center">
+                      <CheckCircle size={32} className="text-green-400" />
+                      <p className="text-green-400 font-semibold">Deck is legal!</p>
+                      <p className="text-gray-500 text-sm">No violations detected for {selectedFormat}.</p>
+                    </div>
+                  );
+                }
 
                 return flags.map((f, i) => (
                   <div key={i} className={`p-4 rounded-xl border flex items-start gap-3 ${
@@ -1078,9 +1232,9 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
                     f.type === 'warning' ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400' :
                     'bg-blue-500/10 border-blue-500/30 text-blue-400'
                   }`}>
-                    {f.type === 'error' ? <AlertCircle size={18} className="mt-0.5" /> :
-                     f.type === 'warning' ? <AlertCircle size={18} className="mt-0.5" /> :
-                     <Info size={18} className="mt-0.5" />}
+                    {f.type === 'error' ? <AlertCircle size={18} className="mt-0.5 shrink-0" /> :
+                     f.type === 'warning' ? <AlertCircle size={18} className="mt-0.5 shrink-0" /> :
+                     <Info size={18} className="mt-0.5 shrink-0" />}
                     <div>
                       <div className="font-bold text-sm uppercase tracking-tight">{f.title}</div>
                       <div className="text-sm opacity-90">{f.message}</div>
@@ -1279,7 +1433,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
                     <p className="text-gray-400">Choose how you want to start building your Star Wars: Unlimited deck.</p>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full">
                     <button
                       onClick={() => setStep(1)}
                       className="flex flex-col items-center gap-4 p-8 bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-yellow-500/50 rounded-2xl transition-all group"
@@ -1291,6 +1445,20 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
                       <div>
                         <span className="block text-xl font-bold text-white">Start from Scratch</span>
                         <span className="text-sm text-gray-400">Pick format, leader, and base step-by-step</span>
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={handleStartGuided}
+                      className="flex flex-col items-center gap-4 p-8 bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-green-500/50 rounded-2xl transition-all group"
+                      style={{ minHeight: '120px' }}
+                    >
+                      <div className="w-16 h-16 bg-green-500/10 rounded-full flex items-center justify-center text-green-500 group-hover:scale-110 transition-transform">
+                        <Wand2 size={32} />
+                      </div>
+                      <div>
+                        <span className="block text-xl font-bold text-white">Guided Start</span>
+                        <span className="text-sm text-gray-400">Pick a pre-built shell, swap in packets</span>
                       </div>
                     </button>
 
@@ -1337,6 +1505,155 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
                 </div>
               )}
 
+              {/* Guided Mode: Shell Picker */}
+              {step === 0 && guidedStep === 'shell' && (
+                <div className="flex-1 flex flex-col min-h-0">
+                  <div className="mb-4 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                        <Wand2 size={20} className="text-green-400" />
+                        Choose a Shell
+                      </h3>
+                      <p className="text-gray-400 text-sm mt-1">A shell is a complete starting deck (Leader + Base + 50 cards). Pick one to begin.</p>
+                    </div>
+                    <button onClick={() => setGuidedStep(null)} className="text-gray-500 hover:text-white text-sm px-3 py-2" style={{ minHeight: '44px' }}>
+                      Cancel
+                    </button>
+                  </div>
+                  {loadingGuided ? (
+                    <div className="flex-1 flex items-center justify-center">
+                      <Loader2 size={36} className="animate-spin text-green-400" />
+                    </div>
+                  ) : shells.length === 0 ? (
+                    <div className="flex-1 flex flex-col items-center justify-center text-center gap-4">
+                      <Package size={48} className="text-gray-600" />
+                      <p className="text-gray-400">No shells available yet.</p>
+                      <p className="text-gray-500 text-sm">Ask an admin or contributor to create shells in the Admin panel.</p>
+                    </div>
+                  ) : (
+                    <div className="flex-1 overflow-auto">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {shells.map(shell => {
+                          const leader = cardDataMap[shell.leaderId];
+                          const base = cardDataMap[shell.baseId];
+                          const cardCount = Object.values(shell.cards || {}).reduce((s, c) => s + c, 0);
+                          return (
+                            <button
+                              key={shell.id}
+                              onClick={() => handleShellSelect(shell)}
+                              className="flex flex-col gap-3 p-4 bg-gray-800 border border-gray-700 hover:border-green-500/60 rounded-2xl transition-all text-left group"
+                            >
+                              <div className="flex gap-3">
+                                {leader && (
+                                  <img
+                                    src={CardService.getCardImage(leader.Set, leader.Number)}
+                                    alt={leader.Name}
+                                    className="w-14 h-20 rounded object-cover border border-gray-600 group-hover:border-green-400 transition-colors"
+                                    onError={(e) => { e.target.style.display = 'none'; }}
+                                  />
+                                )}
+                                {base && (
+                                  <img
+                                    src={CardService.getCardImage(base.Set, base.Number)}
+                                    alt={base.Name}
+                                    className="w-14 h-20 rounded object-cover border border-gray-600 group-hover:border-green-400 transition-colors"
+                                    onError={(e) => { e.target.style.display = 'none'; }}
+                                  />
+                                )}
+                              </div>
+                              <div>
+                                <p className="text-white font-bold text-base">{shell.name}</p>
+                                {shell.description && <p className="text-gray-400 text-xs mt-1 line-clamp-2">{shell.description}</p>}
+                                <div className="flex gap-2 mt-2 flex-wrap">
+                                  {leader && <span className="text-xs px-2 py-0.5 bg-yellow-500/10 text-yellow-400 rounded">{leader.Name}</span>}
+                                  <span className="text-xs px-2 py-0.5 bg-gray-700 text-gray-400 rounded">{cardCount} cards</span>
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Guided Mode: Packet Swapper */}
+              {step === 0 && guidedStep === 'packets' && (
+                <div className="flex-1 flex flex-col min-h-0">
+                  <div className="mb-4 flex items-center justify-between flex-wrap gap-3">
+                    <div>
+                      <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                        <Package size={20} className="text-green-400" />
+                        Swap Packets
+                      </h3>
+                      <p className="text-gray-400 text-sm mt-1">Packets are modular card groups (6–8 cards). Toggle them on to add their cards to your deck.</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => setGuidedStep('shell')} className="text-gray-400 hover:text-white text-sm px-3 py-2" style={{ minHeight: '44px' }}>
+                        ← Change Shell
+                      </button>
+                      <button
+                        onClick={handleFinishGuided}
+                        className="flex items-center gap-2 px-5 py-2 bg-green-600 hover:bg-green-500 text-white font-bold rounded-lg text-sm"
+                        style={{ minHeight: '44px' }}
+                      >
+                        Build Deck <ArrowRight size={16} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Shell summary */}
+                  {selectedShell && (
+                    <div className="mb-4 px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl flex items-center gap-3">
+                      <Wand2 size={16} className="text-green-400 shrink-0" />
+                      <span className="text-white font-semibold text-sm">{selectedShell.name}</span>
+                      <span className="text-gray-400 text-xs ml-auto">{mainDeckTotal} / 50 cards</span>
+                    </div>
+                  )}
+
+                  {packets.length === 0 ? (
+                    <div className="flex-1 flex flex-col items-center justify-center text-center gap-4">
+                      <Package size={48} className="text-gray-600" />
+                      <p className="text-gray-400">No packets available yet.</p>
+                      <p className="text-gray-500 text-sm">Continue to the deck builder to add cards manually.</p>
+                    </div>
+                  ) : (
+                    <div className="flex-1 overflow-auto">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {packets.map(packet => {
+                          const isActive = !!activePackets[packet.id];
+                          const cardCount = Object.values(packet.cards || {}).reduce((s, c) => s + c, 0);
+                          return (
+                            <button
+                              key={packet.id}
+                              onClick={() => handleTogglePacket(packet)}
+                              className={`flex items-start gap-4 p-4 rounded-xl border-2 transition-all text-left ${
+                                isActive
+                                  ? 'bg-green-500/10 border-green-500 text-white'
+                                  : 'bg-gray-800 border-gray-700 hover:border-gray-600 text-gray-300'
+                              }`}
+                            >
+                              <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${isActive ? 'bg-green-500 text-black' : 'bg-gray-700 text-gray-400'}`}>
+                                {isActive ? <CheckCircle size={20} /> : <Package size={20} />}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-bold text-sm">{packet.name}</p>
+                                {packet.role && (
+                                  <span className="text-xs px-2 py-0.5 bg-gray-700 text-gray-300 rounded mt-1 inline-block">{packet.role}</span>
+                                )}
+                                {packet.description && <p className="text-xs text-gray-400 mt-1 line-clamp-2">{packet.description}</p>}
+                                <p className="text-xs text-gray-500 mt-2">{cardCount} cards</p>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Step 1: Format Selection */}
               {step === 1 && (
                 <div className="flex-1 flex flex-col items-center justify-center max-w-4xl mx-auto w-full text-center space-y-8">
@@ -1345,11 +1662,12 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
                     <p className="text-gray-400">Choose the gameplay format for this deck.</p>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 w-full">
                     {[
-                      { id: 'Premier', name: 'Premier', desc: 'Standard 50-card deck, 1 Leader, 1 Base, max 3 copies.' },
-                      { id: 'Twin Suns', name: 'Twin Suns', desc: 'Two Leaders, 1 Base, 50-card deck, singleton (max 1 copy).' },
-                      { id: 'Trilogy', name: 'Trilogy', desc: 'Premier rules, but only using cards from the current block.' }
+                      { id: 'Premier', name: 'Premier', desc: 'Standard 50-card deck, 1 Leader, 1 Base, max 3 copies. Set rotation applies.' },
+                      { id: 'Eternal', name: 'Eternal', desc: 'Like Premier but all sets are legal — no rotation.' },
+                      { id: 'Twin Suns', name: 'Twin Suns', desc: '80-card singleton with 2 Leaders, 1 Base. Max 1 copy per card.' },
+                      { id: 'Trilogy', name: 'Trilogy', desc: '3 separate 50-card decks. Max 3 copies of any card across all three decks combined.' }
                     ].map(f => (
                       <button
                         key={f.id}
@@ -1374,17 +1692,36 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
               {step === 2 && (
                 <div className="flex-1 flex flex-col min-h-0">
                   <div className="mb-4 text-center">
-                    <h3 className="text-xl md:text-2xl font-bold text-white">Select Leader</h3>
-                    <p className="text-gray-400 text-sm">Choose the leader that will lead your deck.</p>
+                    <h3 className="text-xl md:text-2xl font-bold text-white">
+                      {selectedFormat === 'Twin Suns' ? 'Select Leaders (2 required)' : 'Select Leader'}
+                    </h3>
+                    <p className="text-gray-400 text-sm">
+                      {selectedFormat === 'Twin Suns'
+                        ? `Choose 2 different Leaders. Leaders cannot combine both Heroism and Villainy aspects. (${[selectedLeader, selectedLeader2].filter(Boolean).length}/2 selected)`
+                        : 'Choose the leader that will lead your deck.'}
+                    </p>
+                    {selectedFormat === 'Twin Suns' && (selectedLeader || selectedLeader2) && (
+                      <div className="mt-2 flex justify-center gap-3 flex-wrap">
+                        {selectedLeader && (
+                          <span className="px-3 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded-full border border-yellow-500/30">
+                            Leader 1: {cardDataMap[selectedLeader]?.Name || selectedLeader}
+                          </span>
+                        )}
+                        {selectedLeader2 && (
+                          <span className="px-3 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded-full border border-yellow-500/30">
+                            Leader 2: {cardDataMap[selectedLeader2]?.Name || selectedLeader2}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex-1 overflow-auto bg-gray-800/50 rounded-2xl border border-gray-700 p-3 md:p-4">
                     <AdvancedSearch
                       onCardClick={(card) => {
                         if (card.Type === 'Leader') {
-                          setSelectedLeader(`${card.Set}_${card.Number}`);
-                          setDeckCards(prev => ({ ...prev, [`${card.Set}_${card.Number}`]: 1 }));
-                          setStep(3);
+                          handleAddCard(card);
+                          if (selectedFormat !== 'Twin Suns') setStep(3);
                         }
                       }}
                       collectionData={collectionData}
@@ -1400,7 +1737,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
                     >
                       Back
                     </button>
-                    {selectedLeader && (
+                    {(selectedFormat === 'Twin Suns' ? (selectedLeader && selectedLeader2) : selectedLeader) && (
                       <button
                         onClick={() => setStep(3)}
                         className="px-8 py-3 bg-yellow-500 text-black font-bold rounded-lg"

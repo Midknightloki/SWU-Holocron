@@ -3,6 +3,22 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function isAdmin(appId) {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/artifacts/$(appId)/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/artifacts/$(appId)/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+
+    function isContributor(appId) {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/artifacts/$(appId)/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/artifacts/$(appId)/users/$(request.auth.uid)).data.isContributor == true;
+    }
+
+    function canWriteContent(appId) {
+      return isAdmin(appId) || isContributor(appId);
+    }
+
     // Primary collection: user-scoped data under artifacts/{APP_ID}/users/{uid}
     match /artifacts/{appId}/users/{userId}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
@@ -27,6 +43,23 @@ service cloud.firestore {
         && request.resource.data.uid == request.auth.uid;
       allow delete: if request.auth != null
         && resource.data.uid == request.auth.uid;
+    }
+
+    // Shells: readable by all authenticated users, writable by admins and contributors
+    match /artifacts/{appId}/shells/{shellId} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if canWriteContent(appId);
+    }
+
+    // Packets: readable by all authenticated users, writable by admins and contributors
+    match /artifacts/{appId}/packets/{packetId} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if canWriteContent(appId);
+    }
+
+    // Contributor invites: readable and writable only by admins
+    match /artifacts/{appId}/contributorInvites/{inviteId} {
+      allow read, write: if isAdmin(appId);
     }
   }
 }
