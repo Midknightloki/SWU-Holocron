@@ -19,5 +19,14 @@ service cloud.firestore {
       allow read: if request.auth != null && request.time < timestamp.date(2025, 2, 1);
       allow write: if false;
     }
+
+    // Public shared decks: read by anyone, write only by the deck owner
+    match /artifacts/{appId}/public/decks/{slug} {
+      allow read: if true;
+      allow create, update: if request.auth != null
+        && request.resource.data.uid == request.auth.uid;
+      allow delete: if request.auth != null
+        && resource.data.uid == request.auth.uid;
+    }
   }
 }

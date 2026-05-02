@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Copy, Trash2, Loader2, Trophy, History } from 'lucide-react';
+import { Plus, Edit2, Copy, Trash2, Loader2, Trophy, History, Globe, Link2, XCircle } from 'lucide-react';
 import { DeckService } from '../services/DeckService';
 import { CardService } from '../services/CardService';
 import GameLog from './GameLog';
@@ -12,6 +12,8 @@ export default function DeckManager({ user, collectionData, onOpenDeck, onCreate
   const [gameLogs, setGameLogs] = useState({}); // { deckId: logs }
   const [gameLogDeck, setGameLogDeck] = useState(null); // deck to show GameLog modal for
   const [historyDeck, setHistoryDeck] = useState(null); // deck to show DeckHistory modal for
+  const [publishingDeckId, setPublishingDeckId] = useState(null); // deckId currently being published/revoked
+  const [copiedDeckId, setCopiedDeckId] = useState(null); // deckId whose link was just copied
 
   // Fetch decks on mount
   useEffect(() => {
@@ -69,6 +71,46 @@ export default function DeckManager({ user, collectionData, onOpenDeck, onCreate
       alert(`Failed to delete deck: ${e.message}`);
     }
   };
+
+  const handlePublish = async (deck) => {
+    setPublishingDeckId(deck.id);
+    try {
+      const slug = await DeckService.publishDeck(user.uid, deck.id);
+      setDecks((prev) =>
+        prev.map((d) => (d.id === deck.id ? { ...d, publicSlug: slug } : d))
+      );
+    } catch (e) {
+      alert(`Failed to publish deck: ${e.message}`);
+    } finally {
+      setPublishingDeckId(null);
+    }
+  };
+
+  const handleRevoke = async (deck) => {
+    if (!window.confirm(`Remove public link for "${deck.name}"? Anyone with the link will no longer be able to view it.`)) return;
+    setPublishingDeckId(deck.id);
+    try {
+      await DeckService.revokeDeck(user.uid, deck.id);
+      setDecks((prev) =>
+        prev.map((d) => (d.id === deck.id ? { ...d, publicSlug: null } : d))
+      );
+    } catch (e) {
+      alert(`Failed to revoke link: ${e.message}`);
+    } finally {
+      setPublishingDeckId(null);
+    }
+  };
+
+  const handleCopyLink = (deck) => {
+    const url = `${window.location.origin}/deck/${deck.publicSlug}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedDeckId(deck.id);
+      setTimeout(() => setCopiedDeckId(null), 2000);
+    });
+  };
+
+  const getShareUrl = (deck) =>
+    deck.publicSlug ? `${window.location.origin}/deck/${deck.publicSlug}` : null;
 
   // Format date
   const formatDate = (timestamp) => {
@@ -201,9 +243,50 @@ export default function DeckManager({ user, collectionData, onOpenDeck, onCreate
                   )}
 
                   {/* Last updated */}
-                  <p className="text-xs text-gray-500 mb-4">
+                  <p className="text-xs text-gray-500 mb-3">
                     Updated {formatDate(deck.updatedAt)}
                   </p>
+
+                  {/* Share row */}
+                  <div className="mb-3">
+                    {deck.publicSlug ? (
+                      <div className="flex items-center gap-1.5 p-2 bg-green-900/20 border border-green-700/40 rounded-lg">
+                        <Globe size={12} className="text-green-400 shrink-0" />
+                        <span className="text-green-400 text-xs flex-1 truncate">
+                          {getShareUrl(deck)}
+                        </span>
+                        <button
+                          onClick={() => handleCopyLink(deck)}
+                          className="shrink-0 px-2 py-0.5 bg-green-800/50 hover:bg-green-700/50 text-green-300 text-xs rounded transition-colors"
+                          title="Copy share link"
+                        >
+                          {copiedDeckId === deck.id ? 'Copied!' : <Link2 size={12} />}
+                        </button>
+                        <button
+                          onClick={() => handleRevoke(deck)}
+                          disabled={publishingDeckId === deck.id}
+                          className="shrink-0 text-gray-500 hover:text-red-400 transition-colors disabled:opacity-50"
+                          title="Revoke public link"
+                        >
+                          {publishingDeckId === deck.id
+                            ? <Loader2 size={12} className="animate-spin" />
+                            : <XCircle size={12} />}
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => handlePublish(deck)}
+                        disabled={publishingDeckId === deck.id}
+                        className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 bg-gray-700/50 hover:bg-gray-700 border border-gray-600/50 hover:border-gray-500 text-gray-400 hover:text-white text-xs rounded-lg transition-colors disabled:opacity-50"
+                        title="Generate a public share link"
+                      >
+                        {publishingDeckId === deck.id
+                          ? <Loader2 size={12} className="animate-spin" />
+                          : <Globe size={12} />}
+                        {publishingDeckId === deck.id ? 'Publishing…' : 'Publish deck'}
+                      </button>
+                    )}
+                  </div>
 
                   {/* Action buttons */}
                   <div className="flex items-center gap-2 mt-auto">
