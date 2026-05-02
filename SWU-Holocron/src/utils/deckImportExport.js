@@ -35,7 +35,10 @@ export const exportToForcetableJSON = (deck, authorName = '') => {
       id: cardId,
       count
     })),
-    sideboard: []
+    sideboard: Object.entries(deck.sideboard || {}).map(([cardId, count]) => ({
+      id: cardId,
+      count
+    }))
   };
 
   return JSON.stringify(forcetableDeck, null, 2);
@@ -92,12 +95,23 @@ export const importFromForcetableJSON = (jsonString) => {
     }
   }
 
+  // Build sideboard object from sideboard array
+  const sideboard = {};
+  if (Array.isArray(forcetableDeck?.sideboard)) {
+    for (const cardEntry of forcetableDeck.sideboard) {
+      if (cardEntry && cardEntry.id) {
+        sideboard[cardEntry.id] = cardEntry.count || 1;
+      }
+    }
+  }
+
   const deck = {
     name,
     description: '',
     leaderId: leaderId || '',
     baseId: baseId || '',
     cards,
+    sideboard,
     format: 'Premier',
     tags: []
   };
@@ -263,6 +277,20 @@ export const exportToSWUDBText = (deck, cardDatabase = null) => {
     lines.push(`${count} ${cardName} (${cardId})`);
   }
 
+  // Add sideboard section if present
+  const sideboardEntries = Object.entries(deck.sideboard || {});
+  if (sideboardEntries.length > 0) {
+    lines.push('');
+    lines.push('Sideboard:');
+    const sortedSideboard = [...sideboardEntries]
+      .sort(([, countA], [, countB]) => countB - countA)
+      .sort(([idA], [idB]) => idA.localeCompare(idB));
+    for (const [cardId, count] of sortedSideboard) {
+      const cardName = cardDatabase?.[cardId]?.Name || cardId;
+      lines.push(`${count} ${cardName} (${cardId})`);
+    }
+  }
+
   return lines.join('\n');
 };
 
@@ -289,12 +317,20 @@ export const importFromSWUDBText = (text) => {
   let leaderId = '';
   let baseId = '';
   const cards = {};
+  const sideboard = {};
+  let inSideboard = false;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    // Parse leader line
-    if (line.startsWith('Leader:')) {
+    // Sideboard section header
+    if (line === 'Sideboard:' || line === 'Sideboard') {
+      inSideboard = true;
+      continue;
+    }
+
+    // Parse leader line (main section only)
+    if (!inSideboard && line.startsWith('Leader:')) {
       const match = line.match(/Leader:\s+.*\(([A-Z0-9_]+)\)/);
       if (match) {
         leaderId = match[1];
@@ -304,8 +340,8 @@ export const importFromSWUDBText = (text) => {
       continue;
     }
 
-    // Parse base line
-    if (line.startsWith('Base:')) {
+    // Parse base line (main section only)
+    if (!inSideboard && line.startsWith('Base:')) {
       const match = line.match(/Base:\s+.*\(([A-Z0-9_]+)\)/);
       if (match) {
         baseId = match[1];
@@ -320,7 +356,11 @@ export const importFromSWUDBText = (text) => {
     if (cardMatch) {
       const count = parseInt(cardMatch[1], 10);
       const cardId = cardMatch[3];
-      cards[cardId] = count;
+      if (inSideboard) {
+        sideboard[cardId] = count;
+      } else {
+        cards[cardId] = count;
+      }
     } else if (line.length > 0) {
       errors.push(`Line ${i + 1}: Could not parse card line`);
     }
@@ -332,6 +372,7 @@ export const importFromSWUDBText = (text) => {
     leaderId,
     baseId,
     cards,
+    sideboard,
     format: 'Premier',
     tags: []
   };
@@ -413,6 +454,27 @@ export const validateDeckImport = (deck) => {
 
   if (totalCards > 100) {
     warnings.push(`Deck has ${totalCards} cards (typical maximum is 60)`);
+  }
+
+  // Validate sideboard
+  if (deck.sideboard && typeof deck.sideboard === 'object') {
+    const sideboardTotal = Object.values(deck.sideboard).reduce((sum, count) => sum + count, 0);
+
+    if (sideboardTotal > 10) {
+      errors.push(`Sideboard has ${sideboardTotal} cards (max 10 allowed)`);
+    }
+
+    for (const [cardId, count] of Object.entries(deck.sideboard)) {
+      if (!Number.isInteger(count) || count < 1) {
+        errors.push(`Invalid sideboard count for card ${cardId}: ${count}`);
+        continue;
+      }
+      const mainCount = (deck.cards || {})[cardId] || 0;
+      const combined = count + mainCount;
+      if (combined > 3) {
+        errors.push(`Card ${cardId} has ${combined} combined copies across mainboard and sideboard (max 3)`);
+      }
+    }
   }
 
   return {

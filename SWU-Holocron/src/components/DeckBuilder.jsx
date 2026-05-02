@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   Save, X, Plus, Minus, Search, BarChart3, CheckCircle, AlertCircle,
   Swords, ChevronDown, Loader2, ShoppingCart, Download, Upload, Copy, ClipboardPaste,
-  Layers, User, LayoutGrid, Info, Shield
+  Layers, User, LayoutGrid, Info, Shield, Sparkles
 } from 'lucide-react';
 import { CardService } from '../services/CardService';
 import { DeckService } from '../services/DeckService';
@@ -15,7 +15,10 @@ import {
   exportToSWUDBText,
   importFromForcetableJSON,
   importFromSWUDBText,
+  importFromSWUComText,
+  importFromMeleeText,
 } from '../utils/deckImportExport';
+import { getCardSuggestions } from '../services/AiSuggestionsService';
 
 /**
  * DeckBuilder.jsx — Core deck building interface
@@ -35,14 +38,22 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
   const [selectedLeader, setSelectedLeader] = useState(deck?.leaderId || null);
   const [selectedBase, setSelectedBase] = useState(deck?.baseId || null);
   const [deckCards, setDeckCards] = useState(deck?.cards || {});
+  const [sideboardCards, setSideboardCards] = useState(deck?.sideboard || {});
   const [allCards, setAllCards] = useState([]);
   const [cardDataMap, setCardDataMap] = useState({}); // cardId -> card object
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [loadingCards, setLoadingCards] = useState(false);
 
-  // Panel state: 'deck' | 'shopping' | 'importexport'
+  // Panel state: 'deck' | 'shopping' | 'importexport' | 'ai'
   const [activePanel, setActivePanel] = useState('deck');
+  // Search add target: 'mainboard' | 'sideboard'
+  const [addTarget, setAddTarget] = useState('mainboard');
+
+  // AI suggestions state
+  const [aiSuggestions, setAiSuggestions] = useState([]);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+  const [suggestionsError, setSuggestionsError] = useState('');
   const [importText, setImportText] = useState('');
   const [importFeedback, setImportFeedback] = useState(null); // { type: 'success'|'error', message }
   const [copyFeedback, setCopyFeedback] = useState(''); // format key that was just copied
@@ -116,6 +127,20 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     return mainDeckCards.reduce((sum, { count }) => sum + count, 0);
   }, [mainDeckCards]);
 
+  const sideboardCardsList = useMemo(() => {
+    return Object.entries(sideboardCards)
+      .map(([cardId, count]) => ({
+        cardId,
+        count,
+        card: cardDataMap[cardId]
+      }))
+      .filter(({ card }) => card && card.Type !== 'Leader' && card.Type !== 'Base');
+  }, [sideboardCards, cardDataMap]);
+
+  const sideboardTotal = useMemo(() => {
+    return sideboardCardsList.reduce((sum, { count }) => sum + count, 0);
+  }, [sideboardCardsList]);
+
   const costCurve = useMemo(() => {
     const curve = Array(8).fill(0);
     mainDeckCards.forEach(({ card, count }) => {
@@ -164,7 +189,10 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     return 'bg-red-500';
   }, [getCardOwnership]);
 
-  const getDeckCount = useCallback((cardId) => deckCards[cardId] || 0, [deckCards]);
+  const getDeckCount = useCallback((cardId) => {
+    if (addTarget === 'sideboard') return sideboardCards[cardId] || 0;
+    return deckCards[cardId] || 0;
+  }, [deckCards, sideboardCards, addTarget]);
 
   // Handlers
   const handleAddCard = useCallback((card) => {
@@ -172,11 +200,8 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     const currentCount = deckCards[cardId] || 0;
     const maxCopies = getPlaysetQuantity(card.Type);
 
-    // Cannot exceed max copies
-    if (currentCount >= maxCopies) return;
-
-    // For leader/base, max 1
     if (card.Type === 'Leader') {
+      if (currentCount >= maxCopies) return;
       setDeckCards(prev => {
         const next = { ...prev };
         if (selectedLeader) delete next[selectedLeader];
@@ -185,6 +210,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
       });
       setSelectedLeader(cardId);
     } else if (card.Type === 'Base') {
+      if (currentCount >= maxCopies) return;
       setDeckCards(prev => {
         const next = { ...prev };
         if (selectedBase) delete next[selectedBase];
@@ -193,13 +219,30 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
       });
       setSelectedBase(cardId);
     } else {
-      // Main deck card
+      // Combined copy limit: mainboard + sideboard cannot exceed maxCopies
+      const sideCount = sideboardCards[cardId] || 0;
+      if (currentCount + sideCount >= maxCopies) return;
       setDeckCards(prev => ({
         ...prev,
-        [cardId]: Math.min(currentCount + 1, maxCopies)
+        [cardId]: currentCount + 1
       }));
     }
-  }, [deckCards, selectedLeader, selectedBase]);
+  }, [deckCards, sideboardCards, selectedLeader, selectedBase]);
+
+  const handleAddToSideboard = useCallback((card) => {
+    if (card.Type === 'Leader' || card.Type === 'Base') return;
+    const cardId = `${card.Set}_${card.Number}`;
+    const maxCopies = getPlaysetQuantity(card.Type);
+
+    setSideboardCards(prev => {
+      const currentSide = prev[cardId] || 0;
+      const currentMain = deckCards[cardId] || 0;
+      const currentTotal = Object.values(prev).reduce((s, c) => s + c, 0);
+      if (currentTotal >= 10) return prev;
+      if (currentSide + currentMain >= maxCopies) return prev;
+      return { ...prev, [cardId]: currentSide + 1 };
+    });
+  }, [deckCards]);
 
   const handleRemoveCard = useCallback((cardId) => {
     if (cardId === selectedLeader) setSelectedLeader(null);
@@ -212,18 +255,47 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     });
   }, [selectedLeader, selectedBase]);
 
+  const handleRemoveFromSideboard = useCallback((cardId) => {
+    setSideboardCards(prev => {
+      const next = { ...prev };
+      delete next[cardId];
+      return next;
+    });
+  }, []);
+
   const handleUpdateCardCount = useCallback((cardId, newCount) => {
     if (newCount <= 0) {
       handleRemoveCard(cardId);
     } else {
       const card = cardDataMap[cardId];
       const maxCopies = getPlaysetQuantity(card.Type);
+      const sideCount = sideboardCards[cardId] || 0;
+      const effectiveMax = maxCopies - sideCount;
       setDeckCards(prev => ({
         ...prev,
-        [cardId]: Math.min(Math.max(newCount, 1), maxCopies)
+        [cardId]: Math.min(Math.max(newCount, 1), effectiveMax)
       }));
     }
-  }, [cardDataMap, handleRemoveCard]);
+  }, [cardDataMap, sideboardCards, handleRemoveCard]);
+
+  const handleUpdateSideboardCount = useCallback((cardId, newCount) => {
+    if (newCount <= 0) {
+      handleRemoveFromSideboard(cardId);
+      return;
+    }
+    const card = cardDataMap[cardId];
+    const maxCopies = getPlaysetQuantity(card?.Type || 'Unit');
+    const mainCount = deckCards[cardId] || 0;
+
+    setSideboardCards(prev => {
+      const currentSide = prev[cardId] || 0;
+      const currentTotal = Object.values(prev).reduce((s, c) => s + c, 0);
+      const maxByRules = maxCopies - mainCount;
+      const maxByCap = 10 - currentTotal + currentSide;
+      const effectiveMax = Math.min(maxByRules, maxByCap);
+      return { ...prev, [cardId]: Math.min(Math.max(newCount, 1), effectiveMax) };
+    });
+  }, [cardDataMap, deckCards, handleRemoveFromSideboard]);
 
   const handleSaveDeck = async () => {
     if (!user || !deckStatus.isValid) return;
@@ -246,6 +318,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
         leaderId: selectedLeader,
         baseId: selectedBase,
         cards: deckCards,
+        sideboard: sideboardCards,
         aspects: Array.from(aspectsSet),
         format: 'Premier',
         tags: []
@@ -274,6 +347,64 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     }
   };
 
+  const handleGetSuggestions = useCallback(async () => {
+    if (!selectedLeader || !selectedBase) {
+      setSuggestionsError('Please select a Leader and Base before getting suggestions.');
+      return;
+    }
+
+    setIsLoadingSuggestions(true);
+    setSuggestionsError('');
+    setAiSuggestions([]);
+
+    try {
+      const leader = cardDataMap[selectedLeader];
+      const base = cardDataMap[selectedBase];
+
+      const aspects = new Set();
+      if (leader?.Aspects) leader.Aspects.forEach(a => aspects.add(a));
+      if (base?.Aspects) base.Aspects.forEach(a => aspects.add(a));
+
+      const deckCardsSummary = mainDeckCards.map(({ card, count }) => ({
+        count,
+        name: card.Name,
+        type: card.Type,
+      }));
+
+      const available = allCards
+        .filter(card => card.Type !== 'Leader' && card.Type !== 'Base')
+        .filter(card => {
+          const cardId = `${card.Set}_${card.Number}`;
+          const currentCount = deckCards[cardId] || 0;
+          return currentCount < getPlaysetQuantity(card.Type);
+        })
+        .map(card => ({
+          id: `${card.Set}_${card.Number}`,
+          name: card.Name,
+          type: card.Type,
+          cost: card.Cost ?? null,
+          aspects: card.Aspects || [],
+          traits: (card.Traits || []).slice(0, 3),
+        }))
+        .slice(0, 300);
+
+      const suggestions = await getCardSuggestions({
+        leaderName: leader?.Name || selectedLeader,
+        baseName: base?.Name || selectedBase,
+        aspects: Array.from(aspects),
+        deckCards: deckCardsSummary,
+        availableCards: available,
+      });
+
+      setAiSuggestions(suggestions);
+    } catch (error) {
+      console.error('AI suggestions error:', error);
+      setSuggestionsError(error.message || 'Failed to get suggestions. Make sure you are signed in.');
+    } finally {
+      setIsLoadingSuggestions(false);
+    }
+  }, [selectedLeader, selectedBase, cardDataMap, mainDeckCards, deckCards, allCards]);
+
   const leaderCard = selectedLeader ? cardDataMap[selectedLeader] : null;
   const baseCard = selectedBase ? cardDataMap[selectedBase] : null;
 
@@ -283,7 +414,8 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     leaderId: selectedLeader,
     baseId: selectedBase,
     cards: deckCards,
-  }), [deckName, selectedLeader, selectedBase, deckCards]);
+    sideboard: sideboardCards,
+  }), [deckName, selectedLeader, selectedBase, deckCards, sideboardCards]);
 
   // Import/export handlers
   const handleExportCopy = useCallback(async (format) => {
@@ -328,6 +460,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     if (imported.leaderId) setSelectedLeader(imported.leaderId);
     if (imported.baseId) setSelectedBase(imported.baseId);
     if (imported.cards) setDeckCards(imported.cards);
+    if (imported.sideboard) setSideboardCards(imported.sideboard);
     if (imported.name) setDeckName(imported.name);
     if (imported.format) setSelectedFormat(imported.format);
 
@@ -781,10 +914,117 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     </div>
   );
 
+  const renderAiSuggestionsPanel = () => (
+    <div className="flex-1 overflow-auto space-y-4">
+      {/* Header / trigger */}
+      <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h4 className="text-sm font-bold text-white flex items-center gap-2">
+              <Sparkles size={16} className="text-purple-400" />
+              AI Card Suggestions
+            </h4>
+            <p className="text-xs text-gray-500 mt-1">
+              {selectedLeader && selectedBase
+                ? 'Powered by Claude Haiku — select up to 5 suggested cards.'
+                : 'Select a Leader and Base first.'}
+            </p>
+          </div>
+          <button
+            onClick={handleGetSuggestions}
+            disabled={!selectedLeader || !selectedBase || isLoadingSuggestions}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm transition-colors ${
+              selectedLeader && selectedBase && !isLoadingSuggestions
+                ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+            }`}
+            style={{ minHeight: '44px' }}
+          >
+            {isLoadingSuggestions
+              ? <Loader2 size={14} className="animate-spin" />
+              : <Sparkles size={14} />}
+            {isLoadingSuggestions ? 'Analyzing…' : 'Suggest'}
+          </button>
+        </div>
+
+        {suggestionsError && (
+          <div className="mt-3 p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-400 text-xs flex items-start gap-2">
+            <AlertCircle size={14} className="mt-0.5 shrink-0" />
+            {suggestionsError}
+          </div>
+        )}
+      </div>
+
+      {/* Suggestion cards */}
+      {aiSuggestions.length > 0 && (
+        <div className="space-y-3">
+          {aiSuggestions.map((suggestion) => {
+            const card = cardDataMap[suggestion.id];
+            if (!card) return null;
+            const canAdd = (deckCards[suggestion.id] || 0) < getPlaysetQuantity(card.Type);
+            return (
+              <div
+                key={suggestion.id}
+                className="bg-gray-900 rounded-lg p-3 border border-gray-700 hover:border-purple-500/40 transition-colors"
+              >
+                <div className="flex items-start gap-3">
+                  <button
+                    onClick={() => setPreviewCard(card)}
+                    className="shrink-0 focus:outline-none focus:ring-2 focus:ring-purple-500 rounded"
+                    aria-label={`Preview ${card.Name}`}
+                  >
+                    <img
+                      src={CardService.getCardImage(card.Set, card.Number)}
+                      alt={card.Name}
+                      className="w-12 h-16 rounded object-cover border border-gray-600 hover:border-purple-400 transition-colors"
+                      onError={(e) => { e.target.style.display = 'none'; }}
+                    />
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white font-semibold text-sm truncate">{card.Name}</p>
+                    <p className="text-gray-400 text-xs mb-1">{card.Type} · Cost {card.Cost ?? '?'}</p>
+                    <p className="text-gray-300 text-xs italic leading-relaxed">{suggestion.reason}</p>
+                  </div>
+                  <button
+                    onClick={() => handleAddCard(card)}
+                    disabled={!canAdd}
+                    className={`shrink-0 flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
+                      canAdd
+                        ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                        : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                    }`}
+                    style={{ minHeight: '44px', minWidth: '56px' }}
+                    title={canAdd ? `Add ${card.Name} to deck` : 'Already at max copies'}
+                  >
+                    <Plus size={12} />
+                    Add
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!isLoadingSuggestions && aiSuggestions.length === 0 && !suggestionsError && (
+        <div className="flex flex-col items-center justify-center py-16 text-gray-600 space-y-3">
+          <Sparkles size={40} className="opacity-20" />
+          <p className="text-sm text-center">
+            {selectedLeader && selectedBase
+              ? 'Click "Suggest" to get AI-powered card recommendations.'
+              : 'Select a Leader and Base to unlock AI suggestions.'}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+
   // ─── Mobile tab definitions ──────────────────────────────────────────────────
   const mobileTabs = [
     { key: 'search', icon: Search, label: 'Search' },
     { key: 'deck', icon: Swords, label: 'Deck' },
+    { key: 'ai', icon: Sparkles, label: 'AI' },
     { key: 'shopping', icon: ShoppingCart, label: 'Shop' },
     { key: 'importexport', icon: Download, label: 'Import' },
     { key: 'analysis', icon: BarChart3, label: 'Analysis' },
@@ -1063,6 +1303,8 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
 
                   {activeMobileTab === 'deck' && renderDeckPanel()}
 
+                  {activeMobileTab === 'ai' && renderAiSuggestionsPanel()}
+
                   {activeMobileTab === 'shopping' && (
                     <div className="flex-1 overflow-auto">
                       <ShoppingList
@@ -1153,6 +1395,16 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
                         <Download size={14} />
                         Import/Export
                       </button>
+                      <button
+                        onClick={() => setActivePanel('ai')}
+                        className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-semibold transition-colors ${
+                          activePanel === 'ai' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
+                        }`}
+                        style={{ minHeight: '44px' }}
+                      >
+                        <Sparkles size={14} />
+                        AI
+                      </button>
                     </div>
 
                     {/* Shopping List Panel */}
@@ -1168,6 +1420,9 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
 
                     {/* Import/Export Panel */}
                     {activePanel === 'importexport' && renderImportExportPanel()}
+
+                    {/* AI Suggestions Panel */}
+                    {activePanel === 'ai' && renderAiSuggestionsPanel()}
 
                     {/* Deck Panel (default) */}
                     {activePanel === 'deck' && renderDeckPanel()}
