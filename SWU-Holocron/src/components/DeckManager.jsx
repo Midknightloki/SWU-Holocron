@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Copy, Trash2, Loader2, Trophy, History, Globe, Link2, XCircle } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Plus, Edit2, Copy, Trash2, Loader2, Trophy, History, Globe, Link2, XCircle, Tag, Filter, X } from 'lucide-react';
 import { DeckService } from '../services/DeckService';
 import { CardService } from '../services/CardService';
 import GameLog from './GameLog';
@@ -14,6 +14,20 @@ export default function DeckManager({ user, collectionData, onOpenDeck, onCreate
   const [historyDeck, setHistoryDeck] = useState(null); // deck to show DeckHistory modal for
   const [publishingDeckId, setPublishingDeckId] = useState(null); // deckId currently being published/revoked
   const [copiedDeckId, setCopiedDeckId] = useState(null); // deckId whose link was just copied
+  const [filterTags, setFilterTags] = useState([]);
+
+  const allTags = useMemo(() => {
+    const tagSet = new Set();
+    decks.forEach(deck => (deck.tags || []).forEach(tag => tagSet.add(tag)));
+    return Array.from(tagSet).sort();
+  }, [decks]);
+
+  const filteredDecks = useMemo(() => {
+    if (filterTags.length === 0) return decks;
+    return decks.filter(deck =>
+      filterTags.every(tag => (deck.tags || []).includes(tag))
+    );
+  }, [decks, filterTags]);
 
   // Fetch decks on mount
   useEffect(() => {
@@ -184,10 +198,44 @@ export default function DeckManager({ user, collectionData, onOpenDeck, onCreate
         </div>
       )}
 
+      {/* Tag filter */}
+      {!loading && allTags.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-gray-400 font-semibold uppercase flex items-center gap-1 shrink-0">
+            <Filter size={12} />
+            Filter:
+          </span>
+          {allTags.map(tag => (
+            <button
+              key={tag}
+              onClick={() => setFilterTags(prev =>
+                prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
+              )}
+              className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full border transition-colors ${
+                filterTags.includes(tag)
+                  ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                  : 'text-gray-400 border-gray-700 hover:border-gray-500 hover:text-white'
+              }`}
+            >
+              {tag}
+            </button>
+          ))}
+          {filterTags.length > 0 && (
+            <button
+              onClick={() => setFilterTags([])}
+              className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-white transition-colors"
+            >
+              <X size={12} />
+              Clear
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Deck grid */}
       {!loading && decks.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {decks.map((deck) => {
+          {filteredDecks.map((deck) => {
             const record = getRecordBadge(deck.id);
             const leaderImage = getLeaderImage(deck.leaderId);
 
@@ -246,6 +294,18 @@ export default function DeckManager({ user, collectionData, onOpenDeck, onCreate
                   <p className="text-xs text-gray-500 mb-3">
                     Updated {formatDate(deck.updatedAt)}
                   </p>
+
+                  {/* Tags */}
+                  {deck.tags && deck.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-3">
+                      {deck.tags.map(tag => (
+                        <span key={tag} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full">
+                          <Tag size={8} />
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Share row */}
                   <div className="mb-3">

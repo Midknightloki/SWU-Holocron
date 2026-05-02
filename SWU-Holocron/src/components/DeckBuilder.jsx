@@ -2,9 +2,10 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   Save, X, Plus, Minus, Search, BarChart3, CheckCircle, AlertCircle,
   Swords, ChevronDown, Loader2, ShoppingCart, Download, Upload, Copy, ClipboardPaste,
-  Layers, User, LayoutGrid, Info, Shield, Sparkles
+  Layers, User, LayoutGrid, Info, Shield, Sparkles, Tag, Wand2, Package, ArrowRight, ToggleLeft
 } from 'lucide-react';
 import { CardService } from '../services/CardService';
+import { GuidedModeService } from '../services/GuidedModeService';
 import { DeckService } from '../services/DeckService';
 import { useAuth } from '../contexts/AuthContext';
 import { getPlaysetQuantity, getCardQuantities } from '../utils/collectionHelpers';
@@ -19,6 +20,13 @@ import {
   importFromMeleeText,
 } from '../utils/deckImportExport';
 import { getCardSuggestions } from '../services/AiSuggestionsService';
+import { checkDeckLegality, getBanStatus, getMinDeckSize, getRequiredLeaderCount } from '../services/LegalityService';
+
+const TAG_CATEGORIES = [
+  { category: 'Archetype', tags: ['Aggro', 'Midrange', 'Control', 'Ramp', 'Combo'] },
+  { category: 'Format', tags: ['Premier', 'Twin Suns', 'Trilogy'] },
+  { category: 'Lifecycle', tags: ['Testing', 'Tournament-ready', 'Retired'] },
+];
 
 /**
  * DeckBuilder.jsx — Core deck building interface
@@ -36,6 +44,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
   const [deckName, setDeckName] = useState(deck?.name || '');
   const [deckDescription, setDeckDescription] = useState(deck?.description || '');
   const [selectedLeader, setSelectedLeader] = useState(deck?.leaderId || null);
+  const [selectedLeader2, setSelectedLeader2] = useState(deck?.leaderId2 || null);
   const [selectedBase, setSelectedBase] = useState(deck?.baseId || null);
   const [deckCards, setDeckCards] = useState(deck?.cards || {});
   const [sideboardCards, setSideboardCards] = useState(deck?.sideboard || {});
@@ -57,6 +66,19 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
   const [importText, setImportText] = useState('');
   const [importFeedback, setImportFeedback] = useState(null); // { type: 'success'|'error', message }
   const [copyFeedback, setCopyFeedback] = useState(''); // format key that was just copied
+
+  // Tag state
+  const [deckTags, setDeckTags] = useState(deck?.tags || []);
+  const [tagInput, setTagInput] = useState('');
+  const [showTagSuggestions, setShowTagSuggestions] = useState(false);
+
+  // Guided mode state: null | 'shell' | 'packets'
+  const [guidedStep, setGuidedStep] = useState(null);
+  const [shells, setShells] = useState([]);
+  const [packets, setPackets] = useState([]);
+  const [loadingGuided, setLoadingGuided] = useState(false);
+  const [selectedShell, setSelectedShell] = useState(null); // shell object
+  const [activePackets, setActivePackets] = useState({}); // packetId -> bool (toggled on/off)
 
   // Mobile state
   const [isMobile, setIsMobile] = useState(false);
@@ -159,22 +181,40 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
   }, [costCurve]);
 
   const deckStatus = useMemo(() => {
-    const hasLeader = !!selectedLeader;
+    const minSize = getMinDeckSize(selectedFormat);
+    const requiredLeaders = getRequiredLeaderCount(selectedFormat);
+    const hasLeader = selectedFormat === 'Twin Suns'
+      ? (!!selectedLeader && !!selectedLeader2)
+      : !!selectedLeader;
     const hasBase = !!selectedBase;
-    const isValidCount = mainDeckTotal === 50;
+    const isValidCount = mainDeckTotal >= minSize;
     return {
       isValid: hasLeader && hasBase && isValidCount,
       hasLeader,
       hasBase,
       isValidCount,
+      minSize,
+      requiredLeaders,
       message:
-        !hasLeader ? 'Missing Leader'
-        : !hasBase ? 'Missing Base'
-        : mainDeckTotal < 50 ? `${50 - mainDeckTotal} cards needed`
-        : mainDeckTotal > 50 ? `${mainDeckTotal - 50} cards over limit`
-        : 'Ready to save'
+        !hasLeader
+          ? (selectedFormat === 'Twin Suns' ? 'Need 2 Leaders' : 'Missing Leader')
+          : !hasBase ? 'Missing Base'
+          : mainDeckTotal < minSize ? `${minSize - mainDeckTotal} cards needed`
+          : 'Ready to save'
     };
-  }, [selectedLeader, selectedBase, mainDeckTotal]);
+  }, [selectedLeader, selectedLeader2, selectedBase, mainDeckTotal, selectedFormat]);
+
+  const legalityResult = useMemo(() => {
+    return checkDeckLegality({
+      format: selectedFormat,
+      leaderId: selectedLeader,
+      leaderId2: selectedLeader2,
+      baseId: selectedBase,
+      mainDeckCards,
+      mainDeckTotal,
+      sideboardCardsList,
+    }, cardDataMap);
+  }, [selectedFormat, selectedLeader, selectedLeader2, selectedBase, mainDeckCards, mainDeckTotal, sideboardCardsList, cardDataMap]);
 
   const getCardOwnership = useCallback((cardId) => {
     const [set, number] = cardId.split('_');
@@ -297,6 +337,26 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     });
   }, [cardDataMap, deckCards, handleRemoveFromSideboard]);
 
+  const handleAddTag = useCallback((tag) => {
+    const t = tag.trim();
+    if (!t || deckTags.includes(t)) return;
+    setDeckTags(prev => [...prev, t]);
+    setTagInput('');
+    setShowTagSuggestions(false);
+  }, [deckTags]);
+
+  const handleRemoveTag = useCallback((tag) => {
+    setDeckTags(prev => prev.filter(t => t !== tag));
+  }, []);
+
+  const filteredTagSuggestions = useMemo(() => {
+    const q = tagInput.toLowerCase();
+    return TAG_CATEGORIES.map(cat => ({
+      ...cat,
+      tags: cat.tags.filter(t => t.toLowerCase().includes(q) && !deckTags.includes(t))
+    })).filter(cat => cat.tags.length > 0);
+  }, [tagInput, deckTags]);
+
   const handleSaveDeck = async () => {
     if (!user || !deckStatus.isValid) return;
 
@@ -320,8 +380,8 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
         cards: deckCards,
         sideboard: sideboardCards,
         aspects: Array.from(aspectsSet),
-        format: 'Premier',
-        tags: []
+        format: selectedFormat,
+        tags: deckTags
       };
 
       let savedDeckId;
@@ -598,13 +658,75 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
                     onClick={() => handleUpdateCardCount(cardId, count + 1)}
                     className="flex items-center justify-center bg-gray-700 hover:bg-gray-600 rounded transition-colors"
                     style={{ minWidth: '44px', minHeight: '44px' }}
-                    disabled={count >= getPlaysetQuantity(card.Type)}
+                    disabled={count + (sideboardCards[cardId] || 0) >= getPlaysetQuantity(card.Type)}
                   >
                     <Plus size={14} className="text-gray-300" />
                   </button>
                 </div>
                 <button
                   onClick={() => handleRemoveCard(cardId)}
+                  className="flex items-center justify-center bg-red-500/20 hover:bg-red-500/30 rounded transition-colors"
+                  style={{ minWidth: '44px', minHeight: '44px' }}
+                >
+                  <X size={14} className="text-red-400" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Sideboard Section */}
+      <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="text-xs font-bold uppercase text-gray-400">Sideboard</h4>
+          <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+            sideboardTotal === 0
+              ? 'bg-gray-700/50 text-gray-500'
+              : sideboardTotal > 10
+              ? 'bg-red-500/20 text-red-400'
+              : 'bg-blue-500/20 text-blue-400'
+          }`}>
+            {sideboardTotal}/10
+          </span>
+        </div>
+        {sideboardCardsList.length === 0 ? (
+          <p className="text-gray-500 text-sm">No sideboard cards — toggle "Sideboard" in search to add cards</p>
+        ) : (
+          <div className="space-y-2 max-h-48 overflow-y-auto">
+            {sideboardCardsList.map(({ cardId, card, count }) => (
+              <div key={cardId} className="flex items-center gap-3 bg-gray-800 p-3 rounded border border-gray-700 hover:border-gray-600 transition-colors">
+                <div
+                  className={`w-3 h-3 rounded-full shrink-0 ${getOwnershipColor(cardId, count)}`}
+                  title={`Owned: ${getCardOwnership(cardId).total}`}
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-white text-sm font-semibold truncate">{card.Name}</p>
+                  <p className="text-gray-400 text-xs">{cardId}</p>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => handleUpdateSideboardCount(cardId, count - 1)}
+                    className="flex items-center justify-center bg-gray-700 hover:bg-gray-600 rounded transition-colors"
+                    style={{ minWidth: '44px', minHeight: '44px' }}
+                  >
+                    <Minus size={14} className="text-gray-300" />
+                  </button>
+                  <span className="w-8 text-center text-white font-semibold">{count}</span>
+                  <button
+                    onClick={() => handleUpdateSideboardCount(cardId, count + 1)}
+                    className="flex items-center justify-center bg-gray-700 hover:bg-gray-600 rounded transition-colors"
+                    style={{ minWidth: '44px', minHeight: '44px' }}
+                    disabled={
+                      sideboardTotal >= 10 ||
+                      (deckCards[cardId] || 0) + count >= getPlaysetQuantity(card?.Type)
+                    }
+                  >
+                    <Plus size={14} className="text-gray-300" />
+                  </button>
+                </div>
+                <button
+                  onClick={() => handleRemoveFromSideboard(cardId)}
                   className="flex items-center justify-center bg-red-500/20 hover:bg-red-500/30 rounded transition-colors"
                   style={{ minWidth: '44px', minHeight: '44px' }}
                 >
@@ -639,6 +761,61 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
           </div>
         </div>
       )}
+
+      {/* Tags */}
+      <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+        <h4 className="text-xs font-bold uppercase text-gray-400 mb-3 flex items-center gap-2">
+          <Tag size={14} />
+          Tags
+        </h4>
+        {deckTags.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {deckTags.map(tag => (
+              <span key={tag} className="inline-flex items-center gap-1 px-2 py-1 bg-blue-500/20 text-blue-300 text-xs rounded-full border border-blue-500/30">
+                {tag}
+                <button onClick={() => handleRemoveTag(tag)} className="hover:text-red-400 transition-colors ml-0.5">
+                  <X size={10} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="relative">
+          <input
+            type="text"
+            value={tagInput}
+            onChange={(e) => { setTagInput(e.target.value); setShowTagSuggestions(true); }}
+            onFocus={() => setShowTagSuggestions(true)}
+            onBlur={() => setTimeout(() => setShowTagSuggestions(false), 150)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); if (tagInput.trim()) handleAddTag(tagInput); }
+              if (e.key === 'Escape') setShowTagSuggestions(false);
+            }}
+            placeholder="Add tag…"
+            className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-xs placeholder-gray-600 focus:outline-none focus:border-yellow-500"
+          />
+          {showTagSuggestions && filteredTagSuggestions.length > 0 && (
+            <div className="absolute z-10 left-0 right-0 mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden max-h-48 overflow-y-auto">
+              {filteredTagSuggestions.map(({ category, tags }) => (
+                <div key={category}>
+                  <div className="px-3 py-1 text-[10px] font-bold uppercase text-gray-500 bg-gray-900 sticky top-0">
+                    {category}
+                  </div>
+                  {tags.map(tag => (
+                    <button
+                      key={tag}
+                      onMouseDown={(e) => { e.preventDefault(); handleAddTag(tag); }}
+                      className="w-full text-left px-3 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 
@@ -740,6 +917,10 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
               <div className="flex items-center justify-between">
                 <span className="text-gray-300">Main Deck</span>
                 <span className={`font-semibold ${mainDeckTotal === 50 ? 'text-green-400' : 'text-yellow-400'}`}>{mainDeckTotal} / 50</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-gray-300">Sideboard</span>
+                <span className={`font-semibold ${sideboardTotal > 10 ? 'text-red-400' : 'text-blue-400'}`}>{sideboardTotal} / 10</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-gray-300">Leader</span>
@@ -1281,23 +1462,46 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
               {step === 4 && isMobile && (
                 <div className="flex-1 overflow-hidden flex flex-col">
                   {activeMobileTab === 'search' && (
-                    <div className="flex-1 min-h-0 overflow-auto bg-gray-800/50 rounded-xl p-3 border border-gray-700">
-                      <AdvancedSearch
-                        onCardClick={handleAddCard}
-                        collectionData={collectionData}
-                        embedded={true}
-                        getDeckCount={getDeckCount}
-                        initialFilters={{
-                          aspects: (() => {
-                            const aspects = new Set();
-                            const leader = cardDataMap[selectedLeader];
-                            const base = cardDataMap[selectedBase];
-                            if (leader?.Aspects) leader.Aspects.forEach(a => aspects.add(a));
-                            if (base?.Aspects) base.Aspects.forEach(a => aspects.add(a));
-                            return Array.from(aspects);
-                          })()
-                        }}
-                      />
+                    <div className="flex-1 min-h-0 flex flex-col bg-gray-800/50 rounded-xl p-3 border border-gray-700">
+                      {/* Mobile add target toggle */}
+                      <div className="flex gap-1 mb-2 bg-gray-900 rounded-lg p-1 border border-gray-800 shrink-0">
+                        <button
+                          onClick={() => setAddTarget('mainboard')}
+                          className={`flex-1 flex items-center justify-center gap-1 py-1.5 text-xs font-bold rounded-md transition-colors ${
+                            addTarget === 'mainboard' ? 'bg-yellow-500 text-black' : 'text-gray-400 hover:text-white'
+                          }`}
+                        >
+                          <Swords size={11} />
+                          Mainboard
+                        </button>
+                        <button
+                          onClick={() => setAddTarget('sideboard')}
+                          className={`flex-1 flex items-center justify-center gap-1 py-1.5 text-xs font-bold rounded-md transition-colors ${
+                            addTarget === 'sideboard' ? 'bg-blue-500 text-white' : 'text-gray-400 hover:text-white'
+                          }`}
+                        >
+                          <Shield size={11} />
+                          Sideboard {sideboardTotal > 0 && `(${sideboardTotal}/10)`}
+                        </button>
+                      </div>
+                      <div className="flex-1 overflow-auto">
+                        <AdvancedSearch
+                          onCardClick={addTarget === 'sideboard' ? handleAddToSideboard : handleAddCard}
+                          collectionData={collectionData}
+                          embedded={true}
+                          getDeckCount={getDeckCount}
+                          initialFilters={{
+                            aspects: (() => {
+                              const aspects = new Set();
+                              const leader = cardDataMap[selectedLeader];
+                              const base = cardDataMap[selectedBase];
+                              if (leader?.Aspects) leader.Aspects.forEach(a => aspects.add(a));
+                              if (base?.Aspects) base.Aspects.forEach(a => aspects.add(a));
+                              return Array.from(aspects);
+                            })()
+                          }}
+                        />
+                      </div>
                     </div>
                   )}
 
@@ -1327,11 +1531,33 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
 
                   {/* Left Panel: Search */}
                   <div className="flex-1 min-h-0 flex flex-col bg-gray-800/50 rounded-xl p-4 border border-gray-700">
-                    <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center justify-between mb-3">
                       <h3 className="text-lg font-semibold text-white flex items-center gap-2">
                         <Search size={18} className="text-blue-500" />
                         Card Search
                       </h3>
+                    </div>
+
+                    {/* Add target toggle */}
+                    <div className="flex gap-1 mb-3 bg-gray-900 rounded-lg p-1 border border-gray-800">
+                      <button
+                        onClick={() => setAddTarget('mainboard')}
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-bold rounded-md transition-colors ${
+                          addTarget === 'mainboard' ? 'bg-yellow-500 text-black' : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        <Swords size={11} />
+                        Mainboard
+                      </button>
+                      <button
+                        onClick={() => setAddTarget('sideboard')}
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-bold rounded-md transition-colors ${
+                          addTarget === 'sideboard' ? 'bg-blue-500 text-white' : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        <Shield size={11} />
+                        Sideboard {sideboardTotal > 0 && `(${sideboardTotal}/10)`}
+                      </button>
                     </div>
 
                     {loadingCards ? (
@@ -1341,7 +1567,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
                     ) : (
                       <div className="flex-1 overflow-auto">
                         <AdvancedSearch
-                          onCardClick={handleAddCard}
+                          onCardClick={addTarget === 'sideboard' ? handleAddToSideboard : handleAddCard}
                           collectionData={collectionData}
                           embedded={true}
                           getDeckCount={getDeckCount}
