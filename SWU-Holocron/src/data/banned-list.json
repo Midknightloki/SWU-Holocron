@@ -1,0 +1,66 @@
+{
+  "metadata": {
+    "lastUpdated": "2026-05-01",
+    "source": "Fantasy Flight Games",
+    "version": "2.0",
+    "notes": "Cards matched by cardId (Set_Number) when provided, otherwise by name+subtitle. Restricted = max 1 copy. Suspended = banned for Organized Play."
+  },
+  "formats": {
+    "premier": {
+      "description": "Standard 50-card deck with set rotation. Newest sets remain legal until rotated out.",
+      "legalSets": ["SHD", "TWI", "JTL", "UIQ"],
+      "banned": [],
+      "restricted": [],
+      "suspended": [
+        {
+          "name": "Boba Fett",
+          "subtitle": "Collecting the Bounty",
+          "dateSuspended": "2024-11-08",
+          "reason": "Dominance in meta"
+        },
+        {
+          "name": "DJ",
+          "subtitle": "Blatant Thief",
+          "dateSuspended": "2025-01-01",
+          "reason": "Negative play experience"
+        },
+        {
+          "name": "Jango Fett",
+          "subtitle": "Concealing the Conspiracy",
+          "dateSuspended": "2025-03-15",
+          "reason": "Consistency issues"
+        },
+        {
+          "name": "Triple Dark Raid",
+          "subtitle": null,
+          "dateSuspended": "2025-06-20",
+          "reason": "Combo potential"
+        },
+        {
+          "name": "Force Throw",
+          "subtitle": null,
+          "dateSuspended": "2025-11-01",
+          "reason": "Curb Aggression dominance"
+        }
+      ]
+    },
+    "eternal": {
+      "description": "All sets legal. No rotation. Same 50-card structure as Premier.",
+      "banned": [],
+      "restricted": [],
+      "suspended": []
+    },
+    "twinSuns": {
+      "description": "80-card singleton format with exactly 2 Leaders. Leaders cannot combine both Heroism and Villainy aspects.",
+      "banned": [],
+      "restricted": [],
+      "suspended": []
+    },
+    "trilogy": {
+      "description": "Three separate 50-card decks. Max 3 copies of any card across all three decks combined. Different leader and base per deck.",
+      "banned": [],
+      "restricted": [],
+      "suspended": []
+    }
+  }
+}
