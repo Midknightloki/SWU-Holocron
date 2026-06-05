@@ -16,7 +16,6 @@ export const SETS = [
   { code: 'LOF', name: 'Legends of the Force' },
   { code: 'SEC', name: 'Secrets of Power' },
   { code: 'LAW', name: 'A Lawless Time' },
-  { code: 'PROMO', name: 'Promotional Cards' },
   { code: 'OTHER', name: 'Other' },
 ];
 

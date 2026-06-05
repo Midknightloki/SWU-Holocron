@@ -28,7 +28,6 @@ export const SET_CODE_MAP = {
 
   // Special sets
   'INTRO-HOTH': 'I01', // Intro Battle: Hoth
-  'PROMO': 'G25', // Gift/Promo 2025
   'OTHER': 'OTH',
 
   // Reverse mapping
@@ -40,8 +39,7 @@ export const SET_CODE_MAP = {
   '06': 'SEC',
   '07': 'ALT',
   'I01': 'INTRO-HOTH',
-  'G25': 'PROMO'
-  , 'OTH': 'OTHER'
+  'OTH': 'OTHER'
 };
 
 const PRINTED_SET_CANDIDATES = [
@@ -68,7 +66,8 @@ export function printedToFullCode(printedCode, cardType = 'Unit') {
   // Handle codes without hyphens
   let normalized = printedCode.toUpperCase();
   if (!normalized.includes('-')) {
-    const setMatch = PRINTED_SET_CANDIDATES.find((set) => normalized.startsWith(set));
+    const candidates = [...PRINTED_SET_CANDIDATES, 'OTH'];
+    const setMatch = candidates.find((set) => normalized.startsWith(set));
     if (setMatch) {
       const remaining = normalized.substring(setMatch.length);
       if (!remaining) {
@@ -93,19 +92,19 @@ export function printedToFullCode(printedCode, cardType = 'Unit') {
     throw new Error(`Invalid printed code format: ${printedCode}`);
   }
 
-  // Determine if this is already an official code (G25, I01, or numeric like 01)
-  // or if it needs conversion from internal code (SOR, PROMO, etc.)
+  // Determine if this is already an official code (G25, I01, OTH, or numeric like 01)
+  // or if it needs conversion from internal code (SOR, PROMO, OTHER, etc.)
   let officialSet;
-  if (/^\d{2}$/.test(setCode) || /^[A-Z]\d{2}$/.test(setCode)) {
-    // Already official format (01, 02, G25, I01)
+  if (/^\d{2}$/.test(setCode) || /^[A-Z]\d{2}$/.test(setCode) || setCode === 'OTH') {
+    // Already official format (01, 02, G25, I01, OTH)
     officialSet = setCode;
   } else {
-    // Internal format (SOR, SHD, PROMO, INTRO-HOTH) - convert to official
+    // Internal format (SOR, SHD, PROMO, OTHER, INTRO-HOTH) - convert to official
     officialSet = SET_CODE_MAP[setCode] || setCode;
   }
 
   // Middle 2 digits: '09' for G25 promos, '01' for everything else
-  const middleDigits = (officialSet === 'G25') ? '09' : '01';
+  const middleDigits = (officialSet === 'G25' || officialSet === 'OTH') ? '09' : '01';
 
   // Card number: Leaders and Bases start with '1', others start with '0'
   const cardNumPrefix = (cardType === 'Leader' || cardType === 'Base') ? '1' : '0';
@@ -169,8 +168,8 @@ export function parseOfficialCode(fullCode) {
     return null;
   }
 
-  // Handle special codes (G25, I01, etc.) - start with letter then digit
-  const isSpecial = /^[A-Z]\d/.test(fullCode);
+  // Handle special codes (G25, I01, OTH, etc.) - start with letter then digit or OTH
+  const isSpecial = /^[A-Z]\d/.test(fullCode) || fullCode.startsWith('OTH');
 
   let setCode, middleDigits, cardNumber;
 
@@ -228,16 +227,16 @@ export function buildFullOfficialCode(internalSet, number, cardType = 'Unit') {
 export function internalToOfficialCode(internalSet, number, cardType = 'Unit') {
   // Check if this is already an official code or needs conversion
   let officialSet;
-  if (/^\d{2}$/.test(internalSet) || /^[A-Z]\d{2}$/.test(internalSet)) {
-    // Already official format (01, 02, G25, I01)
+  if (/^\d{2}$/.test(internalSet) || /^[A-Z]\d{2}$/.test(internalSet) || internalSet === 'OTH') {
+    // Already official format (01, 02, G25, I01, OTH)
     officialSet = internalSet;
   } else {
-    // Internal format (SOR, SHD, PROMO, INTRO-HOTH) - convert to official
+    // Internal format (SOR, SHD, PROMO, OTHER, INTRO-HOTH) - convert to official
     officialSet = SET_CODE_MAP[internalSet] || '99';
   }
 
   // Middle 2 digits: '09' for G25 promos, '01' for everything else
-  const middleDigits = (officialSet === 'G25') ? '09' : '01';
+  const middleDigits = (officialSet === 'G25' || officialSet === 'OTH') ? '09' : '01';
 
   // Card number: Leaders and Bases start with '1', others start with '0'
   const cardNumPrefix = (cardType === 'Leader' || cardType === 'Base') ? '1' : '0';
@@ -307,7 +306,8 @@ export function isPrintedFormat(code) {
 export function isFullFormat(code) {
   // Standard codes: 01010042 (8 digits)
   // Special codes: G25090003 (3 letters/digits + 6 digits)
-  return /^\d{8}$/.test(code) || /^[A-Z]\d{2}\d{6}$/.test(code);
+  // OTH codes: OTH090003 (3 letters + 6 digits)
+  return /^\d{8}$/.test(code) || /^[A-Z]\d{2}\d{6}$/.test(code) || /^OTH\d{6}$/.test(code);
 }
 
 /**
@@ -358,7 +358,7 @@ export function generateCollectionId(officialCode, cardType = 'Unit') {
  * @returns {boolean}
  */
 export function isSpecialSet(setCode) {
-  const specialSets = ['PROMO', 'INTRO-HOTH', 'G25', 'I01', 'OTHER', 'OTH'];
+  const specialSets = ['INTRO-HOTH', 'I01', 'OTHER', 'OTH'];
   // Only consider sets starting with letter+digit as special (G25, I01)
   return specialSets.includes(setCode) || /^[A-Z]\d/.test(setCode);
 }
@@ -370,11 +370,9 @@ export function isSpecialSet(setCode) {
  */
 export function getSpecialSetDisplayName(setCode) {
   const displayNames = {
-    'PROMO': 'Promotional Cards',
-    'G25': 'Promotional Cards (2025)',
     'INTRO-HOTH': 'Intro Battle: Hoth',
-    'I01': 'Intro Battle: Hoth'
-   , 'OTHER': 'Other', 'OTH': 'Other'
+    'I01': 'Intro Battle: Hoth',
+    'OTHER': 'Other', 'OTH': 'Other'
   };
   return displayNames[setCode] || 'Special Edition';
 }

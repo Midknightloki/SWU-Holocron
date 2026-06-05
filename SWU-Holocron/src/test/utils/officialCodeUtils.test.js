@@ -112,9 +112,9 @@ describe('officialCodeUtils', () => {
     });
 
     it('should parse promo codes and identify special set formatting', () => {
-      const result = parseOfficialCode('G25-3');
-      expect(result.setCode).toBe('G25');
-      expect(result.internalSet).toBe('PROMO');
+      const result = parseOfficialCode('OTH-3');
+      expect(result.setCode).toBe('OTH');
+      expect(result.internalSet).toBe('OTHER');
       expect(result.cardNumber).toBe('0003');
       expect(result.actualNumber).toBe('003');
       expect(result.isSpecial).toBe(true);
@@ -153,12 +153,12 @@ describe('officialCodeUtils', () => {
     });
 
     it('should handle promo codes', () => {
-      expect(officialToInternal('G25-3')).toEqual({
-        set: 'PROMO',
+      expect(officialToInternal('OTH-3')).toEqual({
+        set: 'OTHER',
         number: '003'
       });
-      expect(officialToInternal('G25090003')).toEqual({
-        set: 'PROMO',
+      expect(officialToInternal('OTH090003')).toEqual({
+        set: 'OTHER',
         number: '003'
       });
     });
@@ -255,9 +255,9 @@ describe('officialCodeUtils', () => {
 
   describe('isSpecialSet', () => {
     it('should identify special sets', () => {
-      expect(isSpecialSet('G25')).toBe(true);
+      expect(isSpecialSet('OTH')).toBe(true);
       expect(isSpecialSet('I01')).toBe(true);
-      expect(isSpecialSet('PROMO')).toBe(true);
+      expect(isSpecialSet('OTHER')).toBe(true);
       expect(isSpecialSet('INTRO-HOTH')).toBe(true);
     });
 
@@ -281,8 +281,8 @@ describe('officialCodeUtils', () => {
     });
 
     it('should handle promo cards', () => {
-      expect(buildFullOfficialCode('PROMO', '003', 'Unit')).toBe('G25090003');
-      expect(buildFullOfficialCode('G25', '003', 'Unit')).toBe('G25090003');
+      expect(buildFullOfficialCode('OTHER', '003', 'Unit')).toBe('OTH090003');
+      expect(buildFullOfficialCode('OTH', '003', 'Unit')).toBe('OTH090003');
     });
 
     it('should handle intro set', () => {
@@ -334,7 +334,7 @@ describe('officialCodeUtils', () => {
     it('should handle internal to official round trips', () => {
       const internal = [
         { set: 'SOR', number: '042' },
-        { set: 'PROMO', number: '003' },
+        { set: 'OTHER', number: '003' },
         { set: 'INTRO-HOTH', number: '001' }
       ];
 

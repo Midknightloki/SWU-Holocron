@@ -180,7 +180,19 @@ describe('CardService', () => {
     });
   });
 
+  describe.skip('getAvailableSets - Integration', () => {
+    // TODO: Add test coverage for getAvailableSets integration
+    // This suite was previously empty and needs robust tests
+    // to verify Firestore polling and API fallback behaviors.
+    it('should test something', () => {});
+  });
 
+  describe.skip('fetchSetData - Firestore Integration', () => {
+    // TODO: Add test coverage for fetchSetData integration
+    // This suite was previously empty and needs robust tests
+    // to verify Firestore document retrieval and legacy cache fallbacks.
+    it('should test something', () => {});
+  });
 
   describe('Utility Methods', () => {
     describe('getCollectionId', () => {

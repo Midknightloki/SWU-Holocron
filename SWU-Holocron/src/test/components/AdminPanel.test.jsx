@@ -130,6 +130,10 @@ describe('AdminPanel', () => {
       });
     });
 
+    // TODO: The tests below were temporarily skipped because they
+    // depend on detailed UI elements or mocked functions that are
+    // complex to set up. A robust testing strategy for AdminPanel needs
+    // to be established so these can be re-enabled.
     it.skip('should display recent sync logs', async () => {
       const { getDocs } = await import('firebase/firestore');
       getDocs.mockResolvedValue(createLogsSnapshot([
