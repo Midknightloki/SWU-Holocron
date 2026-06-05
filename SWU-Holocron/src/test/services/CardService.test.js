@@ -180,33 +180,7 @@ describe('CardService', () => {
     });
   });
 
-  describe('getAvailableSets - Integration', () => {
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  });
-
-  describe('fetchSetData - Firestore Integration', () => {
-
-
-
-
-
-
-  });
 
   describe('Utility Methods', () => {
     describe('getCollectionId', () => {
