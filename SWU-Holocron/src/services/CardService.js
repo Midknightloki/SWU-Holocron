@@ -37,6 +37,11 @@ export const CardService = {
         const availableSets = [];
         for (const setCode of knownSets) {
           try {
+            if (setCode === 'OTHER') {
+              availableSets.push(setCode);
+              continue;
+            }
+
             const dataDocRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'cardDatabase', 'sets', setCode, 'data');
             const dataSnap = await getDoc(dataDocRef);
             if (dataSnap.exists() && dataSnap.data().totalCards > 0) {
@@ -67,6 +72,11 @@ export const CardService = {
 
     for (const setCode of knownSets) {
       try {
+        if (setCode === 'OTHER') {
+          availableSets.push(setCode);
+          continue;
+        }
+
         const response = await CardService.fetchWithTimeout(
           `${API_BASE}/cards/${setCode}`,
           {},
