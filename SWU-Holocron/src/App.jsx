@@ -471,7 +471,14 @@ export default function App() {
     return cards.filter(card => {
       if (!card) return false;
       // Only show cards from the current set (skip if 'ALL' is selected)
-      if (activeSet !== 'ALL' && card.Set !== activeSet) return false;
+      if (activeSet !== 'ALL') {
+        if (activeSet === 'OTHER') {
+          const mainSets = ['SOR', 'SHD', 'TWI', 'JTL', 'LOF', 'SEC', 'LAW'];
+          if (mainSets.includes(card.Set)) return false;
+        } else if (card.Set !== activeSet) {
+          return false;
+        }
+      }
       const matchSearch = card.Name?.toLowerCase().includes(searchTerm.toLowerCase());
       // Handle Neutral aspect filter for cards with no aspects
       const isNeutral = !card.Aspects || card.Aspects.length === 0;

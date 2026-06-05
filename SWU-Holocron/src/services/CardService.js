@@ -33,7 +33,7 @@ export const CardService = {
     // Client SDK cannot list sub-collections, so we probe each known set directly.
     if (db && APP_ID) {
       try {
-        const knownSets = ['SOR', 'SHD', 'TWI', 'JTL', 'LOF', 'SEC', 'LAW', 'PROMO'];
+        const knownSets = ['SOR', 'SHD', 'TWI', 'JTL', 'LOF', 'SEC', 'LAW', 'PROMO', 'OTHER'];
         const availableSets = [];
         for (const setCode of knownSets) {
           try {
@@ -62,7 +62,7 @@ export const CardService = {
 
     // Fallback: Try to detect sets by attempting to fetch from API
     // This is a fallback when Firestore isn't available
-    const knownSets = ['SOR', 'SHD', 'TWI', 'JTL', 'LOF', 'SEC', 'LAW', 'PROMO'];
+    const knownSets = ['SOR', 'SHD', 'TWI', 'JTL', 'LOF', 'SEC', 'LAW', 'PROMO', 'OTHER'];
     const availableSets = [];
 
     for (const setCode of knownSets) {

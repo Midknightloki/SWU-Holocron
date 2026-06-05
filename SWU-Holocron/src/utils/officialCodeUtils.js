@@ -24,10 +24,12 @@ export const SET_CODE_MAP = {
   'LOF': '05', // Legends of the Force
   'SEC': '06', // Secrets of Power
   'LAW': '07', // A Lawless Time
+  'ALT': '07',
 
   // Special sets
   'INTRO-HOTH': 'I01', // Intro Battle: Hoth
   'PROMO': 'G25', // Gift/Promo 2025
+  'OTHER': 'OTH',
 
   // Reverse mapping
   '01': 'SOR',
@@ -39,6 +41,7 @@ export const SET_CODE_MAP = {
   '07': 'ALT',
   'I01': 'INTRO-HOTH',
   'G25': 'PROMO'
+  , 'OTH': 'OTHER'
 };
 
 const PRINTED_SET_CANDIDATES = [
@@ -355,7 +358,7 @@ export function generateCollectionId(officialCode, cardType = 'Unit') {
  * @returns {boolean}
  */
 export function isSpecialSet(setCode) {
-  const specialSets = ['PROMO', 'INTRO-HOTH', 'G25', 'I01'];
+  const specialSets = ['PROMO', 'INTRO-HOTH', 'G25', 'I01', 'OTHER', 'OTH'];
   // Only consider sets starting with letter+digit as special (G25, I01)
   return specialSets.includes(setCode) || /^[A-Z]\d/.test(setCode);
 }
@@ -371,6 +374,7 @@ export function getSpecialSetDisplayName(setCode) {
     'G25': 'Promotional Cards (2025)',
     'INTRO-HOTH': 'Intro Battle: Hoth',
     'I01': 'Intro Battle: Hoth'
+   , 'OTHER': 'Other', 'OTH': 'Other'
   };
   return displayNames[setCode] || 'Special Edition';
 }
