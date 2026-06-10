@@ -8,11 +8,11 @@ import { SETS } from '../../constants';
 import { isSpecialSet, SET_CODE_MAP } from '../../utils/officialCodeUtils';
 
 describe('Dynamic Set Discovery', () => {
-  describe('SETS constant - PROMO support', () => {
-    it('should include PROMO set', () => {
-      const promoSet = SETS.find(s => s.code === 'PROMO');
+  describe('SETS constant - OTHER support', () => {
+    it('should include OTHER set', () => {
+      const promoSet = SETS.find(s => s.code === 'OTHER');
       expect(promoSet).toBeDefined();
-      expect(promoSet.name).toBe('Promotional Cards');
+      expect(promoSet.name).toBe('Other');
     });
 
     it('should include all mainline sets', () => {
@@ -52,23 +52,23 @@ describe('Dynamic Set Discovery', () => {
     });
 
     it('should contain special set mappings', () => {
-      expect(SET_CODE_MAP['PROMO']).toBe('G25');
+      expect(SET_CODE_MAP['OTHER']).toBe('OTH');
       expect(SET_CODE_MAP['INTRO-HOTH']).toBe('I01');
     });
 
     it('should contain reverse mappings', () => {
       expect(SET_CODE_MAP['01']).toBe('SOR');
       expect(SET_CODE_MAP['02']).toBe('SHD');
-      expect(SET_CODE_MAP['G25']).toBe('PROMO');
+      expect(SET_CODE_MAP['OTH']).toBe('OTHER');
       expect(SET_CODE_MAP['I01']).toBe('INTRO-HOTH');
     });
   });
 
   describe('isSpecialSet function', () => {
     it('should identify special sets by code', () => {
-      expect(isSpecialSet('PROMO')).toBe(true);
+      expect(isSpecialSet('OTHER')).toBe(true);
       expect(isSpecialSet('INTRO-HOTH')).toBe(true);
-      expect(isSpecialSet('G25')).toBe(true);
+      expect(isSpecialSet('OTH')).toBe(true);
       expect(isSpecialSet('I01')).toBe(true);
     });
 
@@ -87,7 +87,7 @@ describe('Dynamic Set Discovery', () => {
 
     it('should detect special set pattern (letter+digit)', () => {
       // Pattern: starts with letter followed by digit
-      expect(isSpecialSet('G25')).toBe(true);
+      expect(isSpecialSet('OTH')).toBe(true);
       expect(isSpecialSet('I01')).toBe(true);
       expect(isSpecialSet('H99')).toBe(true); // Hypothetical future special set
     });
@@ -95,7 +95,7 @@ describe('Dynamic Set Discovery', () => {
 
   describe('Dynamic visibleSets logic', () => {
     it('should build dynamic sets from discovered set codes', () => {
-      const availableSets = ['SOR', 'SHD', 'PROMO'];
+      const availableSets = ['SOR', 'SHD', 'OTHER'];
 
       // Simulate visibleSets logic from App.jsx
       const buildVisibleSets = (availableSets) => {
@@ -109,7 +109,7 @@ describe('Dynamic Set Discovery', () => {
 
       const visibleSets = buildVisibleSets(availableSets);
       expect(visibleSets).toHaveLength(3);
-      expect(visibleSets.map(s => s.code)).toEqual(['SOR', 'SHD', 'PROMO']);
+      expect(visibleSets.map(s => s.code)).toEqual(['SOR', 'SHD', 'OTHER']);
     });
 
     it('should fallback to set code as name for unknown sets', () => {
@@ -151,7 +151,7 @@ describe('Dynamic Set Discovery', () => {
     it('should separate mainline from special sets', () => {
       const mixedSets = [
         { code: 'SOR', name: 'Spark of Rebellion' },
-        { code: 'PROMO', name: 'Promotional Cards' },
+        { code: 'OTHER', name: 'Other' },
         { code: 'SHD', name: 'Shadows of the Galaxy' },
         { code: 'INTRO-HOTH', name: 'Intro Battle: Hoth' },
         { code: 'TWI', name: 'Twilight of the Republic' }
@@ -163,7 +163,7 @@ describe('Dynamic Set Discovery', () => {
       expect(mainlineSets).toHaveLength(3);
       expect(specialSets).toHaveLength(2);
       expect(mainlineSets.map(s => s.code)).toEqual(['SOR', 'SHD', 'TWI']);
-      expect(specialSets.map(s => s.code)).toEqual(['PROMO', 'INTRO-HOTH']);
+      expect(specialSets.map(s => s.code)).toEqual(['OTHER', 'INTRO-HOTH']);
     });
 
     it('should sort mainline sets by numeric code', () => {
@@ -186,19 +186,19 @@ describe('Dynamic Set Discovery', () => {
 
     it('should sort special sets alphabetically', () => {
       const unsortedSpecial = [
-        { code: 'PROMO', name: 'Promotional Cards' },
+        { code: 'OTHER', name: 'Other' },
         { code: 'INTRO-HOTH', name: 'Intro Battle: Hoth' },
-        { code: 'G25', name: 'Gift Box 2025' }
+        { code: 'OTH', name: 'Gift Box 2025' }
       ];
 
       const sorted = unsortedSpecial.sort((a, b) => a.code.localeCompare(b.code));
 
-      expect(sorted.map(s => s.code)).toEqual(['G25', 'INTRO-HOTH', 'PROMO']);
+      expect(sorted.map(s => s.code)).toEqual(['INTRO-HOTH', 'OTH', 'OTHER']);
     });
 
     it('should combine mainline and special with proper ordering', () => {
       const dynamicSets = [
-        { code: 'PROMO', name: 'Promotional Cards' },
+        { code: 'OTHER', name: 'Other' },
         { code: 'TWI', name: 'Twilight of the Republic' },
         { code: 'SOR', name: 'Spark of Rebellion' },
         { code: 'INTRO-HOTH', name: 'Intro Battle: Hoth' },
@@ -222,7 +222,7 @@ describe('Dynamic Set Discovery', () => {
 
       expect(orderedSets.map(s => s.code)).toEqual([
         'SOR', 'SHD', 'TWI', // Mainline in numeric order
-        'INTRO-HOTH', 'PROMO' // Special in alphabetical order
+        'INTRO-HOTH', 'OTHER' // Special in alphabetical order
       ]);
     });
 
@@ -298,8 +298,8 @@ describe('Dynamic Set Discovery', () => {
       expect(visibleSets).toHaveLength(6);
     });
 
-    it('should show PROMO when data exists', () => {
-      const availableSets = ['SOR', 'SHD', 'PROMO'];
+    it('should show OTHER when data exists', () => {
+      const availableSets = ['SOR', 'SHD', 'OTHER'];
 
       const buildVisibleSets = (availableSets) => {
         if (availableSets.length === 0) return SETS;
@@ -326,8 +326,8 @@ describe('Dynamic Set Discovery', () => {
 
       const visibleSets = buildVisibleSets(availableSets);
 
-      expect(visibleSets.map(s => s.code)).toEqual(['SOR', 'SHD', 'PROMO']);
-      expect(visibleSets[2].name).toBe('Promotional Cards');
+      expect(visibleSets.map(s => s.code)).toEqual(['SOR', 'SHD', 'OTHER']);
+      expect(visibleSets[2].name).toBe('Other');
     });
   });
 });

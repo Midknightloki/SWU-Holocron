@@ -28,6 +28,7 @@ export const SET_CODE_MAP = {
 
   // Special sets
   'INTRO-HOTH': 'I01', // Intro Battle: Hoth
+  'PROMO': 'G25',
   'OTHER': 'OTH',
 
   // Reverse mapping
@@ -39,6 +40,7 @@ export const SET_CODE_MAP = {
   '06': 'SEC',
   '07': 'ALT',
   'I01': 'INTRO-HOTH',
+  'G25': 'PROMO',
   'OTH': 'OTHER'
 };
 

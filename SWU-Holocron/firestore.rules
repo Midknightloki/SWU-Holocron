@@ -61,5 +61,12 @@ service cloud.firestore {
     match /artifacts/{appId}/contributorInvites/{inviteId} {
       allow read, write: if isAdmin(appId);
     }
+
+    // Submissions: anyone authenticated can create, only admins can update/delete/read all
+    match /artifacts/{appId}/submissions/{submissionId} {
+      allow create: if request.auth != null;
+      allow read: if canWriteContent(appId) || (request.auth != null && resource.data.submittedBy == request.auth.uid);
+      allow update, delete: if canWriteContent(appId);
+    }
   }
 }

@@ -262,7 +262,7 @@ export default function App() {
 
     try {
       // Special case: "All Sets" — combine data from all available sets
-      if (activeSet === 'ALL') {
+      if (activeSet === 'ALL' || activeSet === 'OTHER') {
         const allCards = [];
         for (const setCode of availableSets) {
           const cacheKey = `swu-cards-${setCode}`;
@@ -541,8 +541,12 @@ export default function App() {
       return SETS.filter(s => s.code !== 'LAW' && s.code !== 'PROMO');
     }
 
+    // Ensure OTHER is always included even if not discovered with cards initially,
+    // since it serves as a catch-all for custom/promo items.
+    const setsToProcess = availableSets.includes('OTHER') ? availableSets : [...availableSets, 'OTHER'];
+
     // Build set objects dynamically from discovered sets (only if they have cards)
-    const dynamicSets = availableSets
+    const dynamicSets = setsToProcess
       .filter(code => {
         // Always include discovered sets that have cards
         return true;

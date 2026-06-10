@@ -35,8 +35,11 @@ export const calculateStats = (cards, collectionData, setCode) => {
     }
 
     // Sum quantities across standard and foil variants
-    const stdKey = getCollectionId(setCode, card.Number, false);
-    const foilKey = getCollectionId(setCode, card.Number, true);
+    // Use card.Set instead of setCode, because in ALL view, setCode might be "ALL",
+    // and for OTHER, cards may have various sets if derived differently.
+    const actualSet = (setCode === 'ALL' || setCode === 'OTHER') ? card.Set : setCode;
+    const stdKey = getCollectionId(actualSet, card.Number, false);
+    const foilKey = getCollectionId(actualSet, card.Number, true);
     const qty = (collectionData[stdKey]?.quantity || 0) + (collectionData[foilKey]?.quantity || 0);
     
     const entry = uniqueMap.get(key);
@@ -126,8 +129,9 @@ export const calculateRarityBreakdown = (cards, collectionData, setCode) => {
   const breakdown = {};
 
   cards.forEach(card => {
-    const stdKey = getCollectionId(setCode, card.Number, false);
-    const foilKey = getCollectionId(setCode, card.Number, true);
+    const actualSet = (setCode === 'ALL' || setCode === 'OTHER') ? card.Set : setCode;
+    const stdKey = getCollectionId(actualSet, card.Number, false);
+    const foilKey = getCollectionId(actualSet, card.Number, true);
     const owned = (collectionData[stdKey]?.quantity || 0) + (collectionData[foilKey]?.quantity || 0);
 
     if (owned > 0) {
