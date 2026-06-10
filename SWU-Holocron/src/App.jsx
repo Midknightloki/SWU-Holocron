@@ -44,7 +44,7 @@ export default function App() {
   const { user, isAdmin, isContributor, loading: authLoading, loginWithGoogle, loginAnonymously, logout, error: authErrorFromContext } = useAuth();
 
   // Set and Card State
-  const [activeSet, setActiveSet] = useState('SOR');
+  const [activeSet, setActiveSet] = useState('ALL');
   const [cards, setCards] = useState([]);
   const [loading, setLoading] = useState(false);
   const [lastSync, setLastSync] = useState(null);
@@ -84,7 +84,7 @@ export default function App() {
   const [activeDeck, setActiveDeck] = useState(null);
   const [sortBy, setSortBy] = useState('number'); // 'number' | 'cost' | 'recent'
   const [sortDir, setSortDir] = useState('asc');   // 'asc' | 'desc'
-  const [showMyCollection, setShowMyCollection] = useState(false);
+  const [showMyCollection, setShowMyCollection] = useState(true);
 
   const fileInputRef = useRef(null);
 
