@@ -9,7 +9,9 @@ import { GuidedModeService } from '../services/GuidedModeService';
 import { DeckService } from '../services/DeckService';
 import { useAuth } from '../contexts/AuthContext';
 import { getPlaysetQuantity, getCardQuantities } from '../utils/collectionHelpers';
+import { SETS } from '../constants';
 import AdvancedSearch from './AdvancedSearch';
+import CardPickerModal from './CardPickerModal';
 import ShoppingList from './ShoppingList';
 import {
   exportToForcetableJSON,
@@ -108,14 +110,14 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
 
         for (const set of setsToLoad) {
           try {
-            const { data } = await CardService.fetchSetData(set);
+            const { data } = await CardService.fetchSetData(code);
             data.forEach(card => {
               const cardId = `${card.Set}_${card.Number}`;
               cardMap[cardId] = card;
               allCardsList.push(card);
             });
           } catch (error) {
-            console.warn(`Failed to load set ${set}:`, error);
+            console.warn(`Failed to load set ${code}:`, error);
           }
         }
 
@@ -287,6 +289,36 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     if (addTarget === 'sideboard') return sideboardCards[cardId] || 0;
     return deckCards[cardId] || 0;
   }, [deckCards, sideboardCards, addTarget]);
+
+  // Called when a card is selected from CardPickerModal
+  const handlePickerSelect = useCallback((card) => {
+    const cardId = `${card.Set}_${card.Number}`;
+    if (card.Type === 'Leader') {
+      // Remove previous leader from deckCards if any
+      setDeckCards(prev => {
+        const next = { ...prev };
+        if (selectedLeader) delete next[selectedLeader];
+        next[cardId] = 1;
+        return next;
+      });
+      setSelectedLeader(cardId);
+      // Auto-advance: if no base yet, open base picker
+      if (!selectedBase) {
+        setPickerType('Base');
+      } else {
+        setPickerType(null);
+      }
+    } else if (card.Type === 'Base') {
+      setDeckCards(prev => {
+        const next = { ...prev };
+        if (selectedBase) delete next[selectedBase];
+        next[cardId] = 1;
+        return next;
+      });
+      setSelectedBase(cardId);
+      setPickerType(null);
+    }
+  }, [selectedLeader, selectedBase]);
 
   // Handlers
   const handleAddCard = useCallback((card) => {
@@ -605,6 +637,10 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     setStep(4); // Jump to deck building
   }, [importText, allCards]);
 
+  return (
+    <>
+    <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+      <div className="bg-gray-900 rounded-2xl shadow-2xl w-full max-w-7xl max-h-[90vh] flex flex-col border border-gray-800">
   const steps = [
     { name: 'Start', icon: <Plus size={18} /> },
     { name: 'Format', icon: <Layers size={18} /> },
@@ -2119,5 +2155,15 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
         </div>
       )}
     </div>
+
+    {pickerType && (
+      <CardPickerModal
+        type={pickerType}
+        collectionData={collectionData}
+        onSelect={handlePickerSelect}
+        onClose={() => setPickerType(null)}
+      />
+    )}
+  </>
   );
 }
