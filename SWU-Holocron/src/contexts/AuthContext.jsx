@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { GoogleAuthProvider, signInAnonymously, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db, isConfigured, APP_ID } from '../firebase';
+import { GuidedModeService } from '../services/GuidedModeService';
 
 export const AuthContext = createContext(null);
 
@@ -10,6 +11,7 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isContributor, setIsContributor] = useState(false);
   const [adminLoading, setAdminLoading] = useState(false);
 
   useEffect(() => {
@@ -21,27 +23,36 @@ export const AuthProvider = ({ children }) => {
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
       setUser(u);
 
-      // Check admin status
+      // Check admin/contributor status
       if (u && !u.isAnonymous) {
         setAdminLoading(true);
         try {
+          // Check if there's a pending contributor invite for this user's email
+          if (u.email) {
+            await GuidedModeService.checkAndApplyInvite(u.uid, u.email).catch(() => {});
+          }
+
           const profileRef = doc(db, 'artifacts', APP_ID, 'users', u.uid);
           const profileSnap = await getDoc(profileRef);
 
           if (profileSnap.exists()) {
             const profileData = profileSnap.data();
             setIsAdmin(profileData.isAdmin === true);
+            setIsContributor(profileData.isContributor === true);
           } else {
             setIsAdmin(false);
+            setIsContributor(false);
           }
         } catch (error) {
           console.error('Error checking admin status:', error);
           setIsAdmin(false);
+          setIsContributor(false);
         } finally {
           setAdminLoading(false);
         }
       } else {
         setIsAdmin(false);
+        setIsContributor(false);
         setAdminLoading(false);
       }
 
@@ -105,6 +116,7 @@ export const AuthProvider = ({ children }) => {
     loading,
     error,
     isAdmin,
+    isContributor,
     adminLoading,
     loginWithGoogle,
     loginAnonymously,

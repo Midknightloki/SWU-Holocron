@@ -27,6 +27,22 @@ import {
 } from 'firebase/firestore';
 
 // ---------------------------------------------------------------------------
+// Public deck path helpers
+// ---------------------------------------------------------------------------
+
+const publicDeckRef = (slug) =>
+  doc(db, 'artifacts', APP_ID, 'public', 'decks', slug);
+
+const generateSlug = () => {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  let slug = '';
+  for (let i = 0; i < 8; i++) {
+    slug += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return slug;
+};
+
+// ---------------------------------------------------------------------------
 // Path helpers
 // ---------------------------------------------------------------------------
 
@@ -65,6 +81,7 @@ export const DeckService = {
       leaderId = null,
       baseId = null,
       cards = {},
+      sideboard = {},
       aspects = [],
       format = 'Premier',
       tags = [],
@@ -78,6 +95,7 @@ export const DeckService = {
       leaderId,
       baseId,
       cards,
+      sideboard,
       aspects,
       format,
       tags,
@@ -119,6 +137,7 @@ export const DeckService = {
       leaderId: current.leaderId,
       baseId: current.baseId,
       cards: current.cards,
+      sideboard: current.sideboard || {},
       totalCards: current.totalCards,
       savedAt: serverTimestamp(),
       note: versionNote,
@@ -302,6 +321,84 @@ export const DeckService = {
    */
   deleteGameLog: async (uid, deckId, logId) => {
     await deleteDoc(doc(gamelogsRef(uid, deckId), logId));
+  },
+
+  // -------------------------------------------------------------------------
+  // Public Sharing
+  // -------------------------------------------------------------------------
+
+  /**
+   * Publish a deck publicly by writing a snapshot to the public path.
+   * Returns the slug (reuses the existing one if already published).
+   * @param {string} uid
+   * @param {string} deckId
+   * @returns {Promise<string>} The public slug
+   */
+  publishDeck: async (uid, deckId) => {
+    const deck = await DeckService.getDeck(uid, deckId);
+    if (!deck) throw new Error(`Deck ${deckId} not found`);
+
+    if (deck.publicSlug) return deck.publicSlug;
+
+    let slug;
+    let attempts = 0;
+    do {
+      slug = generateSlug();
+      const existing = await getDoc(publicDeckRef(slug));
+      if (!existing.exists()) break;
+      attempts++;
+    } while (attempts < 5);
+
+    if (attempts >= 5) throw new Error('Could not generate a unique share link. Please try again.');
+
+    const batch = writeBatch(db);
+
+    batch.set(publicDeckRef(slug), {
+      deckId,
+      uid,
+      name: deck.name,
+      description: deck.description || '',
+      leaderId: deck.leaderId || null,
+      baseId: deck.baseId || null,
+      cards: deck.cards || {},
+      aspects: deck.aspects || [],
+      format: deck.format || 'Premier',
+      tags: deck.tags || [],
+      totalCards: deck.totalCards || 0,
+      publishedAt: serverTimestamp(),
+    });
+
+    batch.update(deckRef(uid, deckId), { publicSlug: slug });
+
+    await batch.commit();
+    return slug;
+  },
+
+  /**
+   * Revoke public access to a deck by deleting the public doc and clearing the slug.
+   * @param {string} uid
+   * @param {string} deckId
+   */
+  revokeDeck: async (uid, deckId) => {
+    const deck = await DeckService.getDeck(uid, deckId);
+    if (!deck || !deck.publicSlug) return;
+
+    const batch = writeBatch(db);
+    batch.delete(publicDeckRef(deck.publicSlug));
+    batch.update(deckRef(uid, deckId), { publicSlug: null });
+    await batch.commit();
+  },
+
+  /**
+   * Load a publicly shared deck by slug (no auth required).
+   * Returns null if not found.
+   * @param {string} slug
+   * @returns {Promise<{ id: string, ...deckData } | null>}
+   */
+  getPublicDeck: async (slug) => {
+    const snap = await getDoc(publicDeckRef(slug));
+    if (!snap.exists()) return null;
+    return { id: snap.id, ...snap.data() };
   },
 
   /**

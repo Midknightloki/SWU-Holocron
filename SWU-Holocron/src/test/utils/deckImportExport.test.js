@@ -10,7 +10,9 @@ import {
   exportToSWUDBText,
   importFromSWUDBText,
   copyToClipboard,
-  validateDeckImport
+  validateDeckImport,
+  importFromSWUComText,
+  importFromMeleeText
 } from '../../utils/deckImportExport';
 
 const sampleDeck = {
@@ -24,12 +26,14 @@ const sampleDeck = {
 };
 
 const sampleCardDatabase = {
-  'SOR_008': { Name: 'Hera Syndulla' },
-  'SOR_021': { Name: 'Chopper Base' },
-  'SOR_050': { Name: 'Consular Security Force' },
-  'SOR_200': { Name: 'The Force Is With Me' },
-  'JTL_045': { Name: 'R2-D2' }
+  'SOR_008': { Name: 'Hera Syndulla', Set: 'SOR', Number: '008' },
+  'SOR_021': { Name: 'Chopper Base', Set: 'SOR', Number: '021' },
+  'SOR_050': { Name: 'Consular Security Force', Set: 'SOR', Number: '050' },
+  'SOR_200': { Name: 'The Force Is With Me', Set: 'SOR', Number: '200' },
+  'JTL_045': { Name: 'R2-D2', Set: 'JTL', Number: '045' }
 };
+
+const allCardsMock = Object.values(sampleCardDatabase);
 
 describe('deckImportExport', () => {
   describe('exportToForcetableJSON', () => {
@@ -412,6 +416,71 @@ Base: Missing ID format`;
       const result = await copyToClipboard(sampleDeck);
 
       expect(result).toBe(false);
+    });
+  });
+
+  describe('importFromSWUComText', () => {
+    it('should parse valid SWU.com text', () => {
+      const text = `Leaders
+1 | Hera Syndulla
+
+Base
+1 | Chopper Base
+
+Deck
+3 | Consular Security Force
+1 | The Force Is With Me
+2 | R2-D2`;
+
+      const { deck, errors } = importFromSWUComText(text, allCardsMock);
+
+      expect(errors).toHaveLength(0);
+      expect(deck.leaderId).toBe('SOR_008');
+      expect(deck.baseId).toBe('SOR_021');
+      expect(deck.cards['SOR_050']).toBe(3);
+      expect(deck.cards['SOR_200']).toBe(1);
+      expect(deck.cards['JTL_045']).toBe(2);
+    });
+
+    it('should handle names with subtitles', () => {
+      const cardsWithSubtitles = [
+        { Name: 'Leia Organa', Subtitle: 'Of A Secret Bloodline', Set: 'SOR', Number: '009' },
+        { Name: 'Data Vault', Set: 'SOR', Number: '022' }
+      ];
+      const text = `Leaders
+1 | Leia Organa | Of A Secret Bloodline
+
+Base
+1 | Data Vault`;
+
+      const { deck, errors } = importFromSWUComText(text, cardsWithSubtitles);
+      expect(errors).toHaveLength(0);
+      expect(deck.leaderId).toBe('SOR_009');
+      expect(deck.baseId).toBe('SOR_022');
+    });
+  });
+
+  describe('importFromMeleeText', () => {
+    it('should parse valid Melee.gg text', () => {
+      const text = `MainDeck
+3 Consular Security Force
+1 The Force Is With Me
+2 R2-D2
+
+Leader
+1 Hera Syndulla
+
+Base
+1 Chopper Base`;
+
+      const { deck, errors } = importFromMeleeText(text, allCardsMock);
+
+      expect(errors).toHaveLength(0);
+      expect(deck.leaderId).toBe('SOR_008');
+      expect(deck.baseId).toBe('SOR_021');
+      expect(deck.cards['SOR_050']).toBe(3);
+      expect(deck.cards['SOR_200']).toBe(1);
+      expect(deck.cards['JTL_045']).toBe(2);
     });
   });
 

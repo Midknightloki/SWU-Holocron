@@ -17,6 +17,7 @@ export const SETS = [
   { code: 'SEC', name: 'Secrets of Power' },
   { code: 'LAW', name: 'A Lawless Time' },
   { code: 'PROMO', name: 'Promotional Cards' },
+  { code: 'OTHER', name: 'Other' },
 ];
 
 export const FALLBACK_DATA = [

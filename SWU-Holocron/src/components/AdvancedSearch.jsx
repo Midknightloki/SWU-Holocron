@@ -4,11 +4,11 @@ import { SETS, ASPECTS } from '../constants';
 import { CardService } from '../services/CardService';
 import { getPlaysetQuantity } from '../utils/collectionHelpers';
 
-export default function AdvancedSearch({ onCardClick, collectionData, currentSet, onClose = () => {}, onUpdateQuantity, embedded = false, getDeckCount = () => 0 }) {
+export default function AdvancedSearch({ onCardClick, collectionData, currentSet, onClose = () => {}, onUpdateQuantity, embedded = false, getDeckCount = () => 0, initialFilters = {} }) {
   const [searchText, setSearchText] = useState('');
-  const [selectedSets, setSelectedSets] = useState([]);
-  const [selectedAspects, setSelectedAspects] = useState([]);
-  const [selectedTypes, setSelectedTypes] = useState([]);
+  const [selectedSets, setSelectedSets] = useState(initialFilters.sets || []);
+  const [selectedAspects, setSelectedAspects] = useState(initialFilters.aspects || []);
+  const [selectedTypes, setSelectedTypes] = useState(initialFilters.types || []);
   const [costMin, setCostMin] = useState('');
   const [costMax, setCostMax] = useState('');
   const [searchResults, setSearchResults] = useState([]);

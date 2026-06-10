@@ -41,7 +41,7 @@ const getCollectionRef = (user, legacySyncCode, useLegacyPath) => {
 };
 
 export default function App() {
-  const { user, isAdmin, loading: authLoading, loginWithGoogle, loginAnonymously, logout, error: authErrorFromContext } = useAuth();
+  const { user, isAdmin, isContributor, loading: authLoading, loginWithGoogle, loginAnonymously, logout, error: authErrorFromContext } = useAuth();
 
   // Set and Card State
   const [activeSet, setActiveSet] = useState('SOR');
@@ -90,10 +90,10 @@ export default function App() {
 
   // Prevent non-admins from staying on the admin view if status changes
   useEffect(() => {
-    if (view === 'admin' && !isAdmin) {
+    if (view === 'admin' && !isAdmin && !isContributor) {
       setView('binder');
     }
-  }, [view, isAdmin]);
+  }, [view, isAdmin, isContributor]);
 
   const handleGoogleLogin = async () => {
     setAuthError('');
@@ -471,7 +471,14 @@ export default function App() {
     return cards.filter(card => {
       if (!card) return false;
       // Only show cards from the current set (skip if 'ALL' is selected)
-      if (activeSet !== 'ALL' && card.Set !== activeSet) return false;
+      if (activeSet !== 'ALL') {
+        if (activeSet === 'OTHER') {
+          const mainSets = ['SOR', 'SHD', 'TWI', 'JTL', 'LOF', 'SEC', 'LAW'];
+          if (mainSets.includes(card.Set)) return false;
+        } else if (card.Set !== activeSet) {
+          return false;
+        }
+      }
       const matchSearch = card.Name?.toLowerCase().includes(searchTerm.toLowerCase());
       // Handle Neutral aspect filter for cards with no aspects
       const isNeutral = !card.Aspects || card.Aspects.length === 0;
@@ -658,7 +665,7 @@ export default function App() {
                 >
                   <FileText size={18} />
                 </button>
-                {isAdmin && (
+                {(isAdmin || isContributor) && (
                   <button
                     onClick={() => setView('admin')}
                     className={`p-2 rounded-md transition-colors ${view === 'admin' ? 'bg-gray-700 text-white shadow' : 'text-gray-400 hover:text-white'}`}
@@ -931,7 +938,7 @@ export default function App() {
                   }}
                   onCancel={() => setView('binder')}
                 />
-              ) : view === 'admin' && isAdmin ? (
+              ) : view === 'admin' && (isAdmin || isContributor) ? (
                 <AdminPanel />
               ) : (
               <>

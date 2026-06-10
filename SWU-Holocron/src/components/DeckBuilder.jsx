@@ -1,9 +1,11 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   Save, X, Plus, Minus, Search, BarChart3, CheckCircle, AlertCircle,
-  Swords, ChevronDown, Loader2, ShoppingCart, Download, Upload, Copy, ClipboardPaste
+  Swords, ChevronDown, Loader2, ShoppingCart, Download, Upload, Copy, ClipboardPaste,
+  Layers, User, LayoutGrid, Info, Shield, Sparkles, Tag, Wand2, Package, ArrowRight, ToggleLeft
 } from 'lucide-react';
 import { CardService } from '../services/CardService';
+import { GuidedModeService } from '../services/GuidedModeService';
 import { DeckService } from '../services/DeckService';
 import { useAuth } from '../contexts/AuthContext';
 import { getPlaysetQuantity, getCardQuantities } from '../utils/collectionHelpers';
@@ -16,7 +18,17 @@ import {
   exportToSWUDBText,
   importFromForcetableJSON,
   importFromSWUDBText,
+  importFromSWUComText,
+  importFromMeleeText,
 } from '../utils/deckImportExport';
+import { getCardSuggestions } from '../services/AiSuggestionsService';
+import { checkDeckLegality, getBanStatus, getMinDeckSize, getRequiredLeaderCount } from '../services/LegalityService';
+
+const TAG_CATEGORIES = [
+  { category: 'Archetype', tags: ['Aggro', 'Midrange', 'Control', 'Ramp', 'Combo'] },
+  { category: 'Format', tags: ['Premier', 'Twin Suns', 'Trilogy'] },
+  { category: 'Lifecycle', tags: ['Testing', 'Tournament-ready', 'Retired'] },
+];
 
 /**
  * DeckBuilder.jsx — Core deck building interface
@@ -26,36 +38,77 @@ import {
 export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) {
   const { user } = useAuth();
 
+  // Wizard state
+  const [step, setStep] = useState(deck?.id ? 4 : 0); // 0: Start, 1: Format, 2: Leader, 3: Base, 4: Deck, 5: Analysis
+  const [selectedFormat, setSelectedFormat] = useState(deck?.format || 'Premier');
+
   // Deck state
-  const [deckName, setDeckName] = useState(deck?.name || 'Untitled Deck');
+  const [deckName, setDeckName] = useState(deck?.name || '');
   const [deckDescription, setDeckDescription] = useState(deck?.description || '');
   const [selectedLeader, setSelectedLeader] = useState(deck?.leaderId || null);
+  const [selectedLeader2, setSelectedLeader2] = useState(deck?.leaderId2 || null);
   const [selectedBase, setSelectedBase] = useState(deck?.baseId || null);
   const [deckCards, setDeckCards] = useState(deck?.cards || {});
+  const [sideboardCards, setSideboardCards] = useState(deck?.sideboard || {});
   const [allCards, setAllCards] = useState([]);
   const [cardDataMap, setCardDataMap] = useState({}); // cardId -> card object
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [loadingCards, setLoadingCards] = useState(false);
 
-  // null | 'Leader' | 'Base' — which picker modal is open
-  const [pickerType, setPickerType] = useState(null);
-
-  // Panel state: 'deck' | 'shopping' | 'importexport'
+  // Panel state: 'deck' | 'shopping' | 'importexport' | 'ai'
   const [activePanel, setActivePanel] = useState('deck');
+  // Search add target: 'mainboard' | 'sideboard'
+  const [addTarget, setAddTarget] = useState('mainboard');
+
+  // AI suggestions state
+  const [aiSuggestions, setAiSuggestions] = useState([]);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+  const [suggestionsError, setSuggestionsError] = useState('');
   const [importText, setImportText] = useState('');
   const [importFeedback, setImportFeedback] = useState(null); // { type: 'success'|'error', message }
   const [copyFeedback, setCopyFeedback] = useState(''); // format key that was just copied
+
+  // Tag state
+  const [deckTags, setDeckTags] = useState(deck?.tags || []);
+  const [tagInput, setTagInput] = useState('');
+  const [showTagSuggestions, setShowTagSuggestions] = useState(false);
+
+  // Guided mode state: null | 'shell' | 'packets'
+  const [guidedStep, setGuidedStep] = useState(null);
+  const [shells, setShells] = useState([]);
+  const [packets, setPackets] = useState([]);
+  const [loadingGuided, setLoadingGuided] = useState(false);
+  const [selectedShell, setSelectedShell] = useState(null); // shell object
+  const [activePackets, setActivePackets] = useState({}); // packetId -> bool (toggled on/off)
+
+  // Mobile state
+  const [isMobile, setIsMobile] = useState(false);
+  // 'search' | 'deck' | 'shopping' | 'importexport' | 'analysis'
+  const [activeMobileTab, setActiveMobileTab] = useState('search');
+  const [previewCard, setPreviewCard] = useState(null); // card object for full-size overlay
+
+  // Mobile detection
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Load all card data on mount
   useEffect(() => {
     const loadAllCards = async () => {
       setLoadingCards(true);
       try {
+        const sets = await CardService.getAvailableSets();
+        // If discovery returns nothing, fallback to mainline sets
+        const setsToLoad = sets.length > 0 ? sets : ['SOR', 'SHD', 'TWI', 'UIQ'];
+
         const cardMap = {};
         const allCardsList = [];
 
-        for (const { code } of SETS) {
+        for (const set of setsToLoad) {
           try {
             const { data } = await CardService.fetchSetData(code);
             data.forEach(card => {
@@ -80,6 +133,60 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     loadAllCards();
   }, []);
 
+  // Load shells/packets on first entry into guided mode
+  const handleStartGuided = useCallback(async () => {
+    setGuidedStep('shell');
+    if (shells.length > 0) return;
+    setLoadingGuided(true);
+    try {
+      const [shellList, packetList] = await Promise.all([
+        GuidedModeService.getShells(),
+        GuidedModeService.getPackets(),
+      ]);
+      setShells(shellList);
+      setPackets(packetList);
+    } catch (err) {
+      console.error('Failed to load guided content:', err);
+    } finally {
+      setLoadingGuided(false);
+    }
+  }, [shells.length]);
+
+  const handleShellSelect = useCallback((shell) => {
+    setSelectedShell(shell);
+    setSelectedLeader(shell.leaderId || null);
+    setSelectedBase(shell.baseId || null);
+    setDeckCards(shell.cards || {});
+    setActivePackets({});
+    setGuidedStep('packets');
+  }, []);
+
+  const handleTogglePacket = useCallback((packet) => {
+    setActivePackets(prev => {
+      const isOn = !!prev[packet.id];
+      const next = { ...prev, [packet.id]: !isOn };
+      setDeckCards(prevDeck => {
+        const updated = { ...prevDeck };
+        Object.entries(packet.cards || {}).forEach(([cardId, count]) => {
+          if (isOn) {
+            const shellCount = selectedShell?.cards?.[cardId] || 0;
+            if (shellCount > 0) updated[cardId] = shellCount;
+            else delete updated[cardId];
+          } else {
+            updated[cardId] = count;
+          }
+        });
+        return updated;
+      });
+      return next;
+    });
+  }, [selectedShell]);
+
+  const handleFinishGuided = useCallback(() => {
+    setGuidedStep(null);
+    setStep(4);
+  }, []);
+
   // Computed values
   const mainDeckCards = useMemo(() => {
     return Object.entries(deckCards)
@@ -97,6 +204,20 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
   const mainDeckTotal = useMemo(() => {
     return mainDeckCards.reduce((sum, { count }) => sum + count, 0);
   }, [mainDeckCards]);
+
+  const sideboardCardsList = useMemo(() => {
+    return Object.entries(sideboardCards)
+      .map(([cardId, count]) => ({
+        cardId,
+        count,
+        card: cardDataMap[cardId]
+      }))
+      .filter(({ card }) => card && card.Type !== 'Leader' && card.Type !== 'Base');
+  }, [sideboardCards, cardDataMap]);
+
+  const sideboardTotal = useMemo(() => {
+    return sideboardCardsList.reduce((sum, { count }) => sum + count, 0);
+  }, [sideboardCardsList]);
 
   const costCurve = useMemo(() => {
     const curve = Array(8).fill(0);
@@ -116,22 +237,40 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
   }, [costCurve]);
 
   const deckStatus = useMemo(() => {
-    const hasLeader = !!selectedLeader;
+    const minSize = getMinDeckSize(selectedFormat);
+    const requiredLeaders = getRequiredLeaderCount(selectedFormat);
+    const hasLeader = selectedFormat === 'Twin Suns'
+      ? (!!selectedLeader && !!selectedLeader2)
+      : !!selectedLeader;
     const hasBase = !!selectedBase;
-    const isValidCount = mainDeckTotal === 50;
+    const isValidCount = mainDeckTotal >= minSize;
     return {
       isValid: hasLeader && hasBase && isValidCount,
       hasLeader,
       hasBase,
       isValidCount,
+      minSize,
+      requiredLeaders,
       message:
-        !hasLeader ? 'Missing Leader'
-        : !hasBase ? 'Missing Base'
-        : mainDeckTotal < 50 ? `${50 - mainDeckTotal} cards needed`
-        : mainDeckTotal > 50 ? `${mainDeckTotal - 50} cards over limit`
-        : 'Ready to save'
+        !hasLeader
+          ? (selectedFormat === 'Twin Suns' ? 'Need 2 Leaders' : 'Missing Leader')
+          : !hasBase ? 'Missing Base'
+          : mainDeckTotal < minSize ? `${minSize - mainDeckTotal} cards needed`
+          : 'Ready to save'
     };
-  }, [selectedLeader, selectedBase, mainDeckTotal]);
+  }, [selectedLeader, selectedLeader2, selectedBase, mainDeckTotal, selectedFormat]);
+
+  const legalityResult = useMemo(() => {
+    return checkDeckLegality({
+      format: selectedFormat,
+      leaderId: selectedLeader,
+      leaderId2: selectedLeader2,
+      baseId: selectedBase,
+      mainDeckCards,
+      mainDeckTotal,
+      sideboardCardsList,
+    }, cardDataMap);
+  }, [selectedFormat, selectedLeader, selectedLeader2, selectedBase, mainDeckCards, mainDeckTotal, sideboardCardsList, cardDataMap]);
 
   const getCardOwnership = useCallback((cardId) => {
     const [set, number] = cardId.split('_');
@@ -146,7 +285,10 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     return 'bg-red-500';
   }, [getCardOwnership]);
 
-  const getDeckCount = useCallback((cardId) => deckCards[cardId] || 0, [deckCards]);
+  const getDeckCount = useCallback((cardId) => {
+    if (addTarget === 'sideboard') return sideboardCards[cardId] || 0;
+    return deckCards[cardId] || 0;
+  }, [deckCards, sideboardCards, addTarget]);
 
   // Called when a card is selected from CardPickerModal
   const handlePickerSelect = useCallback((card) => {
@@ -183,49 +325,90 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     const cardId = `${card.Set}_${card.Number}`;
     const currentCount = deckCards[cardId] || 0;
     const maxCopies = getPlaysetQuantity(card.Type);
-    const { total: owned } = getCardOwnership(cardId);
 
-    // Cannot exceed max copies
-    if (currentCount >= maxCopies) return;
-
-    // For leader/base, max 1
     if (card.Type === 'Leader') {
-      setSelectedLeader(cardId);
-      setDeckCards(prev => ({
-        ...prev,
-        [cardId]: 1
-      }));
+      if (currentCount >= maxCopies) return; // already in deck
+      if (selectedFormat === 'Twin Suns') {
+        if (!selectedLeader) {
+          setSelectedLeader(cardId);
+          setDeckCards(prev => ({ ...prev, [cardId]: 1 }));
+        } else if (!selectedLeader2 && cardId !== selectedLeader) {
+          setSelectedLeader2(cardId);
+          setDeckCards(prev => ({ ...prev, [cardId]: 1 }));
+        } else if (cardId !== selectedLeader && cardId !== selectedLeader2) {
+          // Replace leader1 (FIFO), shift leader2 → leader1
+          setDeckCards(prev => {
+            const next = { ...prev };
+            delete next[selectedLeader];
+            next[cardId] = 1;
+            return next;
+          });
+          setSelectedLeader(selectedLeader2);
+          setSelectedLeader2(cardId);
+        }
+      } else {
+        setDeckCards(prev => {
+          const next = { ...prev };
+          if (selectedLeader) delete next[selectedLeader];
+          next[cardId] = 1;
+          return next;
+        });
+        setSelectedLeader(cardId);
+      }
     } else if (card.Type === 'Base') {
+      if (currentCount >= maxCopies) return;
+      setDeckCards(prev => {
+        const next = { ...prev };
+        if (selectedBase) delete next[selectedBase];
+        next[cardId] = 1;
+        return next;
+      });
       setSelectedBase(cardId);
-      setDeckCards(prev => ({
-        ...prev,
-        [cardId]: 1
-      }));
     } else {
-      // Main deck card
+      // Combined copy limit: mainboard + sideboard cannot exceed maxCopies
+      const sideCount = sideboardCards[cardId] || 0;
+      if (currentCount + sideCount >= maxCopies) return;
       setDeckCards(prev => ({
         ...prev,
-        [cardId]: Math.min(currentCount + 1, maxCopies)
+        [cardId]: currentCount + 1
       }));
     }
-  }, [deckCards, getCardOwnership]);
+  }, [deckCards, sideboardCards, selectedLeader, selectedBase]);
+
+  const handleAddToSideboard = useCallback((card) => {
+    if (card.Type === 'Leader' || card.Type === 'Base') return;
+    const cardId = `${card.Set}_${card.Number}`;
+    const maxCopies = getPlaysetQuantity(card.Type);
+
+    setSideboardCards(prev => {
+      const currentSide = prev[cardId] || 0;
+      const currentMain = deckCards[cardId] || 0;
+      const currentTotal = Object.values(prev).reduce((s, c) => s + c, 0);
+      if (currentTotal >= 10) return prev;
+      if (currentSide + currentMain >= maxCopies) return prev;
+      return { ...prev, [cardId]: currentSide + 1 };
+    });
+  }, [deckCards]);
 
   const handleRemoveCard = useCallback((cardId) => {
-    const card = cardDataMap[cardId];
-    if (!card) return;
-
-    if (card.Type === 'Leader') {
-      setSelectedLeader(null);
-    } else if (card.Type === 'Base') {
-      setSelectedBase(null);
-    }
+    if (cardId === selectedLeader) setSelectedLeader(null);
+    if (cardId === selectedLeader2) setSelectedLeader2(null);
+    if (cardId === selectedBase) setSelectedBase(null);
 
     setDeckCards(prev => {
       const newDeck = { ...prev };
       delete newDeck[cardId];
       return newDeck;
     });
-  }, [cardDataMap]);
+  }, [selectedLeader, selectedBase]);
+
+  const handleRemoveFromSideboard = useCallback((cardId) => {
+    setSideboardCards(prev => {
+      const next = { ...prev };
+      delete next[cardId];
+      return next;
+    });
+  }, []);
 
   const handleUpdateCardCount = useCallback((cardId, newCount) => {
     if (newCount <= 0) {
@@ -233,12 +416,53 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     } else {
       const card = cardDataMap[cardId];
       const maxCopies = getPlaysetQuantity(card.Type);
+      const sideCount = sideboardCards[cardId] || 0;
+      const effectiveMax = maxCopies - sideCount;
       setDeckCards(prev => ({
         ...prev,
-        [cardId]: Math.min(Math.max(newCount, 1), maxCopies)
+        [cardId]: Math.min(Math.max(newCount, 1), effectiveMax)
       }));
     }
-  }, [cardDataMap, handleRemoveCard]);
+  }, [cardDataMap, sideboardCards, handleRemoveCard]);
+
+  const handleUpdateSideboardCount = useCallback((cardId, newCount) => {
+    if (newCount <= 0) {
+      handleRemoveFromSideboard(cardId);
+      return;
+    }
+    const card = cardDataMap[cardId];
+    const maxCopies = getPlaysetQuantity(card?.Type || 'Unit');
+    const mainCount = deckCards[cardId] || 0;
+
+    setSideboardCards(prev => {
+      const currentSide = prev[cardId] || 0;
+      const currentTotal = Object.values(prev).reduce((s, c) => s + c, 0);
+      const maxByRules = maxCopies - mainCount;
+      const maxByCap = 10 - currentTotal + currentSide;
+      const effectiveMax = Math.min(maxByRules, maxByCap);
+      return { ...prev, [cardId]: Math.min(Math.max(newCount, 1), effectiveMax) };
+    });
+  }, [cardDataMap, deckCards, handleRemoveFromSideboard]);
+
+  const handleAddTag = useCallback((tag) => {
+    const t = tag.trim();
+    if (!t || deckTags.includes(t)) return;
+    setDeckTags(prev => [...prev, t]);
+    setTagInput('');
+    setShowTagSuggestions(false);
+  }, [deckTags]);
+
+  const handleRemoveTag = useCallback((tag) => {
+    setDeckTags(prev => prev.filter(t => t !== tag));
+  }, []);
+
+  const filteredTagSuggestions = useMemo(() => {
+    const q = tagInput.toLowerCase();
+    return TAG_CATEGORIES.map(cat => ({
+      ...cat,
+      tags: cat.tags.filter(t => t.toLowerCase().includes(q) && !deckTags.includes(t))
+    })).filter(cat => cat.tags.length > 0);
+  }, [tagInput, deckTags]);
 
   const handleSaveDeck = async () => {
     if (!user || !deckStatus.isValid) return;
@@ -259,11 +483,13 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
         name: deckName || 'Untitled Deck',
         description: deckDescription,
         leaderId: selectedLeader,
+        leaderId2: selectedLeader2 || null,
         baseId: selectedBase,
         cards: deckCards,
+        sideboard: sideboardCards,
         aspects: Array.from(aspectsSet),
-        format: 'Premier',
-        tags: []
+        format: selectedFormat,
+        tags: deckTags
       };
 
       let savedDeckId;
@@ -289,6 +515,64 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     }
   };
 
+  const handleGetSuggestions = useCallback(async () => {
+    if (!selectedLeader || !selectedBase) {
+      setSuggestionsError('Please select a Leader and Base before getting suggestions.');
+      return;
+    }
+
+    setIsLoadingSuggestions(true);
+    setSuggestionsError('');
+    setAiSuggestions([]);
+
+    try {
+      const leader = cardDataMap[selectedLeader];
+      const base = cardDataMap[selectedBase];
+
+      const aspects = new Set();
+      if (leader?.Aspects) leader.Aspects.forEach(a => aspects.add(a));
+      if (base?.Aspects) base.Aspects.forEach(a => aspects.add(a));
+
+      const deckCardsSummary = mainDeckCards.map(({ card, count }) => ({
+        count,
+        name: card.Name,
+        type: card.Type,
+      }));
+
+      const available = allCards
+        .filter(card => card.Type !== 'Leader' && card.Type !== 'Base')
+        .filter(card => {
+          const cardId = `${card.Set}_${card.Number}`;
+          const currentCount = deckCards[cardId] || 0;
+          return currentCount < getPlaysetQuantity(card.Type);
+        })
+        .map(card => ({
+          id: `${card.Set}_${card.Number}`,
+          name: card.Name,
+          type: card.Type,
+          cost: card.Cost ?? null,
+          aspects: card.Aspects || [],
+          traits: (card.Traits || []).slice(0, 3),
+        }))
+        .slice(0, 300);
+
+      const suggestions = await getCardSuggestions({
+        leaderName: leader?.Name || selectedLeader,
+        baseName: base?.Name || selectedBase,
+        aspects: Array.from(aspects),
+        deckCards: deckCardsSummary,
+        availableCards: available,
+      });
+
+      setAiSuggestions(suggestions);
+    } catch (error) {
+      console.error('AI suggestions error:', error);
+      setSuggestionsError(error.message || 'Failed to get suggestions. Make sure you are signed in.');
+    } finally {
+      setIsLoadingSuggestions(false);
+    }
+  }, [selectedLeader, selectedBase, cardDataMap, mainDeckCards, deckCards, allCards]);
+
   const leaderCard = selectedLeader ? cardDataMap[selectedLeader] : null;
   const baseCard = selectedBase ? cardDataMap[selectedBase] : null;
 
@@ -298,7 +582,8 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     leaderId: selectedLeader,
     baseId: selectedBase,
     cards: deckCards,
-  }), [deckName, selectedLeader, selectedBase, deckCards]);
+    sideboard: sideboardCards,
+  }), [deckName, selectedLeader, selectedBase, deckCards, sideboardCards]);
 
   // Import/export handlers
   const handleExportCopy = useCallback(async (format) => {
@@ -326,408 +611,1549 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     let result;
     if (format === 'forcetable') {
       result = importFromForcetableJSON(importText);
+    } else if (format === 'swucom') {
+      result = importFromSWUComText(importText, allCards);
+    } else if (format === 'melee') {
+      result = importFromMeleeText(importText, allCards);
     } else {
       result = importFromSWUDBText(importText);
     }
+
     if (result.errors && result.errors.length > 0) {
       setImportFeedback({ type: 'error', message: result.errors.join(' ') });
       return;
     }
+
     const imported = result.deck;
     if (imported.leaderId) setSelectedLeader(imported.leaderId);
     if (imported.baseId) setSelectedBase(imported.baseId);
     if (imported.cards) setDeckCards(imported.cards);
+    if (imported.sideboard) setSideboardCards(imported.sideboard);
     if (imported.name) setDeckName(imported.name);
+    if (imported.format) setSelectedFormat(imported.format);
+
     setImportText('');
     setImportFeedback({ type: 'success', message: 'Deck imported successfully!' });
-  }, [importText]);
+    setStep(4); // Jump to deck building
+  }, [importText, allCards]);
 
   return (
     <>
     <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
       <div className="bg-gray-900 rounded-2xl shadow-2xl w-full max-w-7xl max-h-[90vh] flex flex-col border border-gray-800">
+  const steps = [
+    { name: 'Start', icon: <Plus size={18} /> },
+    { name: 'Format', icon: <Layers size={18} /> },
+    { name: 'Leader', icon: <User size={18} /> },
+    { name: 'Base', icon: <LayoutGrid size={18} /> },
+    { name: 'Deck', icon: <Swords size={18} /> },
+    { name: 'Analysis', icon: <BarChart3 size={18} /> }
+  ];
+
+  // ─── Reusable panel fragments ───────────────────────────────────────────────
+
+  const renderLeaderSlot = (leaderId, label) => {
+    const card = leaderId ? cardDataMap[leaderId] : null;
+    const violations = leaderId ? legalityResult.cardViolations.get(leaderId) : null;
+    return (
+      <div className={`bg-gray-900 rounded-lg p-4 border ${violations?.length ? 'border-red-500/50' : 'border-gray-700'}`}>
+        <h4 className="text-xs font-bold uppercase text-gray-400 mb-3">{label}</h4>
+        {card ? (
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setPreviewCard(card)}
+              className="shrink-0 focus:outline-none focus:ring-2 focus:ring-yellow-500 rounded"
+              aria-label={`Preview ${card.Name}`}
+            >
+              <img
+                src={CardService.getCardImage(card.Set, card.Number)}
+                alt={card.Name}
+                className="w-20 h-28 rounded object-cover border border-gray-600 hover:border-yellow-400 transition-colors"
+                onError={(e) => { e.target.style.display = 'none'; }}
+              />
+            </button>
+            <div className="flex-1 min-w-0">
+              <p className="text-white font-semibold truncate">{card.Name}</p>
+              <p className="text-gray-400 text-sm">{card.Set} - {card.Number}</p>
+              {violations?.length > 0 && (
+                <div className="mt-1 space-y-0.5">
+                  {violations.map((v, i) => (
+                    <span key={i} className="block text-xs text-red-400 font-semibold">{v.message}</span>
+                  ))}
+                </div>
+              )}
+              <button
+                onClick={() => handleRemoveCard(leaderId)}
+                className="mt-2 px-3 py-2 bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 transition-colors text-xs font-semibold"
+                style={{ minHeight: '44px', minWidth: '44px' }}
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="h-32 border-2 border-dashed border-gray-600 rounded flex items-center justify-center text-gray-500">
+            <p>No {label.toLowerCase()} selected</p>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderDeckPanel = () => (
+    <div className="flex-1 overflow-auto space-y-4">
+      {/* Leader Section */}
+      {selectedFormat === 'Twin Suns' ? (
+        <>
+          {renderLeaderSlot(selectedLeader, 'Leader 1')}
+          {renderLeaderSlot(selectedLeader2, 'Leader 2')}
+        </>
+      ) : (
+        renderLeaderSlot(selectedLeader, 'Leader')
+      )}
+
+      {/* Base Section */}
+      <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+        <h4 className="text-xs font-bold uppercase text-gray-400 mb-3">Base</h4>
+        {baseCard ? (
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setPreviewCard(baseCard)}
+              className="shrink-0 focus:outline-none focus:ring-2 focus:ring-yellow-500 rounded"
+              aria-label={`Preview ${baseCard.Name}`}
+            >
+              <img
+                src={CardService.getCardImage(baseCard.Set, baseCard.Number)}
+                alt={baseCard.Name}
+                className="w-20 h-28 rounded object-cover border border-gray-600 hover:border-yellow-400 transition-colors"
+                onError={(e) => { e.target.style.display = 'none'; }}
+              />
+            </button>
+            <div className="flex-1 min-w-0">
+              <p className="text-white font-semibold truncate">{baseCard.Name}</p>
+              <p className="text-gray-400 text-sm">{baseCard.Set} - {baseCard.Number}</p>
+              <button
+                onClick={() => handleRemoveCard(selectedBase)}
+                className="mt-2 px-3 py-2 bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 transition-colors text-xs font-semibold"
+                style={{ minHeight: '44px', minWidth: '44px' }}
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="h-32 border-2 border-dashed border-gray-600 rounded flex items-center justify-center text-gray-500">
+            <p>No base selected</p>
+          </div>
+        )}
+      </div>
+
+      {/* Main Deck Cards */}
+      <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="text-xs font-bold uppercase text-gray-400">Main Deck</h4>
+          <span
+            className={`px-3 py-1 rounded-full text-xs font-bold ${
+              deckStatus.isValidCount
+                ? 'bg-green-500/20 text-green-400'
+                : 'bg-yellow-500/20 text-yellow-400'
+            }`}
+          >
+            {mainDeckTotal}/{deckStatus.minSize}
+          </span>
+        </div>
+
+        {mainDeckCards.length === 0 ? (
+          <p className="text-gray-500 text-sm">No cards added yet</p>
+        ) : (
+          <div className="space-y-2 max-h-60 overflow-y-auto">
+            {mainDeckCards.map(({ cardId, card, count }) => {
+              const cardViols = legalityResult.cardViolations.get(cardId) || [];
+              const banStatus = getBanStatus(card, selectedFormat);
+              return (
+                <div key={cardId} className={`flex items-center gap-3 bg-gray-800 p-3 rounded border transition-colors ${cardViols.length ? 'border-red-500/50 bg-red-900/10' : 'border-gray-700 hover:border-gray-600'}`}>
+                  <div
+                    className={`w-3 h-3 rounded-full shrink-0 ${getOwnershipColor(cardId, count)}`}
+                    title={`Owned: ${getCardOwnership(cardId).total}`}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-white text-sm font-semibold truncate">{card.Name}</p>
+                      {banStatus && (
+                        <span className={`text-[10px] font-black uppercase px-1.5 py-0.5 rounded shrink-0 ${
+                          banStatus === 'banned' ? 'bg-red-600 text-white' :
+                          banStatus === 'suspended' ? 'bg-orange-500 text-white' :
+                          'bg-yellow-500 text-black'
+                        }`}>
+                          {banStatus}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-gray-400 text-xs">{cardId}</p>
+                    {cardViols.length > 0 && (
+                      <p className="text-red-400 text-xs mt-0.5">{cardViols[0].message}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleUpdateCardCount(cardId, count - 1)}
+                      className="flex items-center justify-center bg-gray-700 hover:bg-gray-600 rounded transition-colors"
+                      style={{ minWidth: '44px', minHeight: '44px' }}
+                    >
+                      <Minus size={14} className="text-gray-300" />
+                    </button>
+                    <span className="w-8 text-center text-white font-semibold">{count}</span>
+                    <button
+                      onClick={() => handleUpdateCardCount(cardId, count + 1)}
+                      className="flex items-center justify-center bg-gray-700 hover:bg-gray-600 rounded transition-colors"
+                      style={{ minWidth: '44px', minHeight: '44px' }}
+                      disabled={count + (sideboardCards[cardId] || 0) >= getPlaysetQuantity(card.Type)}
+                    >
+                      <Plus size={14} className="text-gray-300" />
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => handleRemoveCard(cardId)}
+                    className="flex items-center justify-center bg-red-500/20 hover:bg-red-500/30 rounded transition-colors"
+                    style={{ minWidth: '44px', minHeight: '44px' }}
+                  >
+                    <X size={14} className="text-red-400" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Sideboard Section */}
+      <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="text-xs font-bold uppercase text-gray-400">Sideboard</h4>
+          <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+            sideboardTotal === 0
+              ? 'bg-gray-700/50 text-gray-500'
+              : sideboardTotal > 10
+              ? 'bg-red-500/20 text-red-400'
+              : 'bg-blue-500/20 text-blue-400'
+          }`}>
+            {sideboardTotal}/10
+          </span>
+        </div>
+        {sideboardCardsList.length === 0 ? (
+          <p className="text-gray-500 text-sm">No sideboard cards — toggle "Sideboard" in search to add cards</p>
+        ) : (
+          <div className="space-y-2 max-h-48 overflow-y-auto">
+            {sideboardCardsList.map(({ cardId, card, count }) => (
+              <div key={cardId} className="flex items-center gap-3 bg-gray-800 p-3 rounded border border-gray-700 hover:border-gray-600 transition-colors">
+                <div
+                  className={`w-3 h-3 rounded-full shrink-0 ${getOwnershipColor(cardId, count)}`}
+                  title={`Owned: ${getCardOwnership(cardId).total}`}
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-white text-sm font-semibold truncate">{card.Name}</p>
+                  <p className="text-gray-400 text-xs">{cardId}</p>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => handleUpdateSideboardCount(cardId, count - 1)}
+                    className="flex items-center justify-center bg-gray-700 hover:bg-gray-600 rounded transition-colors"
+                    style={{ minWidth: '44px', minHeight: '44px' }}
+                  >
+                    <Minus size={14} className="text-gray-300" />
+                  </button>
+                  <span className="w-8 text-center text-white font-semibold">{count}</span>
+                  <button
+                    onClick={() => handleUpdateSideboardCount(cardId, count + 1)}
+                    className="flex items-center justify-center bg-gray-700 hover:bg-gray-600 rounded transition-colors"
+                    style={{ minWidth: '44px', minHeight: '44px' }}
+                    disabled={
+                      sideboardTotal >= 10 ||
+                      (deckCards[cardId] || 0) + count >= getPlaysetQuantity(card?.Type)
+                    }
+                  >
+                    <Plus size={14} className="text-gray-300" />
+                  </button>
+                </div>
+                <button
+                  onClick={() => handleRemoveFromSideboard(cardId)}
+                  className="flex items-center justify-center bg-red-500/20 hover:bg-red-500/30 rounded transition-colors"
+                  style={{ minWidth: '44px', minHeight: '44px' }}
+                >
+                  <X size={14} className="text-red-400" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Cost Curve */}
+      {mainDeckTotal > 0 && (
+        <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+          <h4 className="text-xs font-bold uppercase text-gray-400 mb-3 flex items-center gap-2">
+            <BarChart3 size={14} />
+            Cost Curve
+          </h4>
+          <div className="flex items-end gap-1 h-20">
+            {costCurve.map((count, cost) => (
+              <div key={cost} className="flex-1 flex flex-col items-center gap-1">
+                <div
+                  className="w-full bg-yellow-500 rounded-t transition-all hover:bg-yellow-400"
+                  style={{
+                    height: maxCostInCurve > 0 ? `${(count / maxCostInCurve) * 100}%` : '0%'
+                  }}
+                  title={`Cost ${cost}: ${count} cards`}
+                />
+                <span className="text-xs text-gray-500 font-semibold">{cost}+</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Tags */}
+      <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+        <h4 className="text-xs font-bold uppercase text-gray-400 mb-3 flex items-center gap-2">
+          <Tag size={14} />
+          Tags
+        </h4>
+        {deckTags.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {deckTags.map(tag => (
+              <span key={tag} className="inline-flex items-center gap-1 px-2 py-1 bg-blue-500/20 text-blue-300 text-xs rounded-full border border-blue-500/30">
+                {tag}
+                <button onClick={() => handleRemoveTag(tag)} className="hover:text-red-400 transition-colors ml-0.5">
+                  <X size={10} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="relative">
+          <input
+            type="text"
+            value={tagInput}
+            onChange={(e) => { setTagInput(e.target.value); setShowTagSuggestions(true); }}
+            onFocus={() => setShowTagSuggestions(true)}
+            onBlur={() => setTimeout(() => setShowTagSuggestions(false), 150)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); if (tagInput.trim()) handleAddTag(tagInput); }
+              if (e.key === 'Escape') setShowTagSuggestions(false);
+            }}
+            placeholder="Add tag…"
+            className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-xs placeholder-gray-600 focus:outline-none focus:border-yellow-500"
+          />
+          {showTagSuggestions && filteredTagSuggestions.length > 0 && (
+            <div className="absolute z-10 left-0 right-0 mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden max-h-48 overflow-y-auto">
+              {filteredTagSuggestions.map(({ category, tags }) => (
+                <div key={category}>
+                  <div className="px-3 py-1 text-[10px] font-bold uppercase text-gray-500 bg-gray-900 sticky top-0">
+                    {category}
+                  </div>
+                  {tags.map(tag => (
+                    <button
+                      key={tag}
+                      onMouseDown={(e) => { e.preventDefault(); handleAddTag(tag); }}
+                      className="w-full text-left px-3 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderImportExportPanel = () => (
+    <div className="flex-1 overflow-auto space-y-4">
+      {/* Export */}
+      <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+        <h4 className="text-xs font-bold uppercase text-gray-400 mb-3 flex items-center gap-2">
+          <Download size={14} />
+          Export Deck
+        </h4>
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={() => handleExportCopy('forcetable')}
+            className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition-colors"
+            style={{ minHeight: '44px' }}
+          >
+            {copyFeedback === 'forcetable' ? <CheckCircle size={14} /> : <Copy size={14} />}
+            {copyFeedback === 'forcetable' ? 'Copied!' : 'Copy as Forcetable JSON'}
+          </button>
+          <button
+            onClick={() => handleExportCopy('swudb')}
+            className="flex items-center justify-center gap-2 px-4 py-3 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold rounded-lg transition-colors"
+            style={{ minHeight: '44px' }}
+          >
+            {copyFeedback === 'swudb' ? <CheckCircle size={14} /> : <Copy size={14} />}
+            {copyFeedback === 'swudb' ? 'Copied!' : 'Copy as SWUDB Text'}
+          </button>
+        </div>
+        <p className="text-xs text-gray-500 mt-2">
+          Paste Forcetable JSON into Forcetable to import. SWUDB text works with SWUDB and most other builders.
+        </p>
+      </div>
+
+      {/* Import */}
+      <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+        <h4 className="text-xs font-bold uppercase text-gray-400 mb-3 flex items-center gap-2">
+          <Upload size={14} />
+          Import Deck
+        </h4>
+        {importFeedback && (
+          <div className={`mb-3 p-2 rounded text-sm flex items-start gap-2 ${
+            importFeedback.type === 'success'
+              ? 'bg-green-500/20 text-green-400'
+              : 'bg-red-500/20 text-red-400'
+          }`}>
+            {importFeedback.type === 'success' ? <CheckCircle size={14} className="mt-0.5" /> : <AlertCircle size={14} className="mt-0.5" />}
+            {importFeedback.message}
+          </div>
+        )}
+        <textarea
+          value={importText}
+          onChange={(e) => { setImportText(e.target.value); setImportFeedback(null); }}
+          placeholder={'Paste a Forcetable JSON or SWUDB text decklist here…'}
+          className="w-full h-32 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-300 text-xs placeholder-gray-600 focus:outline-none focus:border-yellow-500 resize-none font-mono"
+        />
+        <div className="flex gap-2 mt-2">
+          <button
+            onClick={() => handleImport('forcetable')}
+            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-3 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors"
+            style={{ minHeight: '44px' }}
+          >
+            <Upload size={12} />
+            Forcetable
+          </button>
+          <button
+            onClick={() => handleImport('swudb')}
+            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-3 bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold rounded-lg transition-colors"
+            style={{ minHeight: '44px' }}
+          >
+            <Upload size={12} />
+            SWUDB
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderAnalysisPanel = () => (
+    <div className="flex-1 overflow-auto">
+      <div className="max-w-5xl mx-auto py-8 space-y-8">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <h3 className="text-3xl font-bold text-white">Deck Analysis</h3>
+          <div className={`px-4 py-1.5 rounded-full font-bold flex items-center gap-2 ${legalityResult.isLegal ? 'bg-green-500 text-black' : 'bg-red-500 text-white'}`}>
+            {legalityResult.isLegal ? <CheckCircle size={18} /> : <AlertCircle size={18} />}
+            {legalityResult.isLegal ? 'Format Legal' : `${legalityResult.violations.filter(v => v.type === 'error').length} Violation${legalityResult.violations.filter(v => v.type === 'error').length !== 1 ? 's' : ''}`}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Status Overview */}
+          <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700 space-y-4">
+            <h4 className="text-sm font-bold uppercase tracking-wider text-gray-400">Deck Status</h4>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-gray-300">Format</span>
+                <span className="text-white font-semibold">{selectedFormat}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-gray-300">Main Deck</span>
+                <span className={`font-semibold ${deckStatus.isValidCount ? 'text-green-400' : 'text-yellow-400'}`}>{mainDeckTotal} / {deckStatus.minSize}+</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-gray-300">Sideboard</span>
+                <span className={`font-semibold ${sideboardTotal > 10 ? 'text-red-400' : 'text-blue-400'}`}>{sideboardTotal} / 10</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-gray-300">{selectedFormat === 'Twin Suns' ? 'Leaders' : 'Leader'}</span>
+                <span className={deckStatus.hasLeader ? 'text-green-400' : 'text-red-400'}>
+                  {selectedFormat === 'Twin Suns'
+                    ? `${[selectedLeader, selectedLeader2].filter(Boolean).length}/2`
+                    : (selectedLeader ? 'Selected' : 'Missing')}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-gray-300">Base</span>
+                <span className={selectedBase ? 'text-green-400' : 'text-red-400'}>{selectedBase ? 'Selected' : 'Missing'}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Ownership Overview */}
+          <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700 space-y-4">
+            <h4 className="text-sm font-bold uppercase tracking-wider text-gray-400">Collection Status</h4>
+            {(() => {
+              const totalNeeded = mainDeckTotal + (selectedLeader ? 1 : 0) + (selectedBase ? 1 : 0);
+              let totalOwned = 0;
+              mainDeckCards.forEach(({cardId, count}) => {
+                const { total } = getCardOwnership(cardId);
+                totalOwned += Math.min(count, total);
+              });
+              if (selectedLeader) {
+                const { total } = getCardOwnership(selectedLeader);
+                if (total > 0) totalOwned += 1;
+              }
+              if (selectedBase) {
+                const { total } = getCardOwnership(selectedBase);
+                if (total > 0) totalOwned += 1;
+              }
+              const percent = totalNeeded > 0 ? Math.round((totalOwned / totalNeeded) * 100) : 0;
+
+              return (
+                <div className="space-y-4">
+                  <div className="flex items-end justify-between">
+                    <span className="text-3xl font-bold text-white">{percent}%</span>
+                    <span className="text-gray-400 text-sm">{totalOwned} / {totalNeeded} cards owned</span>
+                  </div>
+                  <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
+                    <div className="h-full bg-blue-500 transition-all" style={{ width: `${percent}%` }} />
+                  </div>
+                  {percent < 100 && (
+                    <button
+                      onClick={() => {
+                        setActivePanel('shopping');
+                        if (isMobile) setActiveMobileTab('shopping');
+                        else setStep(4);
+                      }}
+                      className="w-full py-3 bg-blue-600/20 text-blue-400 text-sm font-bold rounded-lg border border-blue-500/30 hover:bg-blue-600/30 transition-all"
+                      style={{ minHeight: '44px' }}
+                    >
+                      View Missing Cards
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* Mana/Cost Curve Summary */}
+          <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700 space-y-4">
+            <h4 className="text-sm font-bold uppercase tracking-wider text-gray-400">Average Cost</h4>
+            {(() => {
+              const totalCost = mainDeckCards.reduce((sum, {card, count}) => sum + (card.Cost || 0) * count, 0);
+              const avg = mainDeckTotal > 0 ? (totalCost / mainDeckTotal).toFixed(2) : '0.00';
+              return (
+                <div className="space-y-1">
+                  <div className="text-3xl font-bold text-white">{avg}</div>
+                  <p className="text-xs text-gray-500">Resource cost average (excluding Leader/Base)</p>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+
+        {/* Detailed Analysis Reports */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Cost Curve Graph */}
+          <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
+            <h4 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
+              <BarChart3 className="text-yellow-500" size={20} />
+              Resource Distribution
+            </h4>
+            <div className="flex items-end gap-2 h-48 px-4">
+              {costCurve.map((count, cost) => (
+                <div key={cost} className="flex-1 flex flex-col items-center gap-2 group">
+                  <div
+                    className="w-full bg-yellow-500/80 rounded-t-lg transition-all group-hover:bg-yellow-500 relative"
+                    style={{ height: maxCostInCurve > 0 ? `${(count / maxCostInCurve) * 100}%` : '0%' }}
+                  >
+                    {count > 0 && <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-xs font-bold text-white">{count}</span>}
+                  </div>
+                  <span className="text-xs font-bold text-gray-500">{cost === 7 ? '7+' : cost}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Validation & Flags */}
+          <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
+            <h4 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
+              <Shield className="text-blue-500" size={20} />
+              Deck Validation
+            </h4>
+            <div className="space-y-3">
+              {(() => {
+                const flags = [];
+
+                // ── Legality violations from LegalityService ──
+                legalityResult.violations.forEach(v => {
+                  const codeToTitle = {
+                    MISSING_LEADER: 'Missing Leader',
+                    MISSING_BASE: 'Missing Base',
+                    DUPLICATE_LEADER: 'Duplicate Leader',
+                    DECK_TOO_SMALL: 'Deck Too Small',
+                    TOO_MANY_COPIES: 'Too Many Copies',
+                    SIDEBOARD_TOO_LARGE: 'Sideboard Over Limit',
+                    SIDEBOARD_NOT_ALLOWED: 'Sideboard Not Allowed',
+                    BANNED_CARD: 'Banned Card',
+                    SUSPENDED_CARD: 'Suspended Card',
+                    RESTRICTED_CARD: 'Restricted Card',
+                    ROTATED_SET: 'Rotated Set',
+                    TWIN_SUNS_ALIGNMENT: 'Alignment Violation',
+                    TRILOGY_DUPLICATE_LEADER: 'Duplicate Leader',
+                    TRILOGY_DUPLICATE_BASE: 'Duplicate Base',
+                    TRILOGY_TOO_MANY_COPIES: 'Trilogy Copy Limit',
+                  };
+                  flags.push({
+                    type: v.type,
+                    title: codeToTitle[v.code] || v.code,
+                    message: v.message
+                  });
+                });
+
+                // ── Aspect Penalty Check (informational) ──
+                const leader = cardDataMap[selectedLeader];
+                const base = cardDataMap[selectedBase];
+                const deckAspects = new Set();
+                if (leader?.Aspects) leader.Aspects.forEach(a => deckAspects.add(a));
+                if (selectedLeader2) {
+                  const l2 = cardDataMap[selectedLeader2];
+                  if (l2?.Aspects) l2.Aspects.forEach(a => deckAspects.add(a));
+                }
+                if (base?.Aspects) base.Aspects.forEach(a => deckAspects.add(a));
+
+                mainDeckCards.forEach(({ card }) => {
+                  if (card.Aspects) {
+                    const penalties = card.Aspects.filter(a => !deckAspects.has(a) && a !== 'Neutral');
+                    if (penalties.length > 0) {
+                      flags.push({
+                        type: 'warning',
+                        title: 'Aspect Penalty',
+                        message: `${card.Name} requires ${penalties.join(', ')} (not covered by Leader/Base).`
+                      });
+                    }
+                  }
+                });
+
+                // ── Synergy/Theme Detection ──
+                const traitsCount = {};
+                mainDeckCards.forEach(({ card, count }) => {
+                  if (card.Traits) {
+                    card.Traits.forEach(t => {
+                      traitsCount[t] = (traitsCount[t] || 0) + count;
+                    });
+                  }
+                });
+                Object.entries(traitsCount)
+                  .filter(([, c]) => c >= 10)
+                  .forEach(([trait, count]) => {
+                    flags.push({
+                      type: 'info',
+                      title: `Theme: ${trait}`,
+                      message: `Strong ${trait} presence (${count} cards).`
+                    });
+                  });
+
+                if (flags.length === 0) {
+                  return (
+                    <div className="flex flex-col items-center gap-3 py-8 text-center">
+                      <CheckCircle size={32} className="text-green-400" />
+                      <p className="text-green-400 font-semibold">Deck is legal!</p>
+                      <p className="text-gray-500 text-sm">No violations detected for {selectedFormat}.</p>
+                    </div>
+                  );
+                }
+
+                return flags.map((f, i) => (
+                  <div key={i} className={`p-4 rounded-xl border flex items-start gap-3 ${
+                    f.type === 'error' ? 'bg-red-500/10 border-red-500/30 text-red-400' :
+                    f.type === 'warning' ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400' :
+                    'bg-blue-500/10 border-blue-500/30 text-blue-400'
+                  }`}>
+                    {f.type === 'error' ? <AlertCircle size={18} className="mt-0.5 shrink-0" /> :
+                     f.type === 'warning' ? <AlertCircle size={18} className="mt-0.5 shrink-0" /> :
+                     <Info size={18} className="mt-0.5 shrink-0" />}
+                    <div>
+                      <div className="font-bold text-sm uppercase tracking-tight">{f.title}</div>
+                      <div className="text-sm opacity-90">{f.message}</div>
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderAiSuggestionsPanel = () => (
+    <div className="flex-1 overflow-auto space-y-4">
+      {/* Header / trigger */}
+      <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h4 className="text-sm font-bold text-white flex items-center gap-2">
+              <Sparkles size={16} className="text-purple-400" />
+              AI Card Suggestions
+            </h4>
+            <p className="text-xs text-gray-500 mt-1">
+              {selectedLeader && selectedBase
+                ? 'Powered by Claude Haiku — select up to 5 suggested cards.'
+                : 'Select a Leader and Base first.'}
+            </p>
+          </div>
+          <button
+            onClick={handleGetSuggestions}
+            disabled={!selectedLeader || !selectedBase || isLoadingSuggestions}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm transition-colors ${
+              selectedLeader && selectedBase && !isLoadingSuggestions
+                ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+            }`}
+            style={{ minHeight: '44px' }}
+          >
+            {isLoadingSuggestions
+              ? <Loader2 size={14} className="animate-spin" />
+              : <Sparkles size={14} />}
+            {isLoadingSuggestions ? 'Analyzing…' : 'Suggest'}
+          </button>
+        </div>
+
+        {suggestionsError && (
+          <div className="mt-3 p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-400 text-xs flex items-start gap-2">
+            <AlertCircle size={14} className="mt-0.5 shrink-0" />
+            {suggestionsError}
+          </div>
+        )}
+      </div>
+
+      {/* Suggestion cards */}
+      {aiSuggestions.length > 0 && (
+        <div className="space-y-3">
+          {aiSuggestions.map((suggestion) => {
+            const card = cardDataMap[suggestion.id];
+            if (!card) return null;
+            const canAdd = (deckCards[suggestion.id] || 0) < getPlaysetQuantity(card.Type);
+            return (
+              <div
+                key={suggestion.id}
+                className="bg-gray-900 rounded-lg p-3 border border-gray-700 hover:border-purple-500/40 transition-colors"
+              >
+                <div className="flex items-start gap-3">
+                  <button
+                    onClick={() => setPreviewCard(card)}
+                    className="shrink-0 focus:outline-none focus:ring-2 focus:ring-purple-500 rounded"
+                    aria-label={`Preview ${card.Name}`}
+                  >
+                    <img
+                      src={CardService.getCardImage(card.Set, card.Number)}
+                      alt={card.Name}
+                      className="w-12 h-16 rounded object-cover border border-gray-600 hover:border-purple-400 transition-colors"
+                      onError={(e) => { e.target.style.display = 'none'; }}
+                    />
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white font-semibold text-sm truncate">{card.Name}</p>
+                    <p className="text-gray-400 text-xs mb-1">{card.Type} · Cost {card.Cost ?? '?'}</p>
+                    <p className="text-gray-300 text-xs italic leading-relaxed">{suggestion.reason}</p>
+                  </div>
+                  <button
+                    onClick={() => handleAddCard(card)}
+                    disabled={!canAdd}
+                    className={`shrink-0 flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
+                      canAdd
+                        ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                        : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                    }`}
+                    style={{ minHeight: '44px', minWidth: '56px' }}
+                    title={canAdd ? `Add ${card.Name} to deck` : 'Already at max copies'}
+                  >
+                    <Plus size={12} />
+                    Add
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!isLoadingSuggestions && aiSuggestions.length === 0 && !suggestionsError && (
+        <div className="flex flex-col items-center justify-center py-16 text-gray-600 space-y-3">
+          <Sparkles size={40} className="opacity-20" />
+          <p className="text-sm text-center">
+            {selectedLeader && selectedBase
+              ? 'Click "Suggest" to get AI-powered card recommendations.'
+              : 'Select a Leader and Base to unlock AI suggestions.'}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+
+  // ─── Mobile tab definitions ──────────────────────────────────────────────────
+  const mobileTabs = [
+    { key: 'search', icon: Search, label: 'Search' },
+    { key: 'deck', icon: Swords, label: 'Deck' },
+    { key: 'ai', icon: Sparkles, label: 'AI' },
+    { key: 'shopping', icon: ShoppingCart, label: 'Shop' },
+    { key: 'importexport', icon: Download, label: 'Import' },
+    { key: 'analysis', icon: BarChart3, label: 'Analysis' },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 md:flex md:items-center md:justify-center md:p-4">
+      <div className="bg-gray-900 md:rounded-2xl md:shadow-2xl w-full md:max-w-7xl h-full md:h-auto md:max-h-[90vh] flex flex-col border-0 md:border border-gray-800">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 bg-gray-950">
+        <div className="flex items-center justify-between px-4 md:px-6 py-3 md:py-4 border-b border-gray-800 bg-gray-950 shrink-0">
           <div className="flex items-center gap-3">
             <Swords size={24} className="text-yellow-500" />
             <h2 className="text-xl font-bold text-white">Deck Builder</h2>
           </div>
+
+          {/* Stepper — desktop only */}
+          <div className="hidden md:flex items-center gap-2">
+            {steps.map((s, idx) => (
+              <React.Fragment key={s.name}>
+                <div
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold transition-all ${
+                    step === idx
+                      ? 'bg-yellow-500 text-black'
+                      : step > idx
+                      ? 'bg-green-500/20 text-green-400'
+                      : 'text-gray-500'
+                  }`}
+                  onClick={() => idx <= step && setStep(idx)}
+                  style={{ cursor: idx <= step ? 'pointer' : 'default' }}
+                >
+                  {step > idx ? <CheckCircle size={14} /> : s.icon}
+                  {s.name}
+                </div>
+                {idx < steps.length - 1 && <div className="w-4 h-px bg-gray-700" />}
+              </React.Fragment>
+            ))}
+          </div>
+
+          {/* Mobile step indicator */}
+          <div className="flex md:hidden items-center gap-2 text-sm text-gray-400">
+            <span className="font-semibold text-yellow-500">{steps[step]?.name}</span>
+            <span>{step + 1}/{steps.length}</span>
+          </div>
+
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-800 rounded-lg transition-colors text-gray-400 hover:text-white"
+            className="flex items-center justify-center hover:bg-gray-800 rounded-lg transition-colors text-gray-400 hover:text-white"
+            style={{ minWidth: '44px', minHeight: '44px' }}
+            aria-label="Close"
           >
             <X size={20} />
           </button>
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 overflow-hidden flex flex-col lg:flex-row gap-6 p-6">
+        <div className="flex-1 overflow-hidden flex flex-col p-3 md:p-6">
 
-          {/* Left Panel: Search */}
-          <div className="flex-1 min-h-0 flex flex-col bg-gray-800/50 rounded-xl p-4 border border-gray-700">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-                <Search size={18} className="text-blue-500" />
-                Card Search
-              </h3>
+          {loadingCards ? (
+            <div className="flex flex-col items-center justify-center flex-1 gap-4">
+              <Loader2 size={48} className="animate-spin text-yellow-500" />
+              <p className="text-gray-400 animate-pulse">Loading card database...</p>
             </div>
+          ) : (
+            <>
+              {/* Step 0: Welcome / Import */}
+              {step === 0 && (
+                <div className="flex-1 flex flex-col items-center justify-center max-w-2xl mx-auto w-full text-center space-y-8">
+                  <div>
+                    <h3 className="text-2xl md:text-3xl font-bold text-white mb-2">Create New Deck</h3>
+                    <p className="text-gray-400">Choose how you want to start building your Star Wars: Unlimited deck.</p>
+                  </div>
 
-            {loadingCards ? (
-              <div className="flex items-center justify-center flex-1">
-                <Loader2 size={32} className="animate-spin text-yellow-500" />
-              </div>
-            ) : (
-              <div className="flex-1 overflow-auto">
-                <AdvancedSearch
-                  onCardClick={handleAddCard}
-                  collectionData={collectionData}
-                  embedded={true}
-                  getDeckCount={getDeckCount}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Right Panel: Deck List / Shopping / Import-Export */}
-          <div className="flex-1 min-h-0 flex flex-col bg-gray-800/50 rounded-xl p-4 border border-gray-700 overflow-hidden">
-
-            {/* Panel Tabs */}
-            <div className="flex items-center gap-1 mb-4 bg-gray-900 rounded-lg p-1 border border-gray-700">
-              <button
-                onClick={() => setActivePanel('deck')}
-                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-semibold transition-colors ${
-                  activePanel === 'deck' ? 'bg-yellow-500 text-gray-950' : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                <Swords size={14} />
-                Deck
-              </button>
-              <button
-                onClick={() => setActivePanel('shopping')}
-                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-semibold transition-colors ${
-                  activePanel === 'shopping' ? 'bg-yellow-500 text-gray-950' : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                <ShoppingCart size={14} />
-                Shopping
-              </button>
-              <button
-                onClick={() => setActivePanel('importexport')}
-                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-semibold transition-colors ${
-                  activePanel === 'importexport' ? 'bg-yellow-500 text-gray-950' : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                <Download size={14} />
-                Import/Export
-              </button>
-            </div>
-
-            {/* Shopping List Panel */}
-            {activePanel === 'shopping' && (
-              <div className="flex-1 overflow-auto">
-                <ShoppingList
-                  deck={currentDeckSnapshot}
-                  collectionData={collectionData}
-                  cardDatabase={allCards}
-                />
-              </div>
-            )}
-
-            {/* Import/Export Panel */}
-            {activePanel === 'importexport' && (
-              <div className="flex-1 overflow-auto space-y-4">
-                {/* Export */}
-                <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
-                  <h4 className="text-xs font-bold uppercase text-gray-400 mb-3 flex items-center gap-2">
-                    <Download size={14} />
-                    Export Deck
-                  </h4>
-                  <div className="flex flex-col gap-2">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full">
                     <button
-                      onClick={() => handleExportCopy('forcetable')}
-                      className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition-colors"
+                      onClick={() => setStep(1)}
+                      className="flex flex-col items-center gap-4 p-8 bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-yellow-500/50 rounded-2xl transition-all group"
+                      style={{ minHeight: '120px' }}
                     >
-                      {copyFeedback === 'forcetable' ? <CheckCircle size={14} /> : <Copy size={14} />}
-                      {copyFeedback === 'forcetable' ? 'Copied!' : 'Copy as Forcetable JSON'}
+                      <div className="w-16 h-16 bg-yellow-500/10 rounded-full flex items-center justify-center text-yellow-500 group-hover:scale-110 transition-transform">
+                        <Plus size={32} />
+                      </div>
+                      <div>
+                        <span className="block text-xl font-bold text-white">Start from Scratch</span>
+                        <span className="text-sm text-gray-400">Pick format, leader, and base step-by-step</span>
+                      </div>
                     </button>
+
                     <button
-                      onClick={() => handleExportCopy('swudb')}
-                      className="flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold rounded-lg transition-colors"
+                      onClick={handleStartGuided}
+                      className="flex flex-col items-center gap-4 p-8 bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-green-500/50 rounded-2xl transition-all group"
+                      style={{ minHeight: '120px' }}
                     >
-                      {copyFeedback === 'swudb' ? <CheckCircle size={14} /> : <Copy size={14} />}
-                      {copyFeedback === 'swudb' ? 'Copied!' : 'Copy as SWUDB Text'}
+                      <div className="w-16 h-16 bg-green-500/10 rounded-full flex items-center justify-center text-green-500 group-hover:scale-110 transition-transform">
+                        <Wand2 size={32} />
+                      </div>
+                      <div>
+                        <span className="block text-xl font-bold text-white">Guided Start</span>
+                        <span className="text-sm text-gray-400">Pick a pre-built shell, swap in packets</span>
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => setActivePanel('importexport')}
+                      className="flex flex-col items-center gap-4 p-8 bg-gray-800 hover:bg-gray-750 border border-gray-700 hover:border-blue-500/50 rounded-2xl transition-all group"
+                      style={{ minHeight: '120px' }}
+                    >
+                      <div className="w-16 h-16 bg-blue-500/10 rounded-full flex items-center justify-center text-blue-500 group-hover:scale-110 transition-transform">
+                        <Upload size={32} />
+                      </div>
+                      <div>
+                        <span className="block text-xl font-bold text-white">Import Decklist</span>
+                        <span className="text-sm text-gray-400">Paste from SWUDB, Melee, or SWU.com</span>
+                      </div>
                     </button>
                   </div>
-                  <p className="text-xs text-gray-500 mt-2">
-                    Paste Forcetable JSON into Forcetable to import. SWUDB text works with SWUDB and most other builders.
-                  </p>
-                </div>
 
-                {/* Import */}
-                <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
-                  <h4 className="text-xs font-bold uppercase text-gray-400 mb-3 flex items-center gap-2">
-                    <Upload size={14} />
-                    Import Deck
-                  </h4>
-                  {importFeedback && (
-                    <div className={`mb-3 p-2 rounded text-sm flex items-start gap-2 ${
-                      importFeedback.type === 'success'
-                        ? 'bg-green-500/20 text-green-400'
-                        : 'bg-red-500/20 text-red-400'
-                    }`}>
-                      {importFeedback.type === 'success' ? <CheckCircle size={14} className="mt-0.5" /> : <AlertCircle size={14} className="mt-0.5" />}
-                      {importFeedback.message}
+                  {activePanel === 'importexport' && (
+                    <div className="w-full bg-gray-900 rounded-xl p-6 border border-gray-700 animate-in fade-in slide-in-from-bottom-4">
+                      <h4 className="text-lg font-bold text-white mb-4">Paste Decklist</h4>
+                      {importFeedback && (
+                        <div className={`mb-4 p-3 rounded-lg text-sm flex items-start gap-2 ${
+                          importFeedback.type === 'success' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                        }`}>
+                          {importFeedback.type === 'success' ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
+                          {importFeedback.message}
+                        </div>
+                      )}
+                      <textarea
+                        value={importText}
+                        onChange={(e) => { setImportText(e.target.value); setImportFeedback(null); }}
+                        placeholder="Paste decklist here..."
+                        className="w-full h-48 px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white font-mono text-sm focus:outline-none focus:border-yellow-500 resize-none"
+                      />
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-4">
+                        <button onClick={() => handleImport('swudb')} className="px-3 py-3 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-lg" style={{ minHeight: '44px' }}>SWUDB</button>
+                        <button onClick={() => handleImport('swucom')} className="px-3 py-3 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg" style={{ minHeight: '44px' }}>SWU.com</button>
+                        <button onClick={() => handleImport('melee')} className="px-3 py-3 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-lg" style={{ minHeight: '44px' }}>Melee.gg</button>
+                        <button onClick={() => handleImport('forcetable')} className="px-3 py-3 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg" style={{ minHeight: '44px' }}>Forcetable</button>
+                      </div>
                     </div>
                   )}
-                  <textarea
-                    value={importText}
-                    onChange={(e) => { setImportText(e.target.value); setImportFeedback(null); }}
-                    placeholder={'Paste a Forcetable JSON or SWUDB text decklist here…'}
-                    className="w-full h-32 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-300 text-xs placeholder-gray-600 focus:outline-none focus:border-yellow-500 resize-none font-mono"
-                  />
-                  <div className="flex gap-2 mt-2">
-                    <button
-                      onClick={() => handleImport('forcetable')}
-                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors"
-                    >
-                      <Upload size={12} />
-                      Import Forcetable JSON
-                    </button>
-                    <button
-                      onClick={() => handleImport('swudb')}
-                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold rounded-lg transition-colors"
-                    >
-                      <Upload size={12} />
-                      Import SWUDB Text
+                </div>
+              )}
+
+              {/* Guided Mode: Shell Picker */}
+              {step === 0 && guidedStep === 'shell' && (
+                <div className="flex-1 flex flex-col min-h-0">
+                  <div className="mb-4 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                        <Wand2 size={20} className="text-green-400" />
+                        Choose a Shell
+                      </h3>
+                      <p className="text-gray-400 text-sm mt-1">A shell is a complete starting deck (Leader + Base + 50 cards). Pick one to begin.</p>
+                    </div>
+                    <button onClick={() => setGuidedStep(null)} className="text-gray-500 hover:text-white text-sm px-3 py-2" style={{ minHeight: '44px' }}>
+                      Cancel
                     </button>
                   </div>
-                </div>
-              </div>
-            )}
-
-            {/* Deck Panel (default) */}
-            {activePanel === 'deck' && (
-            <div className="flex-1 overflow-auto space-y-4">
-
-              {/* Leader Section */}
-              <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
-                <h4 className="text-xs font-bold uppercase text-gray-400 mb-3">Leader</h4>
-                {leaderCard ? (
-                  <div className="flex items-center gap-3">
-                    <img
-                      src={CardService.getCardImage(leaderCard.Set, leaderCard.Number)}
-                      alt={leaderCard.Name}
-                      className="w-20 h-28 rounded object-cover border border-gray-600"
-                      onError={(e) => {
-                        e.target.style.display = 'none';
-                      }}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-white font-semibold truncate">{leaderCard.Name}</p>
-                      <p className="text-gray-400 text-sm">{leaderCard.Set} - {leaderCard.Number}</p>
-                      <div className="flex gap-2 mt-2">
-                        <button
-                          onClick={() => setPickerType('Leader')}
-                          className="px-3 py-1 bg-blue-500/20 text-blue-400 rounded hover:bg-blue-500/30 transition-colors text-xs font-semibold"
-                        >
-                          Change
-                        </button>
-                        <button
-                          onClick={() => handleRemoveCard(selectedLeader)}
-                          className="px-3 py-1 bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 transition-colors text-xs font-semibold"
-                        >
-                          Remove
-                        </button>
+                  {loadingGuided ? (
+                    <div className="flex-1 flex items-center justify-center">
+                      <Loader2 size={36} className="animate-spin text-green-400" />
+                    </div>
+                  ) : shells.length === 0 ? (
+                    <div className="flex-1 flex flex-col items-center justify-center text-center gap-4">
+                      <Package size={48} className="text-gray-600" />
+                      <p className="text-gray-400">No shells available yet.</p>
+                      <p className="text-gray-500 text-sm">Ask an admin or contributor to create shells in the Admin panel.</p>
+                    </div>
+                  ) : (
+                    <div className="flex-1 overflow-auto">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {shells.map(shell => {
+                          const leader = cardDataMap[shell.leaderId];
+                          const base = cardDataMap[shell.baseId];
+                          const cardCount = Object.values(shell.cards || {}).reduce((s, c) => s + c, 0);
+                          return (
+                            <button
+                              key={shell.id}
+                              onClick={() => handleShellSelect(shell)}
+                              className="flex flex-col gap-3 p-4 bg-gray-800 border border-gray-700 hover:border-green-500/60 rounded-2xl transition-all text-left group"
+                            >
+                              <div className="flex gap-3">
+                                {leader && (
+                                  <img
+                                    src={CardService.getCardImage(leader.Set, leader.Number)}
+                                    alt={leader.Name}
+                                    className="w-14 h-20 rounded object-cover border border-gray-600 group-hover:border-green-400 transition-colors"
+                                    onError={(e) => { e.target.style.display = 'none'; }}
+                                  />
+                                )}
+                                {base && (
+                                  <img
+                                    src={CardService.getCardImage(base.Set, base.Number)}
+                                    alt={base.Name}
+                                    className="w-14 h-20 rounded object-cover border border-gray-600 group-hover:border-green-400 transition-colors"
+                                    onError={(e) => { e.target.style.display = 'none'; }}
+                                  />
+                                )}
+                              </div>
+                              <div>
+                                <p className="text-white font-bold text-base">{shell.name}</p>
+                                {shell.description && <p className="text-gray-400 text-xs mt-1 line-clamp-2">{shell.description}</p>}
+                                <div className="flex gap-2 mt-2 flex-wrap">
+                                  {leader && <span className="text-xs px-2 py-0.5 bg-yellow-500/10 text-yellow-400 rounded">{leader.Name}</span>}
+                                  <span className="text-xs px-2 py-0.5 bg-gray-700 text-gray-400 rounded">{cardCount} cards</span>
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => setPickerType('Leader')}
-                    className="w-full h-32 border-2 border-dashed border-gray-600 hover:border-yellow-500 rounded flex flex-col items-center justify-center gap-2 text-gray-500 hover:text-yellow-400 transition-colors"
-                  >
-                    <Plus size={20} />
-                    <span className="text-sm font-semibold">Select Leader</span>
-                  </button>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
 
-              {/* Base Section */}
-              <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
-                <h4 className="text-xs font-bold uppercase text-gray-400 mb-3">Base</h4>
-                {baseCard ? (
-                  <div className="flex items-center gap-3">
-                    <img
-                      src={CardService.getCardImage(baseCard.Set, baseCard.Number)}
-                      alt={baseCard.Name}
-                      className="w-20 h-28 rounded object-cover border border-gray-600"
-                      onError={(e) => {
-                        e.target.style.display = 'none';
-                      }}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-white font-semibold truncate">{baseCard.Name}</p>
-                      <p className="text-gray-400 text-sm">{baseCard.Set} - {baseCard.Number}</p>
-                      <div className="flex gap-2 mt-2">
-                        <button
-                          onClick={() => setPickerType('Base')}
-                          className="px-3 py-1 bg-blue-500/20 text-blue-400 rounded hover:bg-blue-500/30 transition-colors text-xs font-semibold"
-                        >
-                          Change
-                        </button>
-                        <button
-                          onClick={() => handleRemoveCard(selectedBase)}
-                          className="px-3 py-1 bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 transition-colors text-xs font-semibold"
-                        >
-                          Remove
-                        </button>
-                      </div>
+              {/* Guided Mode: Packet Swapper */}
+              {step === 0 && guidedStep === 'packets' && (
+                <div className="flex-1 flex flex-col min-h-0">
+                  <div className="mb-4 flex items-center justify-between flex-wrap gap-3">
+                    <div>
+                      <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                        <Package size={20} className="text-green-400" />
+                        Swap Packets
+                      </h3>
+                      <p className="text-gray-400 text-sm mt-1">Packets are modular card groups (6–8 cards). Toggle them on to add their cards to your deck.</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => setGuidedStep('shell')} className="text-gray-400 hover:text-white text-sm px-3 py-2" style={{ minHeight: '44px' }}>
+                        ← Change Shell
+                      </button>
+                      <button
+                        onClick={handleFinishGuided}
+                        className="flex items-center gap-2 px-5 py-2 bg-green-600 hover:bg-green-500 text-white font-bold rounded-lg text-sm"
+                        style={{ minHeight: '44px' }}
+                      >
+                        Build Deck <ArrowRight size={16} />
+                      </button>
                     </div>
                   </div>
-                ) : (
-                  <button
-                    onClick={() => setPickerType('Base')}
-                    className="w-full h-32 border-2 border-dashed border-gray-600 hover:border-yellow-500 rounded flex flex-col items-center justify-center gap-2 text-gray-500 hover:text-yellow-400 transition-colors"
-                  >
-                    <Plus size={20} />
-                    <span className="text-sm font-semibold">Select Base</span>
-                  </button>
-                )}
-              </div>
 
-              {/* Main Deck Cards */}
-              <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-xs font-bold uppercase text-gray-400">Main Deck</h4>
-                  <span
-                    className={`px-3 py-1 rounded-full text-xs font-bold ${
-                      deckStatus.isValidCount
-                        ? 'bg-green-500/20 text-green-400'
-                        : mainDeckTotal > 50
-                        ? 'bg-red-500/20 text-red-400'
-                        : 'bg-yellow-500/20 text-yellow-400'
-                    }`}
-                  >
-                    {mainDeckTotal}/50
-                  </span>
-                </div>
+                  {/* Shell summary */}
+                  {selectedShell && (
+                    <div className="mb-4 px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl flex items-center gap-3">
+                      <Wand2 size={16} className="text-green-400 shrink-0" />
+                      <span className="text-white font-semibold text-sm">{selectedShell.name}</span>
+                      <span className="text-gray-400 text-xs ml-auto">{mainDeckTotal} / 50 cards</span>
+                    </div>
+                  )}
 
-                {mainDeckCards.length === 0 ? (
-                  <p className="text-gray-500 text-sm">No cards added yet</p>
-                ) : (
-                  <div className="space-y-2 max-h-60 overflow-y-auto">
-                    {mainDeckCards.map(({ cardId, card, count }) => (
-                      <div key={cardId} className="flex items-center gap-3 bg-gray-800 p-3 rounded border border-gray-700 hover:border-gray-600 transition-colors">
-                        <div
-                          className={`w-3 h-3 rounded-full ${getOwnershipColor(cardId, count)}`}
-                          title={`Owned: ${getCardOwnership(cardId).total}`}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-white text-sm font-semibold truncate">{card.Name}</p>
-                          <p className="text-gray-400 text-xs">{cardId}</p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => handleUpdateCardCount(cardId, count - 1)}
-                            className="p-1 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
-                          >
-                            <Minus size={14} className="text-gray-300" />
-                          </button>
-                          <span className="w-8 text-center text-white font-semibold">{count}</span>
-                          <button
-                            onClick={() => handleUpdateCardCount(cardId, count + 1)}
-                            className="p-1 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
-                            disabled={count >= getPlaysetQuantity(card.Type)}
-                          >
-                            <Plus size={14} className="text-gray-300" />
-                          </button>
-                        </div>
-                        <button
-                          onClick={() => handleRemoveCard(cardId)}
-                          className="p-1 bg-red-500/20 hover:bg-red-500/30 rounded transition-colors"
-                        >
-                          <X size={14} className="text-red-400" />
-                        </button>
+                  {packets.length === 0 ? (
+                    <div className="flex-1 flex flex-col items-center justify-center text-center gap-4">
+                      <Package size={48} className="text-gray-600" />
+                      <p className="text-gray-400">No packets available yet.</p>
+                      <p className="text-gray-500 text-sm">Continue to the deck builder to add cards manually.</p>
+                    </div>
+                  ) : (
+                    <div className="flex-1 overflow-auto">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {packets.map(packet => {
+                          const isActive = !!activePackets[packet.id];
+                          const cardCount = Object.values(packet.cards || {}).reduce((s, c) => s + c, 0);
+                          return (
+                            <button
+                              key={packet.id}
+                              onClick={() => handleTogglePacket(packet)}
+                              className={`flex items-start gap-4 p-4 rounded-xl border-2 transition-all text-left ${
+                                isActive
+                                  ? 'bg-green-500/10 border-green-500 text-white'
+                                  : 'bg-gray-800 border-gray-700 hover:border-gray-600 text-gray-300'
+                              }`}
+                            >
+                              <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${isActive ? 'bg-green-500 text-black' : 'bg-gray-700 text-gray-400'}`}>
+                                {isActive ? <CheckCircle size={20} /> : <Package size={20} />}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-bold text-sm">{packet.name}</p>
+                                {packet.role && (
+                                  <span className="text-xs px-2 py-0.5 bg-gray-700 text-gray-300 rounded mt-1 inline-block">{packet.role}</span>
+                                )}
+                                {packet.description && <p className="text-xs text-gray-400 mt-1 line-clamp-2">{packet.description}</p>}
+                                <p className="text-xs text-gray-500 mt-2">{cardCount} cards</p>
+                              </div>
+                            </button>
+                          );
+                        })}
                       </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Step 1: Format Selection */}
+              {step === 1 && (
+                <div className="flex-1 flex flex-col items-center justify-center max-w-4xl mx-auto w-full text-center space-y-8">
+                  <div>
+                    <h3 className="text-2xl md:text-3xl font-bold text-white mb-2">Select Format</h3>
+                    <p className="text-gray-400">Choose the gameplay format for this deck.</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 w-full">
+                    {[
+                      { id: 'Premier', name: 'Premier', desc: 'Standard 50-card deck, 1 Leader, 1 Base, max 3 copies. Set rotation applies.' },
+                      { id: 'Eternal', name: 'Eternal', desc: 'Like Premier but all sets are legal — no rotation.' },
+                      { id: 'Twin Suns', name: 'Twin Suns', desc: '80-card singleton with 2 Leaders, 1 Base. Max 1 copy per card.' },
+                      { id: 'Trilogy', name: 'Trilogy', desc: '3 separate 50-card decks. Max 3 copies of any card across all three decks combined.' }
+                    ].map(f => (
+                      <button
+                        key={f.id}
+                        onClick={() => { setSelectedFormat(f.id); setStep(2); }}
+                        className={`flex flex-col items-start gap-3 p-6 rounded-2xl border-2 transition-all text-left ${
+                          selectedFormat === f.id ? 'bg-yellow-500/10 border-yellow-500' : 'bg-gray-800 border-gray-700 hover:border-gray-600'
+                        }`}
+                        style={{ minHeight: '44px' }}
+                      >
+                        <span className={`px-2 py-1 rounded text-[10px] font-black uppercase ${selectedFormat === f.id ? 'bg-yellow-500 text-black' : 'bg-gray-700 text-gray-400'}`}>Format</span>
+                        <span className="text-xl font-bold text-white">{f.name}</span>
+                        <p className="text-sm text-gray-400">{f.desc}</p>
+                      </button>
                     ))}
                   </div>
-                )}
-              </div>
 
-              {/* Cost Curve */}
-              {mainDeckTotal > 0 && (
-                <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
-                  <h4 className="text-xs font-bold uppercase text-gray-400 mb-3 flex items-center gap-2">
-                    <BarChart3 size={14} />
-                    Cost Curve
-                  </h4>
-                  <div className="flex items-end gap-1 h-20">
-                    {costCurve.map((count, cost) => (
-                      <div key={cost} className="flex-1 flex flex-col items-center gap-1">
-                        <div
-                          className="w-full bg-yellow-500 rounded-t transition-all hover:bg-yellow-400"
-                          style={{
-                            height: maxCostInCurve > 0 ? `${(count / maxCostInCurve) * 100}%` : '0%'
-                          }}
-                          title={`Cost ${cost}: ${count} cards`}
-                        />
-                        <span className="text-xs text-gray-500 font-semibold">{cost}+</span>
+                  <button onClick={() => setStep(0)} className="text-gray-500 hover:text-white transition-colors py-3 px-6" style={{ minHeight: '44px' }}>Back to Start</button>
+                </div>
+              )}
+
+              {/* Step 2: Leader Selection */}
+              {step === 2 && (
+                <div className="flex-1 flex flex-col min-h-0">
+                  <div className="mb-4 text-center">
+                    <h3 className="text-xl md:text-2xl font-bold text-white">
+                      {selectedFormat === 'Twin Suns' ? 'Select Leaders (2 required)' : 'Select Leader'}
+                    </h3>
+                    <p className="text-gray-400 text-sm">
+                      {selectedFormat === 'Twin Suns'
+                        ? `Choose 2 different Leaders. Leaders cannot combine both Heroism and Villainy aspects. (${[selectedLeader, selectedLeader2].filter(Boolean).length}/2 selected)`
+                        : 'Choose the leader that will lead your deck.'}
+                    </p>
+                    {selectedFormat === 'Twin Suns' && (selectedLeader || selectedLeader2) && (
+                      <div className="mt-2 flex justify-center gap-3 flex-wrap">
+                        {selectedLeader && (
+                          <span className="px-3 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded-full border border-yellow-500/30">
+                            Leader 1: {cardDataMap[selectedLeader]?.Name || selectedLeader}
+                          </span>
+                        )}
+                        {selectedLeader2 && (
+                          <span className="px-3 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded-full border border-yellow-500/30">
+                            Leader 2: {cardDataMap[selectedLeader2]?.Name || selectedLeader2}
+                          </span>
+                        )}
                       </div>
-                    ))}
+                    )}
+                  </div>
+
+                  <div className="flex-1 overflow-auto bg-gray-800/50 rounded-2xl border border-gray-700 p-3 md:p-4">
+                    <AdvancedSearch
+                      onCardClick={(card) => {
+                        if (card.Type === 'Leader') {
+                          handleAddCard(card);
+                          if (selectedFormat !== 'Twin Suns') setStep(3);
+                        }
+                      }}
+                      collectionData={collectionData}
+                      embedded={true}
+                      initialFilters={{ types: ['Leader'] }}
+                    />
+                  </div>
+                  <div className="mt-4 flex justify-between">
+                    <button
+                      onClick={() => setStep(1)}
+                      className="px-6 py-3 text-gray-400 hover:text-white"
+                      style={{ minHeight: '44px' }}
+                    >
+                      Back
+                    </button>
+                    {(selectedFormat === 'Twin Suns' ? (selectedLeader && selectedLeader2) : selectedLeader) && (
+                      <button
+                        onClick={() => setStep(3)}
+                        className="px-8 py-3 bg-yellow-500 text-black font-bold rounded-lg"
+                        style={{ minHeight: '44px' }}
+                      >
+                        Next: Select Base
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
-            </div>
-            )}
-          </div>
+
+              {/* Step 3: Base Selection */}
+              {step === 3 && (
+                <div className="flex-1 flex flex-col min-h-0">
+                  <div className="mb-4 text-center">
+                    <h3 className="text-xl md:text-2xl font-bold text-white">Select Base</h3>
+                    <p className="text-gray-400 text-sm">Choose your base of operations.</p>
+                  </div>
+
+                  <div className="flex-1 overflow-auto bg-gray-800/50 rounded-2xl border border-gray-700 p-3 md:p-4">
+                    <AdvancedSearch
+                      onCardClick={(card) => {
+                        if (card.Type === 'Base') {
+                          setSelectedBase(`${card.Set}_${card.Number}`);
+                          setDeckCards(prev => ({ ...prev, [`${card.Set}_${card.Number}`]: 1 }));
+                          setStep(4);
+                        }
+                      }}
+                      collectionData={collectionData}
+                      embedded={true}
+                      initialFilters={{ types: ['Base'] }}
+                    />
+                  </div>
+                  <div className="mt-4 flex justify-between">
+                    <button
+                      onClick={() => setStep(2)}
+                      className="px-6 py-3 text-gray-400 hover:text-white"
+                      style={{ minHeight: '44px' }}
+                    >
+                      Back
+                    </button>
+                    {selectedBase && (
+                      <button
+                        onClick={() => setStep(4)}
+                        className="px-8 py-3 bg-yellow-500 text-black font-bold rounded-lg"
+                        style={{ minHeight: '44px' }}
+                      >
+                        Next: Build Deck
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Step 4: Deck Construction ── */}
+
+              {/* MOBILE layout: single-panel, bottom-nav controlled */}
+              {step === 4 && isMobile && (
+                <div className="flex-1 overflow-hidden flex flex-col">
+                  {activeMobileTab === 'search' && (
+                    <div className="flex-1 min-h-0 flex flex-col bg-gray-800/50 rounded-xl p-3 border border-gray-700">
+                      {/* Mobile add target toggle */}
+                      <div className="flex gap-1 mb-2 bg-gray-900 rounded-lg p-1 border border-gray-800 shrink-0">
+                        <button
+                          onClick={() => setAddTarget('mainboard')}
+                          className={`flex-1 flex items-center justify-center gap-1 py-1.5 text-xs font-bold rounded-md transition-colors ${
+                            addTarget === 'mainboard' ? 'bg-yellow-500 text-black' : 'text-gray-400 hover:text-white'
+                          }`}
+                        >
+                          <Swords size={11} />
+                          Mainboard
+                        </button>
+                        <button
+                          onClick={() => setAddTarget('sideboard')}
+                          className={`flex-1 flex items-center justify-center gap-1 py-1.5 text-xs font-bold rounded-md transition-colors ${
+                            addTarget === 'sideboard' ? 'bg-blue-500 text-white' : 'text-gray-400 hover:text-white'
+                          }`}
+                        >
+                          <Shield size={11} />
+                          Sideboard {sideboardTotal > 0 && `(${sideboardTotal}/10)`}
+                        </button>
+                      </div>
+                      <div className="flex-1 overflow-auto">
+                        <AdvancedSearch
+                          onCardClick={addTarget === 'sideboard' ? handleAddToSideboard : handleAddCard}
+                          collectionData={collectionData}
+                          embedded={true}
+                          getDeckCount={getDeckCount}
+                          initialFilters={{
+                            aspects: (() => {
+                              const aspects = new Set();
+                              const leader = cardDataMap[selectedLeader];
+                              const base = cardDataMap[selectedBase];
+                              if (leader?.Aspects) leader.Aspects.forEach(a => aspects.add(a));
+                              if (base?.Aspects) base.Aspects.forEach(a => aspects.add(a));
+                              return Array.from(aspects);
+                            })()
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {activeMobileTab === 'deck' && renderDeckPanel()}
+
+                  {activeMobileTab === 'ai' && renderAiSuggestionsPanel()}
+
+                  {activeMobileTab === 'shopping' && (
+                    <div className="flex-1 overflow-auto">
+                      <ShoppingList
+                        deck={currentDeckSnapshot}
+                        collectionData={collectionData}
+                        cardDatabase={allCards}
+                      />
+                    </div>
+                  )}
+
+                  {activeMobileTab === 'importexport' && renderImportExportPanel()}
+
+                  {activeMobileTab === 'analysis' && renderAnalysisPanel()}
+                </div>
+              )}
+
+              {/* DESKTOP layout: two-panel side by side */}
+              {step === 4 && !isMobile && (
+                <div className="flex-1 overflow-hidden flex flex-col lg:flex-row gap-6">
+
+                  {/* Left Panel: Search */}
+                  <div className="flex-1 min-h-0 flex flex-col bg-gray-800/50 rounded-xl p-4 border border-gray-700">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                        <Search size={18} className="text-blue-500" />
+                        Card Search
+                      </h3>
+                    </div>
+
+                    {/* Add target toggle */}
+                    <div className="flex gap-1 mb-3 bg-gray-900 rounded-lg p-1 border border-gray-800">
+                      <button
+                        onClick={() => setAddTarget('mainboard')}
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-bold rounded-md transition-colors ${
+                          addTarget === 'mainboard' ? 'bg-yellow-500 text-black' : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        <Swords size={11} />
+                        Mainboard
+                      </button>
+                      <button
+                        onClick={() => setAddTarget('sideboard')}
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-bold rounded-md transition-colors ${
+                          addTarget === 'sideboard' ? 'bg-blue-500 text-white' : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        <Shield size={11} />
+                        Sideboard {sideboardTotal > 0 && `(${sideboardTotal}/10)`}
+                      </button>
+                    </div>
+
+                    {loadingCards ? (
+                      <div className="flex items-center justify-center flex-1">
+                        <Loader2 size={32} className="animate-spin text-yellow-500" />
+                      </div>
+                    ) : (
+                      <div className="flex-1 overflow-auto">
+                        <AdvancedSearch
+                          onCardClick={addTarget === 'sideboard' ? handleAddToSideboard : handleAddCard}
+                          collectionData={collectionData}
+                          embedded={true}
+                          getDeckCount={getDeckCount}
+                          initialFilters={{
+                            aspects: (() => {
+                              const aspects = new Set();
+                              const leader = cardDataMap[selectedLeader];
+                              const base = cardDataMap[selectedBase];
+                              if (leader?.Aspects) leader.Aspects.forEach(a => aspects.add(a));
+                              if (base?.Aspects) base.Aspects.forEach(a => aspects.add(a));
+                              return Array.from(aspects);
+                            })()
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right Panel: Deck List / Shopping / Import-Export */}
+                  <div className="flex-1 min-h-0 flex flex-col bg-gray-800/50 rounded-xl p-4 border border-gray-700 overflow-hidden">
+
+                    {/* Panel Tabs */}
+                    <div className="flex items-center gap-1 mb-4 bg-gray-900 rounded-lg p-1 border border-gray-700">
+                      <button
+                        onClick={() => setActivePanel('deck')}
+                        className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-semibold transition-colors ${
+                          activePanel === 'deck' ? 'bg-yellow-500 text-gray-950' : 'text-gray-400 hover:text-white'
+                        }`}
+                        style={{ minHeight: '44px' }}
+                      >
+                        <Swords size={14} />
+                        Deck
+                      </button>
+                      <button
+                        onClick={() => setActivePanel('shopping')}
+                        className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-semibold transition-colors ${
+                          activePanel === 'shopping' ? 'bg-yellow-500 text-gray-950' : 'text-gray-400 hover:text-white'
+                        }`}
+                        style={{ minHeight: '44px' }}
+                      >
+                        <ShoppingCart size={14} />
+                        Shopping
+                      </button>
+                      <button
+                        onClick={() => setActivePanel('importexport')}
+                        className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-semibold transition-colors ${
+                          activePanel === 'importexport' ? 'bg-yellow-500 text-gray-950' : 'text-gray-400 hover:text-white'
+                        }`}
+                        style={{ minHeight: '44px' }}
+                      >
+                        <Download size={14} />
+                        Import/Export
+                      </button>
+                      <button
+                        onClick={() => setActivePanel('ai')}
+                        className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-semibold transition-colors ${
+                          activePanel === 'ai' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
+                        }`}
+                        style={{ minHeight: '44px' }}
+                      >
+                        <Sparkles size={14} />
+                        AI
+                      </button>
+                    </div>
+
+                    {/* Shopping List Panel */}
+                    {activePanel === 'shopping' && (
+                      <div className="flex-1 overflow-auto">
+                        <ShoppingList
+                          deck={currentDeckSnapshot}
+                          collectionData={collectionData}
+                          cardDatabase={allCards}
+                        />
+                      </div>
+                    )}
+
+                    {/* Import/Export Panel */}
+                    {activePanel === 'importexport' && renderImportExportPanel()}
+
+                    {/* AI Suggestions Panel */}
+                    {activePanel === 'ai' && renderAiSuggestionsPanel()}
+
+                    {/* Deck Panel (default) */}
+                    {activePanel === 'deck' && renderDeckPanel()}
+                  </div>
+                </div>
+              )}
+
+              {/* Step 5: Analysis (desktop / non-mobile) */}
+              {step === 5 && renderAnalysisPanel()}
+            </>
+          )}
         </div>
 
+        {/* Mobile Bottom Navigation — step 4 only */}
+        {isMobile && step === 4 && (
+          <div className="flex items-stretch bg-gray-950 border-t border-gray-800 shrink-0">
+            {mobileTabs.map(({ key, icon: Icon, label }) => (
+              <button
+                key={key}
+                onClick={() => setActiveMobileTab(key)}
+                className="flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors"
+                style={{ minHeight: '56px' }}
+              >
+                <Icon
+                  size={20}
+                  className={activeMobileTab === key ? 'text-yellow-500' : 'text-gray-500'}
+                />
+                <span className={`text-[10px] font-semibold ${activeMobileTab === key ? 'text-yellow-500' : 'text-gray-500'}`}>
+                  {label}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Bottom Bar */}
-        <div className="border-t border-gray-800 bg-gray-950 px-6 py-4">
+        <div className="border-t border-gray-800 bg-gray-950 px-4 md:px-6 py-3 md:py-4 shrink-0">
           {saveError && (
-            <div className="mb-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg flex items-center gap-2 text-red-300 text-sm">
+            <div className="mb-3 p-3 bg-red-500/20 border border-red-500/50 rounded-lg flex items-center gap-2 text-red-300 text-sm">
               <AlertCircle size={16} />
               {saveError}
             </div>
           )}
 
-          <div className="flex flex-col lg:flex-row gap-4 items-stretch lg:items-center">
+          <div className="flex gap-3 items-center">
             <input
               type="text"
               value={deckName}
               onChange={(e) => setDeckName(e.target.value)}
               placeholder="Deck name..."
-              className="flex-1 px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500"
+              className="flex-1 min-w-0 px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-yellow-500"
+              style={{ minHeight: '44px' }}
             />
 
-            <div className="flex gap-3">
+            {/* Desktop-only: Analyze / Back to Building */}
+            {!isMobile && step === 4 && (
               <button
-                onClick={onClose}
-                className="px-6 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-gray-200 font-semibold transition-colors"
+                onClick={() => setStep(5)}
+                className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold shrink-0"
+                style={{ minHeight: '44px' }}
               >
-                Close
+                <BarChart3 size={18} />
+                Analyze
               </button>
+            )}
+            {!isMobile && step === 5 && (
               <button
-                onClick={handleSaveDeck}
-                disabled={!deckStatus.isValid || isSaving}
-                className={`flex items-center gap-2 px-6 py-2 rounded-lg font-semibold transition-colors ${
-                  deckStatus.isValid && !isSaving
-                    ? 'bg-yellow-500 hover:bg-yellow-600 text-black'
-                    : 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                }`}
+                onClick={() => setStep(4)}
+                className="flex items-center justify-center px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg font-semibold shrink-0"
+                style={{ minHeight: '44px' }}
               >
-                {isSaving ? (
-                  <Loader2 size={18} className="animate-spin" />
-                ) : (
-                  <Save size={18} />
-                )}
+                Back to Building
+              </button>
+            )}
+
+            <button
+              onClick={onClose}
+              className="flex items-center justify-center px-4 md:px-6 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-gray-200 font-semibold transition-colors shrink-0"
+              style={{ minHeight: '44px' }}
+            >
+              <span className="hidden md:inline">Close</span>
+              <X size={18} className="md:hidden" />
+            </button>
+            <button
+              onClick={handleSaveDeck}
+              disabled={!deckStatus.isValid || isSaving}
+              className={`flex items-center justify-center gap-2 px-4 md:px-6 py-2 rounded-lg font-semibold transition-colors shrink-0 ${
+                deckStatus.isValid && !isSaving
+                  ? 'bg-yellow-500 hover:bg-yellow-600 text-black'
+                  : 'bg-gray-700 text-gray-400 cursor-not-allowed'
+              }`}
+              style={{ minHeight: '44px' }}
+              title={deckStatus.isValid ? 'Save Deck' : deckStatus.message}
+            >
+              {isSaving ? (
+                <Loader2 size={18} className="animate-spin" />
+              ) : (
+                <Save size={18} />
+              )}
+              <span className="hidden md:inline">
                 {deckStatus.isValid ? 'Save Deck' : deckStatus.message}
-              </button>
-            </div>
+              </span>
+            </button>
           </div>
         </div>
       </div>
+
+      {/* Full-size card preview overlay */}
+      {previewCard && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setPreviewCard(null)}
+        >
+          <button
+            className="absolute top-4 right-4 flex items-center justify-center bg-black/60 hover:bg-red-500/80 rounded-full text-white transition-colors border border-white/10"
+            style={{ minWidth: '44px', minHeight: '44px' }}
+            onClick={() => setPreviewCard(null)}
+            aria-label="Close preview"
+          >
+            <X size={22} />
+          </button>
+          <img
+            src={CardService.getCardImage(previewCard.Set, previewCard.Number)}
+            alt={previewCard.Name}
+            className="max-h-[85vh] max-w-[85vw] object-contain rounded-xl shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <p className="absolute bottom-6 left-1/2 -translate-x-1/2 text-white text-sm font-semibold bg-black/70 px-4 py-2 rounded-full pointer-events-none">
+            {previewCard.Name}
+          </p>
+        </div>
+      )}
     </div>
 
     {pickerType && (

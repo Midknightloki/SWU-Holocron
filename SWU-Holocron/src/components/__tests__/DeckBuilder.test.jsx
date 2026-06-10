@@ -33,6 +33,7 @@ vi.mock('../../services/CardService', () => ({
   CardService: {
     getCardImage: vi.fn().mockReturnValue('https://example.com/card.jpg'),
     fetchSetData: vi.fn().mockResolvedValue({ data: [] }),
+    getAvailableSets: vi.fn().mockResolvedValue(['SOR', 'SHD']),
   }
 }));
 
@@ -57,29 +58,39 @@ describe('DeckBuilder Component', () => {
     vi.clearAllMocks();
   });
 
-  it('should render without crashing with null deck prop', async () => {
+  it('should render welcome screen for a new deck', async () => {
     render(<DeckBuilder {...defaultProps} />);
 
     await waitFor(() => {
-      expect(screen.getByDisplayValue('Untitled Deck')).toBeInTheDocument();
+      expect(screen.getByText('Create New Deck')).toBeInTheDocument();
+      expect(screen.getByText('Start from Scratch')).toBeInTheDocument();
+      expect(screen.getByText('Import Decklist')).toBeInTheDocument();
     }, { timeout: 3000 });
   });
 
-  it('should show leader placeholder initially', async () => {
+  it('should transition to Format step when clicking Start from Scratch', async () => {
     render(<DeckBuilder {...defaultProps} />);
 
+    const startBtn = await screen.findByText('Start from Scratch');
+    startBtn.click();
+
     await waitFor(() => {
-      const leadersText = screen.queryAllByText(/leader/i);
-      expect(leadersText.length).toBeGreaterThan(0);
+      expect(screen.getByText('Select Format')).toBeInTheDocument();
+      expect(screen.getByText('Premier')).toBeInTheDocument();
     }, { timeout: 3000 });
   });
 
-  it('should show base placeholder initially', async () => {
+  it('should transition to Leader step after selecting Format', async () => {
     render(<DeckBuilder {...defaultProps} />);
 
+    const startBtn = await screen.findByText('Start from Scratch');
+    startBtn.click();
+
+    const premierBtn = await screen.findByText('Premier');
+    premierBtn.click();
+
     await waitFor(() => {
-      const baseText = screen.queryAllByText(/base/i);
-      expect(baseText.length).toBeGreaterThan(0);
+      expect(screen.getByText('Select Leader')).toBeInTheDocument();
     }, { timeout: 3000 });
   });
 
@@ -87,16 +98,25 @@ describe('DeckBuilder Component', () => {
     render(<DeckBuilder {...defaultProps} />);
 
     await waitFor(() => {
-      const buttons = screen.getAllByRole('button');
-      expect(buttons.length).toBeGreaterThan(0);
+      const closeBtn = screen.getByLabelText('Close');
+      expect(closeBtn).toBeInTheDocument();
     }, { timeout: 3000 });
   });
 
-  it('should render save button for deck', async () => {
-    render(<DeckBuilder {...defaultProps} />);
+  it('should render deck building interface when deck is provided', async () => {
+    const existingDeck = {
+      id: 'deck-1',
+      name: 'Existing Deck',
+      format: 'Premier',
+      leaderId: 'SOR_001',
+      baseId: 'SOR_002',
+      cards: {}
+    };
+    render(<DeckBuilder {...defaultProps} deck={existingDeck} />);
 
     await waitFor(() => {
-      expect(screen.getByDisplayValue('Untitled Deck')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('Existing Deck')).toBeInTheDocument();
+      expect(screen.getByText('Card Search')).toBeInTheDocument();
     }, { timeout: 3000 });
   });
 });
