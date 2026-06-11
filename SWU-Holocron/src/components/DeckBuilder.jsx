@@ -58,6 +58,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
 
   // Panel state: 'deck' | 'shopping' | 'importexport' | 'ai'
   const [activePanel, setActivePanel] = useState('deck');
+  const [pickerType, setPickerType] = useState(null);
   // Search add target: 'mainboard' | 'sideboard'
   const [addTarget, setAddTarget] = useState('mainboard');
 
@@ -636,11 +637,6 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     setImportFeedback({ type: 'success', message: 'Deck imported successfully!' });
     setStep(4); // Jump to deck building
   }, [importText, allCards]);
-
-  return (
-    <>
-    <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-      <div className="bg-gray-900 rounded-2xl shadow-2xl w-full max-w-7xl max-h-[90vh] flex flex-col border border-gray-800">
   const steps = [
     { name: 'Start', icon: <Plus size={18} /> },
     { name: 'Format', icon: <Layers size={18} /> },
@@ -1402,8 +1398,9 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
   ];
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 md:flex md:items-center md:justify-center md:p-4">
-      <div className="bg-gray-900 md:rounded-2xl md:shadow-2xl w-full md:max-w-7xl h-full md:h-auto md:max-h-[90vh] flex flex-col border-0 md:border border-gray-800">
+    <>
+      <div className="fixed inset-0 z-50 bg-black/80 md:flex md:items-center md:justify-center p-4">
+        <div className="bg-gray-900 md:rounded-2xl md:shadow-2xl w-full md:max-w-7xl h-full md:h-auto md:max-h-[90vh] flex flex-col border-0 md:border border-gray-800">
 
         {/* Header */}
         <div className="flex items-center justify-between px-4 md:px-6 py-3 md:py-4 border-b border-gray-800 bg-gray-950 shrink-0">
