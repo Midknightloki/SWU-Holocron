@@ -1,0 +1,248 @@
+name: Build and Push Docker Image to GHCR
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'SWU-Holocron/**'
+      - 'Dockerfile'
+      - '.github/workflows/build-and-push-docker.yml'
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate version metadata
+        # Writes public/version.json into the build context so Vite copies it to dist/
+        # and Nginx serves it at /version.json — used by the deploy dashboard.
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          COMMIT_AUTHOR: ${{ github.event.head_commit.author.name }}
+          REF_NAME: ${{ github.ref_name }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          python3 -c "
+          import json, os
+          from datetime import datetime, timezone
+
+          data = {
+              'sha': os.environ['COMMIT_SHA'],
+              'short_sha': os.environ['COMMIT_SHA'][:7],
+              'ref': os.environ['REF_NAME'],
+              'message': os.environ.get('COMMIT_MSG', '').split('\n')[0][:120],
+              'author': os.environ.get('COMMIT_AUTHOR', ''),
+              'built_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+              'run_id': os.environ['RUN_ID']
+          }
+
+          os.makedirs('SWU-Holocron/public', exist_ok=True)
+          with open('SWU-Holocron/public/version.json', 'w') as f:
+              json.dump(data, f, indent=2)
+
+          print('Generated version.json:', json.dumps(data, indent=2))
+          "
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix={{branch}}-
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./SWU-Holocron
+          file: ./SWU-Holocron/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VCS_REF=${{ github.sha }}
+            VERSION=${{ github.ref_name }}
+
+      - name: Log image details
+        run: |
+          echo "Image pushed: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          echo "Commit: ${{ github.sha }}"
+
+      - name: Notify Discord — build failure
+        if: failure() && env.DISCORD_WEBHOOK_URL != ''
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          RUN_ID: ${{ github.run_id }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 -c "
+          import json, os, urllib.request
+          from datetime import datetime, timezone
+
+          sha    = os.environ['COMMIT_SHA']
+          short  = sha[:7]
+          msg    = os.environ.get('COMMIT_MSG', '').split('\n')[0][:80]
+          run_id = os.environ['RUN_ID']
+          repo   = os.environ['REPO']
+
+          payload = {
+              'embeds': [{
+                  'title': '🔨 SWU Holocron BUILD FAILED',
+                  'description': f'Commit \`{short}\` failed to build — **no image was pushed to GHCR**.\n\n_{msg}_',
+                  'color': 0xE74C3C,
+                  'fields': [
+                      {'name': 'Actions Run', 'value': f'[#{run_id}](https://github.com/{repo}/actions/runs/{run_id})', 'inline': True},
+                      {'name': 'Re-run', 'value': f'[Trigger manually](https://github.com/{repo}/actions/workflows/build-and-push-docker.yml)', 'inline': True},
+                  ],
+                  'timestamp': datetime.now(timezone.utc).isoformat(),
+                  'footer': {'text': 'github • ubuntu-latest'}
+              }]
+          }
+
+          data = json.dumps(payload).encode('utf-8')
+          req  = urllib.request.Request(
+              os.environ['DISCORD_WEBHOOK_URL'],
+              data=data,
+              headers={'Content-Type': 'application/json'}
+          )
+          try:
+              urllib.request.urlopen(req)
+              print('Discord notified.')
+          except Exception as e:
+              print(f'Discord notification failed (non-fatal): {e}')
+          "
+
+  deploy:
+    runs-on: self-hosted
+    needs: build-and-push
+    steps:
+      - name: Pull latest image and redeploy
+        run: |
+          cd /opt/swu-holocron
+          docker compose pull web
+          docker compose up -d web
+          echo "Deployed SHA ${{ github.sha }} at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+      - name: Notify Discord — deploy success
+        if: success() && env.DISCORD_WEBHOOK_URL != ''
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          COMMIT_AUTHOR: ${{ github.event.head_commit.author.name }}
+          RUN_ID: ${{ github.run_id }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 -c "
+          import json, os, urllib.request
+          from datetime import datetime, timezone
+
+          sha    = os.environ['COMMIT_SHA']
+          short  = sha[:7]
+          msg    = os.environ.get('COMMIT_MSG', '').split('\n')[0][:100]
+          author = os.environ.get('COMMIT_AUTHOR', 'unknown')
+          run_id = os.environ['RUN_ID']
+          repo   = os.environ['REPO']
+
+          payload = {
+              'embeds': [{
+                  'title': '🚀 SWU Holocron Deployed',
+                  'url': 'https://swu.holocronlabs.net',
+                  'description': f'[\`{short}\`](https://github.com/{repo}/commit/{sha}) — {msg}',
+                  'color': 0x2ECC71,
+                  'fields': [
+                      {'name': 'Author',      'value': author,                                                          'inline': True},
+                      {'name': 'Branch',      'value': 'main',                                                          'inline': True},
+                      {'name': 'Actions Run', 'value': f'[#{run_id}](https://github.com/{repo}/actions/runs/{run_id})', 'inline': True},
+                  ],
+                  'timestamp': datetime.now(timezone.utc).isoformat(),
+                  'footer': {'text': 'nidavellir • swu.holocronlabs.net'}
+              }]
+          }
+
+          data = json.dumps(payload).encode('utf-8')
+          req  = urllib.request.Request(
+              os.environ['DISCORD_WEBHOOK_URL'],
+              data=data,
+              headers={'Content-Type': 'application/json'}
+          )
+          try:
+              urllib.request.urlopen(req)
+              print('Discord notified.')
+          except Exception as e:
+              print(f'Discord notification failed (non-fatal): {e}')
+          "
+
+      - name: Notify Discord — deploy failure
+        if: failure() && env.DISCORD_WEBHOOK_URL != ''
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          COMMIT_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 -c "
+          import json, os, urllib.request
+          from datetime import datetime, timezone
+
+          sha    = os.environ['COMMIT_SHA']
+          short  = sha[:7]
+          run_id = os.environ['RUN_ID']
+          repo   = os.environ['REPO']
+
+          payload = {
+              'embeds': [{
+                  'title': '❌ SWU Holocron Deploy FAILED',
+                  'description': f'Image built OK but deploy on Nidavellir failed for \`{short}\`.',
+                  'color': 0xE74C3C,
+                  'fields': [
+                      {'name': 'Actions Run', 'value': f'[#{run_id}](https://github.com/{repo}/actions/runs/{run_id})', 'inline': True},
+                  ],
+                  'timestamp': datetime.now(timezone.utc).isoformat(),
+                  'footer': {'text': 'nidavellir'}
+              }]
+          }
+
+          data = json.dumps(payload).encode('utf-8')
+          req  = urllib.request.Request(
+              os.environ['DISCORD_WEBHOOK_URL'],
+              data=data,
+              headers={'Content-Type': 'application/json'}
+          )
+          try:
+              urllib.request.urlopen(req)
+          except Exception as e:
+              print(f'Discord notification failed: {e}')
+          "

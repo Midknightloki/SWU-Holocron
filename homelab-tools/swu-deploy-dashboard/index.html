@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${PROJECT_NAME} — Deploy Status</title>
+  <style>
+    :root {
+      --bg:         #0d0d0f;
+      --surface:    #16181d;
+      --border:     #2a2d35;
+      --text:       #e2e4ea;
+      --muted:      #6b7280;
+      --accent:     #f97316;
+      --green:      #22c55e;
+      --red:        #ef4444;
+      --yellow:     #eab308;
+      --blue:       #3b82f6;
+      --font-mono:  'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 14px;
+      min-height: 100vh;
+    }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 16px;
+      letter-spacing: 0.5px;
+    }
+
+    .logo-icon {
+      width: 28px;
+      height: 28px;
+      background: var(--accent);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+    }
+
+    .refresh-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .refresh-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: border-color 0.15s;
+    }
+    .refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    main {
+      max-width: 900px;
+      margin: 32px auto;
+      padding: 0 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* ── Status Banner ── */
+    .status-banner {
+      border-radius: 10px;
+      padding: 24px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      border: 1px solid transparent;
+    }
+    .status-banner.synced  { background: #052a15; border-color: #166534; }
+    .status-banner.behind  { background: #2a1500; border-color: #92400e; }
+    .status-banner.error   { background: #1f0909; border-color: #7f1d1d; }
+    .status-banner.loading { background: var(--surface); border-color: var(--border); }
+
+    .status-icon { font-size: 36px; flex-shrink: 0; }
+
+    .status-text h2 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+    .status-text p  { color: var(--muted); font-size: 13px; }
+    .status-text p span { color: var(--text); font-family: var(--font-mono); }
+
+    /* ── Cards ── */
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+    }
+
+    .card-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .card-label .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .dot-live    { background: var(--green); box-shadow: 0 0 4px var(--green); }
+    .dot-github  { background: var(--blue); }
+    .dot-cf      { background: var(--accent); }
+    .dot-runs    { background: var(--muted); }
+
+    .sha {
+      font-family: var(--font-mono);
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 6px;
+    }
+
+    .commit-msg {
+      font-size: 13px;
+      color: var(--text);
+      margin-bottom: 8px;
+      line-height: 1.4;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .meta {
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    /* ── CF Cache ── */
+    .cf-status-pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .cf-HIT     { background: #052a15; color: var(--green); border: 1px solid #166534; }
+    .cf-MISS    { background: #1e1b08; color: var(--yellow); border: 1px solid #713f12; }
+    .cf-BYPASS  { background: #1a0a0a; color: var(--red); border: 1px solid #7f1d1d; }
+    .cf-DYNAMIC { background: #0d1a2e; color: var(--blue); border: 1px solid #1e3a5f; }
+    .cf-UNKNOWN { background: var(--surface); color: var(--muted); border: 1px solid var(--border); }
+
+    /* ── Workflow Runs ── */
+    .runs-card { grid-column: 1 / -1; }
+
+    .run-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+    .run-row:last-child { border-bottom: none; }
+
+    .run-status {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .run-status.success    { background: var(--green); }
+    .run-status.failure    { background: var(--red); }
+    .run-status.in_progress { background: var(--yellow); animation: pulse 1s infinite; }
+    .run-status.queued     { background: var(--muted); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+
+    .run-name { flex: 1; color: var(--text); }
+    .run-sha  { font-family: var(--font-mono); color: var(--accent); font-size: 12px; }
+    .run-time { color: var(--muted); font-size: 12px; white-space: nowrap; }
+    .run-link { color: var(--muted); text-decoration: none; font-size: 12px; }
+    .run-link:hover { color: var(--accent); }
+
+    /* ── Nginx CORS hint ── */
+    .hint {
+      background: #0d1a2e;
+      border: 1px solid #1e3a5f;
+      border-radius: 8px;
+      padding: 14px 18px;
+      font-size: 12px;
+      color: var(--muted);
+      display: none;
+    }
+    .hint.visible { display: block; }
+    .hint code {
+      font-family: var(--font-mono);
+      background: #0a1525;
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: var(--blue);
+    }
+
+    /* ── Skeleton ── */
+    .skeleton {
+      background: linear-gradient(90deg, var(--border) 25%, #3a3d45 50%, var(--border) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s infinite;
+      border-radius: 4px;
+      height: 16px;
+      margin-bottom: 8px;
+    }
+    @keyframes shimmer { to { background-position: -200% 0; } }
+
+    footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 11px;
+      padding: 24px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">⚔</div>
+    ${PROJECT_NAME} — Deploy Status
+  </div>
+  <div class="refresh-info">
+    <span id="last-refresh">—</span>
+    <span>· next in <span id="countdown">—</span>s</span>
+    <button class="refresh-btn" onclick="refresh()">↺ Refresh</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- Status Banner -->
+  <div class="status-banner loading" id="status-banner">
+    <div class="status-icon" id="status-icon">⏳</div>
+    <div class="status-text">
+      <h2 id="status-title">Checking deployment…</h2>
+      <p id="status-sub"></p>
+    </div>
+  </div>
+
+  <!-- Deployed / GitHub cards -->
+  <div class="grid">
+    <div class="card">
+      <div class="card-label"><span class="dot dot-live"></span> Live (swu.holocronlabs.net)</div>
+      <div id="live-sha" class="sha">—</div>
+      <div id="live-msg" class="commit-msg">—</div>
+      <div class="meta">
+        <span id="live-author">—</span>
+        <span id="live-built">—</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-label"><span class="dot dot-github"></span> GitHub (main)</div>
+      <div id="gh-sha" class="sha">—</div>
+      <div id="gh-msg" class="commit-msg">—</div>
+      <div class="meta">
+        <span id="gh-author">—</span>
+        <span id="gh-date">—</span>
+      </div>
+    </div>
+
+    <!-- Cloudflare Cache card -->
+    <div class="card">
+      <div class="card-label"><span class="dot dot-cf"></span> Cloudflare Cache</div>
+      <div id="cf-status-wrap" style="margin-bottom:10px;">
+        <span class="cf-status-pill cf-UNKNOWN" id="cf-status-pill">UNKNOWN</span>
+      </div>
+      <div class="meta">
+        <span id="cf-age">Age: —</span>
+        <span id="cf-note" style="font-size:11px;margin-top:4px;"></span>
+      </div>
+    </div>
+
+    <!-- version.json raw -->
+    <div class="card">
+      <div class="card-label"><span class="dot dot-runs"></span> version.json raw</div>
+      <pre id="version-raw" style="font-family:var(--font-mono);font-size:11px;color:var(--muted);white-space:pre-wrap;line-height:1.6;">—</pre>
+    </div>
+
+    <!-- Workflow Runs -->
+    <div class="card runs-card">
+      <div class="card-label"><span class="dot dot-runs"></span> Recent Workflow Runs (main)</div>
+      <div id="runs-list"><div class="skeleton"></div><div class="skeleton" style="width:80%"></div></div>
+    </div>
+  </div>
+
+  <!-- CORS hint -->
+  <div class="hint" id="cors-hint">
+    💡 <strong>CF-Cache-Status not readable</strong> — Nginx isn't exposing CORS headers for
+    <code>version.json</code>. Add the following to your nginx.conf under the root <code>location /</code>
+    block to enable Cloudflare cache visibility from this dashboard:<br><br>
+    <code>add_header Access-Control-Allow-Origin "*";</code><br>
+    <code>add_header Access-Control-Expose-Headers "CF-Cache-Status, Age, CF-Ray";</code>
+  </div>
+
+</main>
+
+<footer>${PROJECT_NAME} · Nidavellir Forge · Auto-refreshes every 60s · GitHub API: unauthenticated (60 req/hr)</footer>
+
+<script>
+  const LIVE_URL   = '${LIVE_URL}';
+  const GH_REPO    = '${GITHUB_REPO}';
+  const GH_API     = 'https://api.github.com';
+  const INTERVAL   = 60;   // seconds between full refreshes
+  const GH_CACHE   = 120;  // seconds to cache GitHub API response
+
+  let countdownVal  = INTERVAL;
+  let countdownTimer = null;
+  let ghCache        = null;
+  let ghCacheAt      = 0;
+
+  function timeAgo(isoStr) {
+    if (!isoStr) return '—';
+    const diff = Math.floor((Date.now() - new Date(isoStr)) / 1000);
+    if (diff < 60)   return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400)return `${Math.floor(diff / 3600)}h ago`;
+    return `${Math.floor(diff / 86400)}d ago`;
+  }
+
+  function formatDate(isoStr) {
+    if (!isoStr) return '—';
+    return new Date(isoStr).toLocaleString();
+  }
+
+  function setBanner(state, icon, title, sub) {
+    const b = document.getElementById('status-banner');
+    b.className = `status-banner ${state}`;
+    document.getElementById('status-icon').textContent  = icon;
+    document.getElementById('status-title').textContent = title;
+    document.getElementById('status-sub').innerHTML     = sub;
+  }
+
+  async function fetchVersion() {
+    const bust = Date.now();
+    const res  = await fetch(`${LIVE_URL}/version.json?_=${bust}`, {cache: 'no-store'});
+    const data = await res.json();
+    // Try reading CF headers (works only if nginx exposes them via CORS)
+    const cfStatus = res.headers.get('cf-cache-status');
+    const cfAge    = res.headers.get('age');
+    const cfRay    = res.headers.get('cf-ray');
+    return { data, cfStatus, cfAge, cfRay };
+  }
+
+  async function fetchGitHub() {
+    const now = Date.now();
+    if (ghCache && (now - ghCacheAt) < GH_CACHE * 1000) {
+      return ghCache;
+    }
+    const [commitRes, runsRes] = await Promise.all([
+      fetch(`${GH_API}/repos/${GH_REPO}/commits/main`),
+      fetch(`${GH_API}/repos/${GH_REPO}/actions/runs?per_page=6&branch=main`)
+    ]);
+    const commit = await commitRes.json();
+    const runs   = await runsRes.json();
+    ghCache   = { commit, runs: runs.workflow_runs || [] };
+    ghCacheAt = now;
+    return ghCache;
+  }
+
+  function renderCF(cfStatus, cfAge) {
+    const pill = document.getElementById('cf-status-pill');
+    const hint = document.getElementById('cors-hint');
+    const note = document.getElementById('cf-note');
+
+    if (!cfStatus) {
+      pill.textContent  = 'UNKNOWN';
+      pill.className    = 'cf-status-pill cf-UNKNOWN';
+      hint.classList.add('visible');
+      note.textContent  = 'Headers not exposed via CORS — see hint below.';
+      document.getElementById('cf-age').textContent = 'Age: —';
+      return;
+    }
+
+    hint.classList.remove('visible');
+    const cls = ['HIT','MISS','BYPASS','DYNAMIC'].includes(cfStatus) ? cfStatus : 'UNKNOWN';
+    pill.textContent = cfStatus;
+    pill.className   = `cf-status-pill cf-${cls}`;
+    document.getElementById('cf-age').textContent = cfAge ? `Age: ${cfAge}s` : 'Age: —';
+
+    if (cfStatus === 'HIT' && parseInt(cfAge, 10) > 300) {
+      note.textContent = '⚠ Cache is stale (>5 min). Users may see old version.';
+    } else if (cfStatus === 'MISS') {
+      note.textContent = 'Cache miss — this request went to origin.';
+    } else if (cfStatus === 'BYPASS') {
+      note.textContent = 'Cache bypassed — check CF page rules.';
+    } else {
+      note.textContent = '';
+    }
+  }
+
+  function renderRuns(runs) {
+    const el = document.getElementById('runs-list');
+    if (!runs || !runs.length) {
+      el.innerHTML = '<div style="color:var(--muted);font-size:12px;">No runs found.</div>';
+      return;
+    }
+
+    const statusIcon = s => ({
+      success:     '●',
+      failure:     '●',
+      in_progress: '●',
+      queued:      '●',
+    }[s] || '●');
+
+    el.innerHTML = runs.slice(0, 6).map(r => {
+      const sha   = (r.head_sha || '').slice(0, 7);
+      const name  = r.name || 'Workflow';
+      const state = r.status === 'completed' ? r.conclusion : r.status;
+      const ago   = timeAgo(r.updated_at);
+      return `
+        <div class="run-row">
+          <span class="run-status ${state}"></span>
+          <span class="run-name">${name}</span>
+          <span class="run-sha">${sha}</span>
+          <span class="run-time">${ago}</span>
+          <a class="run-link" href="${r.html_url}" target="_blank" rel="noopener">↗</a>
+        </div>`;
+    }).join('');
+  }
+
+  async function refresh() {
+    resetCountdown();
+
+    // Show loading state without blanking everything
+    document.getElementById('status-title').textContent = 'Refreshing…';
+
+    try {
+      const [{ data: version, cfStatus, cfAge }, { commit, runs }] = await Promise.all([
+        fetchVersion(),
+        fetchGitHub()
+      ]);
+
+      // Live card
+      document.getElementById('live-sha').textContent    = version.short_sha || version.sha?.slice(0, 7) || '—';
+      document.getElementById('live-msg').textContent    = version.message || '—';
+      document.getElementById('live-author').textContent = version.author ? `by ${version.author}` : '';
+      document.getElementById('live-built').textContent  = version.built_at
+        ? `Built ${timeAgo(version.built_at)} (${formatDate(version.built_at)})`
+        : '—';
+
+      // GitHub card
+      const ghSha = commit.sha || '';
+      const ghMsg = commit.commit?.message?.split('\n')[0] || '—';
+      const ghDate= commit.commit?.committer?.date || commit.commit?.author?.date;
+      const ghAuth= commit.commit?.author?.name || '—';
+      document.getElementById('gh-sha').textContent    = ghSha.slice(0, 7);
+      document.getElementById('gh-msg').textContent    = ghMsg;
+      document.getElementById('gh-author').textContent = `by ${ghAuth}`;
+      document.getElementById('gh-date').textContent   = ghDate ? `${timeAgo(ghDate)} (${formatDate(ghDate)})` : '—';
+
+      // version.json raw
+      document.getElementById('version-raw').textContent = JSON.stringify(version, null, 2);
+
+      // Cloudflare
+      renderCF(cfStatus, cfAge);
+
+      // Workflow runs
+      renderRuns(runs);
+
+      // Status banner
+      const deployedSha = version.sha || '';
+      const latestSha   = ghSha;
+      const inSync      = deployedSha && latestSha && deployedSha === latestSha;
+      const noVersion   = !deployedSha;
+
+      if (noVersion) {
+        setBanner('error', '❓', 'version.json not found',
+          'The live site does not serve /version.json — the workflow change may not be deployed yet.');
+      } else if (inSync) {
+        setBanner('synced', '✅', 'In Sync',
+          `Deployed <span>${deployedSha.slice(0, 7)}</span> matches latest GitHub commit.`);
+      } else {
+        setBanner('behind', '⚠️', 'Deployment Behind',
+          `Live: <span>${deployedSha.slice(0, 7)}</span> · GitHub: <span>${latestSha.slice(0, 7)}</span> — a deploy may be pending or stuck.`);
+      }
+
+    } catch (err) {
+      setBanner('error', '🔴', 'Fetch Error', err.message);
+      console.error(err);
+    }
+
+    document.getElementById('last-refresh').textContent = `Last refresh: ${new Date().toLocaleTimeString()}`;
+  }
+
+  function resetCountdown() {
+    clearInterval(countdownTimer);
+    countdownVal = INTERVAL;
+    document.getElementById('countdown').textContent = countdownVal;
+    countdownTimer = setInterval(() => {
+      countdownVal--;
+      document.getElementById('countdown').textContent = countdownVal;
+      if (countdownVal <= 0) refresh();
+    }, 1000);
+  }
+
+  // Kick off
+  refresh();
+</script>
+</body>
+</html>

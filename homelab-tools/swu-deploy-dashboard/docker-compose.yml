@@ -1,0 +1,26 @@
+services:
+  deploy-dashboard:
+    build:
+      context: .
+    image: deploy-dashboard:latest
+    container_name: swu-deploy-dashboard
+    restart: unless-stopped
+    environment:
+      - GITHUB_REPO=Midknightloki/SWU-Holocron
+      - LIVE_URL=https://swu.holocronlabs.net
+      - PROJECT_NAME=SWU Holocron
+    ports:
+      - "8082:80"
+
+# ── Reuse for another project ─────────────────────────────────────────────────
+# Copy this file, change the three env vars and the port, done:
+#
+#   deploy-dashboard:
+#     image: deploy-dashboard:latest          # built image is reusable as-is
+#     container_name: my-project-dashboard
+#     environment:
+#       - GITHUB_REPO=owner/my-other-repo
+#       - LIVE_URL=https://my-other-project.net
+#       - PROJECT_NAME=My Other Project
+#     ports:
+#       - "8083:80"
