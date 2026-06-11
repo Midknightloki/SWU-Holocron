@@ -13,6 +13,15 @@
       "**/.*",
       "**/node_modules/**"
     ],
+    "headers": [
+      {
+        "source": "/version.json",
+        "headers": [
+          { "key": "Access-Control-Allow-Origin", "value": "*" },
+          { "key": "Cache-Control", "value": "no-store" }
+        ]
+      }
+    ],
     "rewrites": [
       {
         "source": "**",
