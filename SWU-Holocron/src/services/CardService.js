@@ -139,26 +139,6 @@ export const CardService = {
       }
     }
 
-    // Strategy 2: Legacy Cache (Fallback)
-    // This is kept for backward compatibility during migration
-    // TODO: Remove after all users migrated to new schema
-    if (db) {
-      try {
-        const legacyRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'sets', setCode);
-        const legacySnap = await getDoc(legacyRef);
-        if (legacySnap.exists()) {
-          const data = legacySnap.data();
-          const age = Date.now() - (data.timestamp || 0);
-          if (age < 7 * 24 * 60 * 60 * 1000) { // 7 days
-            console.log(`✓ Loaded from legacy cache (${setCode})`);
-            return { data: data.cards, source: 'Legacy Cache' };
-          }
-        }
-      } catch (e) {
-        console.warn("Legacy cache read failed:", e);
-      }
-    }
-
     // Strategy 3: Direct API (Emergency Fallback Only)
     // This should rarely be hit if background sync is working
     console.warn(`⚠ No Firestore data found for ${setCode}, attempting direct API fetch`);
