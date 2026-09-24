@@ -13,7 +13,7 @@
  */
 
 import { SETS } from '../src/cardData.js';
-import { readFileSync } from 'fs';
+import { initFirestore } from './firebaseAdmin.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -23,33 +23,11 @@ const __dirname = dirname(__filename);
 // Can be used in Node.js (with service account) or browser (with auth)
 const isNode = typeof process !== 'undefined' && process.versions?.node;
 
-let admin, db;
+let db;
 
 if (isNode) {
   // Node.js environment (GitHub Actions, local script)
-  let serviceAccount;
-  
-  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-  } else {
-    // Local development - load from file
-    const keyPath = join(__dirname, '..', 'firebase-admin-key.json');
-    try {
-      serviceAccount = JSON.parse(readFileSync(keyPath, 'utf8'));
-    } catch (error) {
-      console.error('❌ Error loading firebase-admin-key.json');
-      console.error('   Please download service account key from Firebase Console:');
-      console.error('   https://console.firebase.google.com/project/swu-holocron-93a18/settings/serviceaccounts/adminsdk');
-      console.error('   Save it as: firebase-admin-key.json in the project root');
-      process.exit(1);
-    }
-  }
-  
-  admin = await import('firebase-admin');
-  admin.default.initializeApp({
-    credential: admin.default.credential.cert(serviceAccount)
-  });
-  db = admin.default.firestore();
+  db = await initFirestore();
 } else {
   // Browser environment (admin panel)
   const { db: firestoreDb } = await import('../src/firebase.js');

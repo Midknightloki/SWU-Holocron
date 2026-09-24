@@ -5,21 +5,21 @@ name: Sync Card Database
 # and cache-dependency-path below. HUSKY=0 is required on `npm ci` (the prepare
 # script runs `husky install`, which cannot find .git from the package dir).
 #
-# ⚠️  The nightly schedule is intentionally COMMENTED OUT: this workflow needs the
-#     FIREBASE_SERVICE_ACCOUNT secret, which is NOT configured on this repo.
-#     Without it the sync fails and the "Notify on failure" step below opens a
-#     GitHub issue -- i.e. a red run plus an auto-filed bug every single night.
-#     TO ENABLE:
-#       1. gh secret set FIREBASE_SERVICE_ACCOUNT < path/to/service-account.json
-#       2. Trigger once manually (Actions tab -> Run workflow) and confirm it writes.
-#       3. Uncomment the two `cron` lines below.
+# Authentication is keyless — Workload Identity Federation, no stored secret.
+# See SWU-Holocron/docs/CI-KEYLESS-AUTH.md.
+#
+# ⚠️  The weekly schedule is COMMENTED OUT until one manual run has been observed
+#     to write correctly. The card database has been stale since 2026-03-31 and
+#     PROMO/OTHER are missing, so the first run has real work to do and should be
+#     watched. Uncomment the two `cron` lines below once it is verified.
 
 on:
-  # Run daily at 6 AM UTC (after new card releases typically happen).
-  # Blocked on the FIREBASE_SERVICE_ACCOUNT secret -- see the note above.
+  # Weekly, Mondays 06:00 UTC. The seeder hash-checks for changes, so a run with
+  # nothing new is nearly free; new sets appear within 7 days of release without
+  # a release calendar to keep current by hand.
   # schedule:
-  #   - cron: '0 6 * * *'
-  
+  #   - cron: '0 6 * * 1'
+
   # Allow manual triggering from GitHub UI
   workflow_dispatch:
     inputs:
@@ -31,61 +31,76 @@ on:
         options:
           - 'true'
           - 'false'
+      skip_scrape:
+        description: 'Skip the official-site scrape (API seed + verify only)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+# Required for Workload Identity Federation: GitHub mints the OIDC token that
+# Google exchanges for short-lived credentials. Without id-token: write the auth
+# step fails with a confusing credential error.
+permissions:
+  contents: read
+  id-token: write
 
 jobs:
   sync-cards:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: SWU-Holocron
     env:
       HUSKY: 0
-    
+      FORCE_UPDATE: ${{ github.event.inputs.force_update || 'false' }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      
+
+      - name: Authenticate to Google Cloud (keyless)
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: swu-holocron-93a18
+          workload_identity_provider: projects/151643530726/locations/global/workloadIdentityPools/github/providers/github-oidc
+          service_account: card-sync@swu-holocron-93a18.iam.gserviceaccount.com
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
           cache-dependency-path: SWU-Holocron/package-lock.json
-      
+
       - name: Install dependencies
         run: npm ci
-      
-      - name: Install Firebase Admin SDK
-        run: npm install firebase-admin --save-dev
-      
-      - name: Create Firebase service account file
-        env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-        run: |
-          echo "$FIREBASE_SERVICE_ACCOUNT" > firebase-admin-key.json
-          chmod 600 firebase-admin-key.json
-      
-      - name: Run card database sync
-        env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          FORCE_UPDATE: ${{ github.event.inputs.force_update || 'false' }}
-        run: node scripts/seedCardDatabase.js
-      
-      - name: Clean up service account file
-        if: always()
-        run: rm -f firebase-admin-key.json
-      
-      - name: Upload sync log artifact
+
+      # Playwright is a devDependency, but `npm ci` installs the package, not the
+      # browser binary the scrape step drives.
+      - name: Install Playwright Chromium
+        if: github.event.inputs.skip_scrape != 'true'
+        run: npx playwright install --with-deps chromium
+
+      # Single entry point. Do NOT call seedCardDatabase.js directly here: the
+      # seeder writes the same `data` doc that reconcile composes, so a
+      # seeder-only run silently discards every official-site correction.
+      # cardDbSync.js enforces seed -> scrape -> reconcile -> verify in order.
+      - name: Run full card database sync
+        run: node scripts/cardDbSync.js ${{ github.event.inputs.skip_scrape == 'true' && '--skip-scrape' || '' }}
+
+      - name: Upload sync log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: sync-log-${{ github.run_number }}
-          path: |
-            SWU-Holocron/sync-log.json
-            SWU-Holocron/sync-errors.json
+          name: card-sync-log-${{ github.run_number }}
+          path: SWU-Holocron/logs/
           retention-days: 30
-      
+          if-no-files-found: warn
+
       - name: Report sync status
         if: always()
         run: |
@@ -95,8 +110,12 @@ jobs:
           echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
           echo "**Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Check the job logs for detailed sync information." >> $GITHUB_STEP_SUMMARY
-      
+          if [ -d logs ]; then
+            echo '```json' >> $GITHUB_STEP_SUMMARY
+            cat "$(ls -t logs/*.json | head -1)" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
       - name: Notify on failure
         if: failure()
         uses: actions/github-script@v7
@@ -104,26 +123,25 @@ jobs:
           script: |
             const issue_title = `Card Database Sync Failed - Run #${context.runNumber}`;
             const issue_body = `The automated card database sync failed.
-            
+
             **Run:** [${context.runNumber}](${context.payload.repository.html_url}/actions/runs/${context.runId})
             **Triggered:** ${context.eventName}
             **Time:** ${new Date().toISOString()}
-            
-            Please check the workflow logs for details and run manually if needed.
-            
+
+            Check the workflow logs and the uploaded sync-log artifact.
+
             \`\`\`
             Workflow: .github/workflows/sync-cards.yml
             \`\`\`
             `;
-            
-            // Check if an issue already exists
+
             const issues = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
               state: 'open',
               labels: 'sync-failure,automated'
             });
-            
+
             if (issues.data.length === 0) {
               await github.rest.issues.create({
                 owner: context.repo.owner,

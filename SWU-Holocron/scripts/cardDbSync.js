@@ -10,7 +10,8 @@
  */
 
 import { execSync } from 'child_process';
-import { mkdirSync, writeFileSync, readFileSync } from 'fs';
+import { mkdirSync, writeFileSync } from 'fs';
+import { initFirestore } from './firebaseAdmin.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -75,18 +76,7 @@ async function reconcile() {
     const { SETS } = await import('../src/cardData.js');
     const { APP_ID } = await import('../src/firebase.js');
 
-    const admin = await import('firebase-admin');
-
-    const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT
-      ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
-      : JSON.parse(readFileSync(join(projectRoot, 'firebase-admin-key.json'), 'utf8'));
-
-    if (!admin.default.apps.length) {
-      admin.default.initializeApp({
-        credential: admin.default.credential.cert(serviceAccount)
-      });
-    }
-    const db = admin.default.firestore();
+    const db = await initFirestore();
 
     for (const set of SETS) {
       try {
