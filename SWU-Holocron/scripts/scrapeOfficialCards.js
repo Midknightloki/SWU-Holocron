@@ -8,6 +8,7 @@
  */
 
 import { initFirestore } from './firebaseAdmin.js';
+import { buildCardListUrl, MAX_PAGE_SIZE } from '../src/officialCardApi.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -163,18 +164,14 @@ async function autoScroll(page) {
   });
 }
 
-async function fetchCardPages(page, baseUrl, pageSize = 200, maxPages = 30) {
-  if (!baseUrl) return [];
-
-  const urlObj = new URL(baseUrl);
-  urlObj.searchParams.set('pagination[pageSize]', String(pageSize));
-
+async function fetchCardPages(page, baseUrl, pageSize = MAX_PAGE_SIZE, maxPages = 30) {
+  // baseUrl may be null: buildCardListUrl falls back to the known endpoint, so
+  // a failed capture no longer means zero official cards.
   const payloads = [];
   let totalCardsFromMeta = null;
 
   for (let pageNum = 1; pageNum <= maxPages; pageNum += 1) {
-    urlObj.searchParams.set('pagination[page]', String(pageNum));
-    const url = urlObj.toString();
+    const url = buildCardListUrl(baseUrl, { page: pageNum, pageSize });
 
     const { status, json } = await page.evaluate(async (targetUrl) => {
       try {
@@ -307,7 +304,7 @@ async function scrapeWithBrowser(searchFilter = '') {
     };
   });
 
-  const apiPayloads = await fetchCardPages(page, cardListBaseUrl, 40, 30);
+  const apiPayloads = await fetchCardPages(page, cardListBaseUrl, MAX_PAGE_SIZE, 30);
   await browser.close();
   const allPayloads = [...payloads, ...apiPayloads];
   const cards = collectCardsFromPayloads(allPayloads);
