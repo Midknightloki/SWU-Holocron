@@ -223,11 +223,7 @@ secret:
 
 `deploy.js` at the git root is a stub — the Admin SDK cannot upload hosting.
 
-## Code conventions
-
-Environment tags in comments mark platform coupling, and are worth preserving and
-adding: `@environment:firebase`, `@environment:web-file-api`,
-`@environment:web-localstorage`, `@environment:react`, plus `@critical`.
+## Linting
 
 `npm run lint` uses `--max-warnings 0`, but **CI deliberately gates on errors
 only** (`eslint src --ext js,jsx --quiet`) and reports warnings non-blocking.
@@ -243,4 +239,65 @@ test suite does not cover those paths.
 
 CSV import/export (`src/utils/csvParser.js`) must stay round-trip compatible with
 Moxfield and Archidekt exports; `deckImportExport.js` handles deck-list text
-formats (see `decklist.swu.text` / `Melee.txt` at the git root for samples).
+formats (see `decklist.swu.text` / `Melee.txt` at the git root for samples). The
+parser is a character-by-character state machine that handles doubled `""`
+escapes inside quoted fields (`csvParser.js:113`) — not a regex split, so don't
+"simplify" it into one.
+
+## House rules
+
+Carried over from the retired `.github/copilot-instructions.md`; each verified
+against the code as of 2026-09-23.
+
+**Write tests first for new features.** This is the project's stated workflow:
+failing test, minimum implementation, then refactor against a green suite.
+
+**Collection controls stay inline.** Browsing cards and managing your collection
+are the same activity — cards in the database are just cards you don't own yet.
+Quantity/foil controls are embedded in the card grid (hover overlay), the card
+modal header, and the dashboard's missing-cards table. Never route the user to a
+separate "manage collection" screen; it breaks the core design principle.
+
+**Firestore batch writes chunk at 400 operations.** The hard limit is 500;
+`App.jsx:377` commits and reopens the batch at 400 for headroom. CSV imports
+depend on this.
+
+**Every hook before any conditional return.** Calling `useMemo`/`useEffect` after
+an early exit changes hook order between renders → "Rendered more hooks than
+during the previous render". `react-hooks/rules-of-hooks` now catches this, and
+it is an ESLint *error*, so CI blocks on it.
+
+## Conventions
+
+- Environment tags in comments mark platform coupling, and are worth preserving
+  and adding: `@environment:firebase`, `@environment:web-file-api`,
+  `@environment:web-localstorage`, `@environment:react`, plus `@critical`.
+- Services are object literals exported by name — `export const CardService = {}`
+  — so import them as `import { CardService }`, never as a default.
+- A test file containing JSX must use the `.jsx` extension or Vite/esbuild won't
+  parse it. All 35 current test files follow this.
+- `ASPECTS` is an array of objects, not strings — render `aspect.name`.
+- `localStorage` keys are `swu-`-prefixed: `swu-cards-{SET}`, `swu-available-sets`,
+  `swu-active-set`, `swu-has-visited`, `swu-sync-code`, `swu-holocron`.
+- Leaders and Bases are horizontal: `aspect-[88/63] col-span-2`. Everything else
+  is `aspect-[63/88] col-span-1` (`App.jsx:982`).
+- Owned counts render as a dual `3 +2F` — standard count prominent, foil count as
+  a smaller yellow badge (`App.jsx:995`).
+- Tailwind dark theme throughout (`bg-gray-950`/`bg-gray-900` grounds,
+  `text-gray-100` base). Degrade gracefully rather than crashing: show fallback
+  data, and always check `db` exists before a Firestore call.
+
+## Known gaps
+
+Long-standing, still true, and each one a reasonable thing to pick up:
+
+- **No error boundaries anywhere.** A render error in any component blanks the app.
+- **No store.** Everything prop-drills from `App.jsx`; collection update callbacks
+  are threaded through every component that touches quantities.
+- **No memoization on the card grid**, which routinely renders 200+ cards.
+- `.animate-shimmer` (the foil effect) is defined in `src/index.css` but
+  referenced by no component — dead CSS left from `Prototype/app.jsx`.
+- A React Native migration has been scoped but not started, in
+  `SWU Holocron - React Native Migration Context.md` and
+  `docs/PLATFORM-ARCHITECTURE-DECISION.md`. The platform-coupled spots it cares
+  about are the `@environment:` tags above.
