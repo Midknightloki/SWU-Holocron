@@ -38,7 +38,10 @@ function runStep(label, command) {
       cwd: projectRoot,
       encoding: 'utf8',
       stdio: 'pipe',
-      timeout: 300000 // 5 minute timeout per step
+      // 20 minutes. Seeding 51 discovered sets takes ~13s each (~11 min);
+      // the previous 5-minute cap predates set discovery and would kill
+      // the seed step partway through.
+      timeout: 1200000
     });
     const duration_ms = Date.now() - start;
     console.log(output);
