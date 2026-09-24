@@ -83,6 +83,7 @@ Everything hangs off `artifacts/{APP_ID}/…` where `APP_ID = 'swu-holocron-v1'`
 `swu-holocron-93a18`). The paths that matter:
 
 ```
+artifacts/{APP_ID}/public/data/cardDatabase/sets              SET REGISTRY (discovered set list)
 artifacts/{APP_ID}/public/data/cardDatabase/sets/{SET}/data   card data per set (8 segments)
 artifacts/{APP_ID}/public/data/cardDatabase/metadata          sync version/metadata
 artifacts/{APP_ID}/public/data/sync_{code}/*                  LEGACY collection sync (deprecated)
@@ -97,8 +98,27 @@ artifacts/{APP_ID}/admin/sync/logs
 Firestore requires alternating collection/document segments, so path arity is
 load-bearing — a 6-segment `collection()` throws at runtime. This has broken the
 app before (see `AGENT_CONTEXT.md`). The client SDK also cannot list
-subcollections, so `CardService.getAvailableSets()` probes each known set code
-from `SETS` individually rather than enumerating.
+subcollections, which is why the `sets` document doubles as a **set registry**:
+it holds the discovered set list, and its subcollections hold each set's cards.
+
+### Sets are discovered, never hardcoded
+
+`scripts/setDiscovery.js` fetches `https://api.swu-db.com/sets` (51 sets as of
+2026-09, 12 of them base sets) and publishes a registry to the `sets` doc. The
+seeder iterates the registry; `CardService.getSetRegistry()` reads it in one
+call and the client renders from that.
+
+This replaced a hardcoded `SETS` array duplicated across six files, which meant
+the seeder could only ever seed sets a human had typed in — `IBH`, `TS26`, `ASH`
+and `HMW` were invisible despite existing in the API, some for a year.
+
+**Do not reintroduce a hardcoded set list.** `SETS` in `cardData.js` is a
+fallback for a cold database or denied read, nothing more. `PROMO` and `OTHER`
+in it are not real API sets: they are legacy buckets kept because collection
+documents are keyed `PROMO_001_std`, and dropping them would orphan those cards.
+Real promos arrive under their true codes (`SOROP`, `P26`, `HMWP`, …).
+`src/setCatalog.js` holds the normalisation and must stay Vite-free so Node
+scripts can import it.
 
 Firestore/Storage rules (`firestore.rules`, `storage.rules`) are **not** deployed
 by any CI job — they must be published manually via

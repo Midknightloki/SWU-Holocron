@@ -11,7 +11,6 @@ import { DeckService } from './services/DeckService';
 import { collection, doc, onSnapshot, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 import { parseCSV, generateCSV } from './utils/csvParser';
 import { getCollectionId, reconstructCardsFromCollection, isHorizontalCard } from './utils/collectionHelpers';
-import { isSpecialSet, SET_CODE_MAP } from './utils/officialCodeUtils';
 import { useAuth } from './contexts/AuthContext';
 import { MigrationService } from './services/MigrationService';
 
@@ -50,6 +49,7 @@ export default function App() {
   const [lastSync, setLastSync] = useState(null);
   const [error, setError] = useState(null);
   const [reconstructedData, setReconstructedData] = useState(false);
+  const [setRegistry, setSetRegistry] = useState([]);
   const [availableSets, setAvailableSets] = useState(() => {
     const cached = localStorage.getItem('swu-available-sets');
     if (!cached) return [];
@@ -192,6 +192,9 @@ export default function App() {
   // Discover Available Sets
   useEffect(() => {
     const discoverSets = async () => {
+      const registry = await CardService.getSetRegistry();
+      if (registry.length > 0) setSetRegistry(registry);
+
       const sets = await CardService.getAvailableSets();
       if (sets.length > 0) {
         setAvailableSets(sets);
@@ -473,7 +476,7 @@ export default function App() {
       // Only show cards from the current set (skip if 'ALL' is selected)
       if (activeSet !== 'ALL') {
         if (activeSet === 'OTHER') {
-          const mainSets = ['SOR', 'SHD', 'TWI', 'JTL', 'LOF', 'SEC', 'LAW'];
+          const mainSets = availableSets.length > 0 ? availableSets : SETS.map((s) => s.code);
           if (mainSets.includes(card.Set)) return false;
         } else if (card.Set !== activeSet) {
           return false;
@@ -536,39 +539,29 @@ export default function App() {
 
   // Compute available SETS based on discovered sets - fully dynamic
   const visibleSets = useMemo(() => {
-    // If no discovery data yet, use fallback SETS constant (excluding ALT and PROMO initially)
-    if (availableSets.length === 0) {
-      return SETS.filter(s => s.code !== 'LAW' && s.code !== 'PROMO');
-    }
+    // Prefer the published set registry: it carries name, releaseDate and
+    // isBaseSet, so nothing here needs a hardcoded list or a code-number map.
+    const source = setRegistry.length > 0
+      ? setRegistry
+      : SETS.map((set) => ({ ...set, isBaseSet: !['PROMO', 'OTHER'].includes(set.code), releaseDate: null }));
 
-    // Build set objects dynamically from discovered sets (only if they have cards)
-    const dynamicSets = availableSets
-      .filter(code => {
-        // Always include discovered sets that have cards
-        return true;
-      })
-      .map(code => {
-        // Try to find metadata in known SETS constant
-        const knownSet = SETS.find(s => s.code === code);
-        return knownSet || { code, name: code }; // Fallback for unknown sets
-      });
+    // Only offer sets the database actually has, once discovery has reported.
+    const offered = availableSets.length > 0
+      ? source.filter((set) => availableSets.includes(set.code))
+      : source;
 
-    // Separate mainline and special sets
-    const mainlineSets = dynamicSets
-      .filter(s => !isSpecialSet(s.code))
-      .sort((a, b) => {
-        const numA = parseInt(SET_CODE_MAP[a.code] || '99');
-        const numB = parseInt(SET_CODE_MAP[b.code] || '99');
-        return numA - numB;
-      });
+    const byNewest = (a, b) => {
+      if (a.releaseDate && b.releaseDate) return a.releaseDate < b.releaseDate ? 1 : -1;
+      if (a.releaseDate) return -1;
+      if (b.releaseDate) return 1;
+      return String(a.code).localeCompare(String(b.code));
+    };
 
-    const specialSets = dynamicSets
-      .filter(s => isSpecialSet(s.code))
-      .sort((a, b) => a.code.localeCompare(b.code));
-
-    // Return mainline sets first, then special sets
-    return [...mainlineSets, ...specialSets];
-  }, [availableSets]);
+    return [
+      ...offered.filter((set) => set.isBaseSet).sort(byNewest),
+      ...offered.filter((set) => !set.isBaseSet).sort(byNewest),
+    ];
+  }, [availableSets, setRegistry]);
 
   // Conditional rendering - MUST be after all hooks
   if (!user) {
@@ -794,9 +787,20 @@ export default function App() {
                 className="bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-yellow-500/50 cursor-pointer"
               >
                 <option value="ALL">All Sets</option>
-                {visibleSets.map(set => (
-                  <option key={set.code} value={set.code}>{set.name || set.code}</option>
-                ))}
+                {visibleSets.some(s => s.isBaseSet) && (
+                  <optgroup label="Sets">
+                    {visibleSets.filter(s => s.isBaseSet).map(set => (
+                      <option key={set.code} value={set.code}>{set.name || set.code}</option>
+                    ))}
+                  </optgroup>
+                )}
+                {visibleSets.some(s => !s.isBaseSet) && (
+                  <optgroup label="Promos & Specials">
+                    {visibleSets.filter(s => !s.isBaseSet).map(set => (
+                      <option key={set.code} value={set.code}>{set.name || set.code}</option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
 
               {view === 'binder' && (

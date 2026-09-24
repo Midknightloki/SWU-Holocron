@@ -1,4 +1,5 @@
-import { API_BASE } from '../constants';
+import { API_BASE, SETS } from '../constants';
+import { LEGACY_SET_CODES } from '../setCatalog';
 import { db, APP_ID } from '../firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
@@ -9,94 +10,90 @@ export const CardService = {
 
   getBackImage: (set, number) => `${API_BASE}/cards/${set}/${number}?format=image&face=back`,
 
-  // Get list of available sets from Firestore or by checking the API
+  /**
+   * Read the set registry published by scripts/setDiscovery.js.
+   *
+   * This replaces a loop that probed each of nine hardcoded set codes with one
+   * document read. More importantly it is self-updating: a set the seeder
+   * discovers appears here without any code change.
+   *
+   * Falls back to the bundled SETS so the app still works offline, on a cold
+   * database, or if the rules deny the read -- but a fallback can never contain
+   * a set nobody has typed in, so it is a degraded mode, not a substitute.
+   *
+   * @environment:firebase
+   * @returns {Promise<Array<{code:string,name:string,isBaseSet:boolean,releaseDate:string|null}>>}
+   */
+  getSetRegistry: async () => {
+    const fallback = () => SETS.map((s) => ({
+      code: s.code,
+      name: s.name,
+      isBaseSet: !LEGACY_SET_CODES.includes(s.code),
+      releaseDate: null,
+      cardCount: null,
+      parentSetId: null,
+    }));
+
+    if (!db || !APP_ID) return fallback();
+
+    try {
+      // cardDatabase(coll) -> sets(doc): 6 segments, a valid document ref.
+      const registryRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'cardDatabase', 'sets');
+      const snap = await getDoc(registryRef);
+
+      if (snap.exists()) {
+        const sets = snap.data()?.sets;
+        if (Array.isArray(sets) && sets.length > 0) {
+          return sets;
+        }
+      }
+      console.warn('Set registry empty or missing; run `npm run admin:discover-sets`');
+    } catch (error) {
+      console.warn('Could not read set registry:', error.message);
+    }
+
+    return fallback();
+  },
+
+  /**
+   * Set codes the app should offer, newest first.
+   *
+   * Legacy pseudo-codes (PROMO, OTHER) are appended because existing collection
+   * documents are keyed with them -- dropping them would orphan those cards.
+   * They are not real API sets and will never come back from discovery.
+   *
+   * @environment:web-localstorage
+   * @returns {Promise<string[]>}
+   */
   getAvailableSets: async () => {
-    // Try to get from cache first
     const cacheKey = 'swu-available-sets';
-    const cachedData = localStorage.getItem(cacheKey);
-    if (cachedData) {
+
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
       try {
-        const { sets, timestamp } = JSON.parse(cachedData);
-        // Cache for 24 hours
-        if (Date.now() - timestamp < 24 * 60 * 60 * 1000) {
-          console.log('✓ Using cached available sets:', sets);
+        const { sets, timestamp } = JSON.parse(cached);
+        if (Array.isArray(sets) && Date.now() - timestamp < 24 * 60 * 60 * 1000) {
           return sets;
         }
       } catch (e) {
-        // Invalid cache, continue to fetch
+        // corrupt cache entry -- fall through and refetch
       }
     }
 
-    // Check Firestore for available sets
-    // Actual path: artifacts/{APP_ID}/public/data/cardDatabase/sets/{setCode}/data
-    // Structure: cardDatabase is a collection(5), sets is a doc(6), setCode is a collection(7), data is a doc(8)
-    // Client SDK cannot list sub-collections, so we probe each known set directly.
-    if (db && APP_ID) {
-      try {
-        const knownSets = ['SOR', 'SHD', 'TWI', 'JTL', 'LOF', 'SEC', 'LAW', 'PROMO', 'OTHER'];
-        const availableSets = [];
-        for (const setCode of knownSets) {
-          try {
-            const dataDocRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'cardDatabase', 'sets', setCode, 'data');
-            const dataSnap = await getDoc(dataDocRef);
-            if (dataSnap.exists() && dataSnap.data().totalCards > 0) {
-              availableSets.push(setCode);
-            }
-          } catch (e) {
-            // Skip sets that can't be read
-          }
-        }
+    const registry = await CardService.getSetRegistry();
+    const codes = registry.map((s) => s.code);
 
-        if (availableSets.length > 0) {
-          console.log('✓ Available sets from Firestore:', availableSets);
-          localStorage.setItem(cacheKey, JSON.stringify({
-            sets: availableSets,
-            timestamp: Date.now()
-          }));
-          return availableSets;
-        }
-      } catch (error) {
-        console.warn('Could not fetch sets from Firestore:', error.message);
-      }
+    for (const legacy of LEGACY_SET_CODES) {
+      if (!codes.includes(legacy)) codes.push(legacy);
     }
 
-    // Fallback: Try to detect sets by attempting to fetch from API
-    // This is a fallback when Firestore isn't available
-    const knownSets = ['SOR', 'SHD', 'TWI', 'JTL', 'LOF', 'SEC', 'LAW', 'PROMO', 'OTHER'];
-    const availableSets = [];
-
-    for (const setCode of knownSets) {
-      try {
-        const response = await CardService.fetchWithTimeout(
-          `${API_BASE}/cards/${setCode}`,
-          {},
-          5000
-        );
-        if (response.ok) {
-          const data = await response.json();
-          const cardList = Array.isArray(data) ? data : (data.data || []);
-          if (cardList.length > 0) {
-            availableSets.push(setCode);
-          }
-        }
-      } catch (e) {
-        // Set not available, skip
-      }
+    try {
+      localStorage.setItem(cacheKey, JSON.stringify({ sets: codes, timestamp: Date.now() }));
+    } catch (e) {
+      // storage full or unavailable -- the value is a convenience, not required
     }
 
-    if (availableSets.length > 0) {
-      console.log('✓ Available sets from API check:', availableSets);
-      // Cache the result
-      localStorage.setItem(cacheKey, JSON.stringify({
-        sets: availableSets,
-        timestamp: Date.now()
-      }));
-      return availableSets;
-    }
-
-    // Return empty array if nothing works - will fall back to constants
-    console.warn('Could not determine available sets, using defaults');
-    return [];
+    return codes;
   },
 
   fetchWithTimeout: async (url, options = {}, timeout = 35000) => {

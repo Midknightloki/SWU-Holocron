@@ -4,6 +4,7 @@ import {
   Shield, Plus, Trash2, Edit2, Package, Wand2, Users, Save, X, Mail
 } from 'lucide-react';
 import { db, APP_ID } from '../firebase';
+import { SETS } from '../constants';
 import { collection, doc, getDoc, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { GuidedModeService } from '../services/GuidedModeService';
@@ -357,7 +358,8 @@ export default function AdminPanel() {
   const loadCardDatabase = async () => {
     try {
       const sets = await CardService.getAvailableSets();
-      const setsToLoad = sets.length > 0 ? sets : ['SOR', 'SHD', 'TWI', 'UIQ'];
+      // Fallback to the bundled list; 'UIQ' here was never a real set code.
+      const setsToLoad = sets.length > 0 ? sets : SETS.map((s) => s.code);
       const cardMap = {};
       const list = [];
       for (const set of setsToLoad) {

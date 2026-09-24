@@ -1,0 +1,92 @@
+[
+  {
+    "numberCards": 264,
+    "isBaseSet": true,
+    "maxElement": "264",
+    "fullName": "Legends of the Force",
+    "releaseDate": "7/11/25",
+    "setId": "LOF"
+  },
+  {
+    "numberCards": 40,
+    "maxElement": "20",
+    "fullName": "Homeworlds - OP Promo",
+    "setId": "HMWP",
+    "parentSetId": "HMW"
+  },
+  {
+    "numberCards": 194,
+    "isBaseSet": true,
+    "maxElement": "194",
+    "fullName": "Icons 2027",
+    "releaseDate": "11/20/26",
+    "setId": "IC27"
+  },
+  {
+    "numberCards": 48,
+    "maxElement": "48",
+    "fullName": "2026 Promos",
+    "setId": "P26"
+  },
+  {
+    "numberCards": 252,
+    "isBaseSet": true,
+    "maxElement": "252",
+    "fullName": "Spark of Rebellion",
+    "releaseDate": "3/8/24",
+    "setId": "SOR"
+  },
+  {
+    "numberCards": 264,
+    "isBaseSet": true,
+    "maxElement": "264",
+    "fullName": "A Lawless Time",
+    "releaseDate": "3/13/26",
+    "setId": "LAW"
+  },
+  {
+    "numberCards": 104,
+    "isBaseSet": true,
+    "maxElement": "104",
+    "fullName": "Intro Battle: Hoth",
+    "releaseDate": "10/3/25",
+    "setId": "IBH"
+  },
+  {
+    "numberCards": 1,
+    "maxElement": "1",
+    "fullName": "Store Showdown - 1 (Judge)",
+    "setId": "SS1J"
+  },
+  {
+    "numberCards": 84,
+    "isBaseSet": true,
+    "maxElement": "84",
+    "fullName": "Twin Suns 2026",
+    "releaseDate": "5/8/26",
+    "setId": "TS26"
+  },
+  {
+    "numberCards": 264,
+    "isBaseSet": true,
+    "maxElement": "264",
+    "fullName": "Ashes of the Empire",
+    "releaseDate": "7/17/26",
+    "setId": "ASH"
+  },
+  {
+    "numberCards": 20,
+    "maxElement": "020",
+    "fullName": "Spark of Rebellion - OP Promo",
+    "setId": "SOROP",
+    "parentSetId": "SOR"
+  },
+  {
+    "numberCards": 272,
+    "isBaseSet": true,
+    "maxElement": "272",
+    "fullName": "Homeworlds",
+    "releaseDate": "10/9/26",
+    "setId": "HMW"
+  }
+]

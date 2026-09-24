@@ -13,6 +13,7 @@
  */
 
 import { SETS } from '../src/cardData.js';
+import { fetchSetCatalog, writeSetRegistry } from './setDiscovery.js';
 import { initFirestore } from './firebaseAdmin.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -229,8 +230,25 @@ async function seedCardDatabase() {
   const startTime = Date.now();
   const results = {};
   const errors = [];
-  
-  for (const set of SETS) {
+
+  // Discover the set list from the API rather than a hardcoded array. The old
+  // behaviour could only ever seed sets a human had typed in, which is why sets
+  // released a year earlier (IBH, TS26, ASH) were missing entirely.
+  let setsToSeed;
+  try {
+    setsToSeed = await fetchSetCatalog();
+    console.log(`Discovered ${setsToSeed.length} sets from the API`);
+    await writeSetRegistry(db, APP_ID, setsToSeed);
+    console.log('Published set registry');
+  } catch (error) {
+    // Falling back keeps a sync working during an API outage, but it will not
+    // discover anything new -- so say so loudly rather than silently degrading.
+    console.error(`Set discovery failed (${error.message}); falling back to the`);
+    console.error('hardcoded SETS list. NEW SETS WILL NOT BE PICKED UP THIS RUN.');
+    setsToSeed = SETS;
+  }
+
+  for (const set of setsToSeed) {
     try {
       console.log(`\n[${set.code}] ${set.name}`);
       console.log('-'.repeat(40));
@@ -272,7 +290,7 @@ async function seedCardDatabase() {
   
   console.log('');
   console.log('Summary:');
-  console.log(`  ✓ Successful sets: ${successCount}/${SETS.length}`);
+  console.log(`  ✓ Successful sets: ${successCount}/${setsToSeed.length}`);
   console.log(`  ✓ Total cards: ${totalCards}`);
   console.log(`  ✗ Errors: ${errors.length}`);
   console.log(`  ⏱ Duration: ${(duration / 1000).toFixed(2)}s`);

@@ -104,7 +104,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
       try {
         const sets = await CardService.getAvailableSets();
         // If discovery returns nothing, fallback to mainline sets
-        const setsToLoad = sets.length > 0 ? sets : ['SOR', 'SHD', 'TWI', 'JTL'];
+        const setsToLoad = sets.length > 0 ? sets : SETS.map((s) => s.code);
 
         const cardMap = {};
         const allCardsList = [];
