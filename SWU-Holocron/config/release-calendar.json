@@ -1,0 +1,102 @@
+{
+  "description": "Card DB sync schedule. The sync task checks this file daily and runs on matching dates. Add release dates for new sets, plus a day-after followup.",
+  "fallback_interval_days": null,
+  "releases": [
+    {
+      "set": "SOR",
+      "name": "Spark of Rebellion",
+      "date": "2024-03-08",
+      "note": "release",
+      "past": true
+    },
+    {
+      "set": "SOR",
+      "name": "Spark of Rebellion",
+      "date": "2024-03-09",
+      "note": "day-after followup",
+      "past": true
+    },
+    {
+      "set": "SHD",
+      "name": "Shadows of the Galaxy",
+      "date": "2024-07-12",
+      "note": "release",
+      "past": true
+    },
+    {
+      "set": "SHD",
+      "name": "Shadows of the Galaxy",
+      "date": "2024-07-13",
+      "note": "day-after followup",
+      "past": true
+    },
+    {
+      "set": "TWI",
+      "name": "Twilight of the Republic",
+      "date": "2024-11-08",
+      "note": "release",
+      "past": true
+    },
+    {
+      "set": "TWI",
+      "name": "Twilight of the Republic",
+      "date": "2024-11-09",
+      "note": "day-after followup",
+      "past": true
+    },
+    {
+      "set": "JTL",
+      "name": "Jump to Lightspeed",
+      "date": "2025-03-14",
+      "note": "release",
+      "past": true
+    },
+    {
+      "set": "JTL",
+      "name": "Jump to Lightspeed",
+      "date": "2025-03-15",
+      "note": "day-after followup",
+      "past": true
+    },
+    {
+      "set": "LOF",
+      "name": "Legends of the Force",
+      "date": "2025-07-11",
+      "note": "release",
+      "past": true
+    },
+    {
+      "set": "LOF",
+      "name": "Legends of the Force",
+      "date": "2025-07-12",
+      "note": "day-after followup",
+      "past": true
+    },
+    {
+      "set": "SEC",
+      "name": "Secrets of Power",
+      "date": "2025-11-07",
+      "note": "release",
+      "past": true
+    },
+    {
+      "set": "SEC",
+      "name": "Secrets of Power",
+      "date": "2025-11-08",
+      "note": "day-after followup",
+      "past": true
+    },
+    {
+      "set": "LAW",
+      "name": "A Lawless Time",
+      "date": "2026-03-27",
+      "note": "release"
+    },
+    {
+      "set": "LAW",
+      "name": "A Lawless Time",
+      "date": "2026-03-28",
+      "note": "day-after followup"
+    }
+  ]
+}

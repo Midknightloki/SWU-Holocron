@@ -21,7 +21,10 @@
     "admin:scrape-promo": "node scripts/scrapeOfficialCards.js --promo-only",
     "admin:scrape-dry-run": "node scripts/scrapeOfficialCards.js --dry-run",
     "admin:merge-sources": "node scripts/mergeCardSources.js",
-    "admin:merge-dry-run": "node scripts/mergeCardSources.js --dry-run"
+    "admin:merge-dry-run": "node scripts/mergeCardSources.js --dry-run",
+    "admin:sync-full": "node scripts/cardDbSync.js",
+    "admin:sync-skip-scrape": "node scripts/cardDbSync.js --skip-scrape",
+    "admin:sync-scrape-only": "node scripts/cardDbSync.js --scrape-only"
   },
   "dependencies": {
     "@dataconnect/admin-generated": "file:src/dataconnect-admin-generated",

@@ -14,3 +14,7 @@ image/
 # Firebase service account credentials -- never commit these
 firebase-admin-key.json
 **/firebase-admin-key.json
+
+# Firebase CLI debug output
+firebase-debug.log
+firebase-debug.*.log
