@@ -78,7 +78,26 @@ async function reconcile() {
 
     const db = await initFirestore();
 
-    for (const set of SETS) {
+    // Reconcile whatever the seeder actually published, not the fallback list.
+    // Iterating cardData.js SETS here would cover 14 sets out of 51 and would
+    // also probe PROMO/OTHER, which are legacy buckets with no API set behind
+    // them.
+    const registrySnap = await db.collection('artifacts')
+      .doc(APP_ID)
+      .collection('public')
+      .doc('data')
+      .collection('cardDatabase')
+      .doc('sets')
+      .get();
+
+    const registry = registrySnap.exists ? registrySnap.data()?.sets : null;
+    const setsToReconcile = Array.isArray(registry) && registry.length > 0 ? registry : SETS;
+    if (!Array.isArray(registry) || registry.length === 0) {
+      console.warn('  No set registry found; reconciling the fallback list only.');
+    }
+    console.log(`  Reconciling ${setsToReconcile.length} sets`);
+
+    for (const set of setsToReconcile) {
       try {
         const setBase = db.collection('artifacts')
           .doc(APP_ID)
