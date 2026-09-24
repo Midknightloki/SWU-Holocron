@@ -145,3 +145,13 @@ Stores VSCode settings outside the project
 MacOS
 
 .DS_Store
+
+# Generated PWA dev output (vite-plugin-pwa)
+dev-dist/
+
+# Firebase CLI deploy cache
+.firebase/
+
+# Captured test output / scratch artifacts -- these were committed by accident
+test_results*.txt
+dup_test.txt

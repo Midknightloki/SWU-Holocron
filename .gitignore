@@ -1,0 +1,16 @@
+# Scratch and debug artifacts at the repo root.
+# The application lives in ./SWU-Holocron/ and has its own .gitignore.
+
+# Large scraped/generated card data dumps
+cards-page.html
+cards.json
+
+# One-off debug scripts
+debug_nextjs.py
+
+# Documentation screenshots (2.8MB of PNGs); host them outside the repo instead
+image/
+
+# Firebase service account credentials -- never commit these
+firebase-admin-key.json
+**/firebase-admin-key.json
