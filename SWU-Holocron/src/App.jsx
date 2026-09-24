@@ -268,7 +268,7 @@ export default function App() {
           const cacheKey = `swu-cards-${setCode}`;
           const local = localStorage.getItem(cacheKey);
           if (local) {
-            try { allCards.push(...JSON.parse(local)); } catch (_) {}
+            try { allCards.push(...JSON.parse(local)); } catch (_) { /* corrupt cache entry — skip this set */ }
           } else {
             // Set not cached yet — fetch it now and cache for next time
             try {

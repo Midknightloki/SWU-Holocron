@@ -125,7 +125,7 @@ export default function CardPickerModal({ type, collectionData, onSelect, onClos
               <p>No {type.toLowerCase()}s found</p>
               {collectionOnly && (
                 <p className="text-sm mt-1 text-gray-600">
-                  Try disabling "Owned only"
+                  Try disabling &quot;Owned only&quot;
                 </p>
               )}
             </div>

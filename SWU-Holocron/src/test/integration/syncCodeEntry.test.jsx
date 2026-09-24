@@ -239,7 +239,9 @@ describe('React Error #310 Root Cause', () => {
       }
       
       // This useMemo only runs after hasVisited becomes true
-      // Causes hook order change!
+      // Causes hook order change! The violation is the point of this fixture,
+      // so the rule is disabled here rather than "fixed".
+      // eslint-disable-next-line react-hooks/rules-of-hooks
       const filteredCards = useMemo(() => {
         return cards.filter(c => c);
       }, [cards]);

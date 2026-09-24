@@ -17,6 +17,10 @@
     }
   },
   "plugins": ["react", "react-hooks"],
+  "globals": {
+    "__APP_VERSION__": "readonly",
+    "__BUILD_TIME__": "readonly"
+  },
   "rules": {
     "react/react-in-jsx-scope": "off",
     "react/prop-types": "warn",

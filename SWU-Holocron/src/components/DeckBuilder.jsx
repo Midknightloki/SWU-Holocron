@@ -104,21 +104,21 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
       try {
         const sets = await CardService.getAvailableSets();
         // If discovery returns nothing, fallback to mainline sets
-        const setsToLoad = sets.length > 0 ? sets : ['SOR', 'SHD', 'TWI', 'UIQ'];
+        const setsToLoad = sets.length > 0 ? sets : ['SOR', 'SHD', 'TWI', 'JTL'];
 
         const cardMap = {};
         const allCardsList = [];
 
         for (const set of setsToLoad) {
           try {
-            const { data } = await CardService.fetchSetData(code);
+            const { data } = await CardService.fetchSetData(set);
             data.forEach(card => {
               const cardId = `${card.Set}_${card.Number}`;
               cardMap[cardId] = card;
               allCardsList.push(card);
             });
           } catch (error) {
-            console.warn(`Failed to load set ${code}:`, error);
+            console.warn(`Failed to load set ${set}:`, error);
           }
         }
 
@@ -837,7 +837,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
           </span>
         </div>
         {sideboardCardsList.length === 0 ? (
-          <p className="text-gray-500 text-sm">No sideboard cards — toggle "Sideboard" in search to add cards</p>
+          <p className="text-gray-500 text-sm">No sideboard cards — toggle &quot;Sideboard&quot; in search to add cards</p>
         ) : (
           <div className="space-y-2 max-h-48 overflow-y-auto">
             {sideboardCardsList.map(({ cardId, card, count }) => (

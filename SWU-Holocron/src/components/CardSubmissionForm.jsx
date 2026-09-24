@@ -686,7 +686,7 @@ export default function CardSubmissionForm({ onSuccess, onCancel }) {
         {/* Official Code */}
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-2">
-            Official Code * <span className="text-gray-500">(as printed on card, e.g., "G25-3" or "SOR-42")</span>
+            Official Code * <span className="text-gray-500">(as printed on card, e.g., &quot;G25-3&quot; or &quot;SOR-42&quot;)</span>
           </label>
           <input
             type="text"

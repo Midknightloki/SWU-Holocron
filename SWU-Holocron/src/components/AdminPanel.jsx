@@ -368,7 +368,7 @@ export default function AdminPanel() {
             cardMap[id] = card;
             list.push(card);
           });
-        } catch {}
+        } catch { /* set unreadable — skip it */ }
       }
       setCardDataMap(cardMap);
       setAllCards(list);
