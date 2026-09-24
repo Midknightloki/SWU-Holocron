@@ -3,6 +3,10 @@
 **Date:** 2026-09-24
 **Status:** Awaiting review
 **Branch:** `chore/revive-ci`
+**Amended 2026-09-24:** the `FIREBASE_SERVICE_ACCOUNT` secret assumed throughout
+Phases 0 and 2 is no longer obtainable. Service-account key creation is blocked
+by org policy, so authentication moves to Workload Identity Federation — see
+`SWU-Holocron/docs/CI-KEYLESS-AUTH.md`. No new repository secret is required.
 
 ## Problem
 
@@ -62,8 +66,15 @@ Three independent blockers:
 1. `sync-cards.yml` lived in `SWU-Holocron/.github/workflows/`, which GitHub
    Actions does not read. It has never executed. *(Fixed on this branch — moved
    to the repo root.)*
-2. It requires the `FIREBASE_SERVICE_ACCOUNT` secret. The repo has exactly one
-   secret, `DISCORD_WEBHOOK_URL`. It still cannot run.
+2. It requires the `FIREBASE_SERVICE_ACCOUNT` secret, which does not exist —
+   the repo has exactly one secret, `DISCORD_WEBHOOK_URL`. Infisical was checked
+   directly (all three environments, root path) and holds only `GHCR_USER`,
+   `GHCR_PAT`, `MIDKNIGHTLOKI_PAT` and `SWU_HOLOCRON_TUNNEL_TOKEN` — no Firebase
+   credential under any name. **It cannot be created either:** the org policy
+   `constraints/iam.disableServiceAccountKeyCreation` blocks new keys, and the
+   existing `github-action-…` service account has no Firestore role and an
+   unrecoverable key. Resolved by moving to Workload Identity Federation
+   (`docs/CI-KEYLESS-AUTH.md`).
 3. There is **no release calendar anywhere in the repo** — no release dates, no
    calendar logic. The trigger was a flat daily `0 6 * * *`, which is not
    release-aware.
@@ -154,6 +165,7 @@ Discovered while verifying the above; not part of the five ground truths.
 | Card sync schedule | Weekly idempotent cron, Mondays 06:00 UTC, plus `workflow_dispatch` with `force_update` | The seeder already hash-checks for changes, so no-op runs are nearly free. New sets appear within 7 days with no calendar to maintain and drift. |
 | Guest mode | Keep as-is; document the limitation | Preserves low-friction entry; account-linking deferred as a separate piece of work. |
 | Live rules verification | Maintainer authenticates the Firebase CLI; diff live against repo | Every conclusion about the dead features depends on which ruleset is deployed. |
+| CI authentication to Google | Workload Identity Federation, not a service-account key | Key creation is blocked by org policy, and keyless removes a long-lived credential from both GitHub and Infisical rather than copying one between them. |
 
 ## Non-goals
 
@@ -186,6 +198,11 @@ Discovered while verifying the above; not part of the five ground truths.
 **Fallback if CLI auth is declined:** proceed to Phase 1 using the repo rules as
 the specification and rely on emulator tests; accept that the first live deploy
 may reveal drift.
+
+**Note:** once the WIF setup in `docs/CI-KEYLESS-AUTH.md` is complete, rules
+could also be deployed from CI using the same federated identity (with an
+added `roles/firebaserules.admin` binding), which resolves the open question at
+the end of Phase 1 without introducing a deploy key.
 
 ## Phase 1 — Rules correctness and regression protection
 
@@ -240,8 +257,13 @@ and rules ship out of step — which is exactly what happened here.
 4. Keep the Discord notification pattern already used by the deploy job, so a
    failed sync is visible without watching the Actions tab.
 
-**Blocked on:** `gh secret set FIREBASE_SERVICE_ACCOUNT` — nothing in this phase
-can run without it.
+**Blocked on:** the one-time Workload Identity Federation setup in
+`SWU-Holocron/docs/CI-KEYLESS-AUTH.md` (Step 1 must be run by the maintainer;
+it needs gcloud credentials). No repository secret is involved. Note that Step 2
+of that document — replacing the duplicated credential block in all four data
+scripts with a shared `scripts/firebaseAdmin.js` helper — is a prerequisite for
+this phase, since none of the scripts currently understand Application Default
+Credentials.
 
 **Deliverable:** the card database updates itself, and a seed-only run can no
 longer destroy official-site corrections.
