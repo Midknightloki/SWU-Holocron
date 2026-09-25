@@ -1,0 +1,81 @@
+name: Deploy Firestore Rules
+
+# Rules were published by hand and drifted for eight months: the deployed
+# ruleset carried three match blocks while firestore.rules in git carried seven,
+# so several features were denied in production while the file looked correct.
+# Deploying from CI is what stops that recurring.
+#
+# The rules tests are a hard gate. These rules are the app's entire access
+# control -- a bad merge could expose every user's collection -- so nothing
+# reaches Firebase unless the emulator suite passes first.
+#
+# Auth is keyless (Workload Identity Federation). The identity is a dedicated
+# rules-deploy service account holding only roles/firebaserules.admin; the
+# card-sync identity stays scoped to Firestore data and cannot touch rules.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'SWU-Holocron/firestore.rules'
+      - 'SWU-Holocron/src/test/rules/**'
+      - '.github/workflows/deploy-firestore-rules.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  test-and-deploy:
+    name: Test rules, then deploy
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: SWU-Holocron
+    env:
+      HUSKY: 0
+    steps:
+      - uses: actions/checkout@v4
+
+      # The Firestore emulator is a Java jar; firebase-tools requires Java 21+.
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: SWU-Holocron/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Gate. If the rules do not behave as specified, nothing is deployed.
+      - name: Run Firestore rules tests
+        run: npm run test:rules
+
+      - name: Authenticate to Google Cloud (keyless)
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: swu-holocron-93a18
+          workload_identity_provider: projects/151643530726/locations/global/workloadIdentityPools/github/providers/github-oidc
+          service_account: rules-deploy@swu-holocron-93a18.iam.gserviceaccount.com
+
+      # storage.rules is deliberately not deployed: it has never been released
+      # and has no test coverage, so shipping it blind could change Storage
+      # access in ways nothing here would catch.
+      - name: Deploy Firestore rules
+        run: npx firebase-tools deploy --only firestore:rules --project swu-holocron-93a18 --non-interactive
+
+      - name: Report deployed ruleset
+        if: always()
+        run: |
+          echo "### Firestore Rules Deploy" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
