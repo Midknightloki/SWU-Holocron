@@ -34,6 +34,10 @@ vi.mock('../../services/CardService', () => ({
     getCardImage: vi.fn().mockReturnValue('https://example.com/card.jpg'),
     fetchSetData: vi.fn().mockResolvedValue({ data: [] }),
     getAvailableSets: vi.fn().mockResolvedValue(['SOR', 'SHD']),
+    getSetRegistry: vi.fn().mockResolvedValue([
+      { code: 'SOR', name: 'Spark of Rebellion', isBaseSet: true, releaseDate: '2024-03-08' },
+      { code: 'SHD', name: 'Shadows of the Galaxy', isBaseSet: true, releaseDate: '2024-07-12' },
+    ]),
   }
 }));
 

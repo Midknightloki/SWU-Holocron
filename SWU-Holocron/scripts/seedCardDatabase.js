@@ -13,7 +13,8 @@
  */
 
 import { SETS } from '../src/cardData.js';
-import { readFileSync } from 'fs';
+import { fetchSetCatalog, writeSetRegistry } from './setDiscovery.js';
+import { initFirestore } from './firebaseAdmin.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -23,33 +24,11 @@ const __dirname = dirname(__filename);
 // Can be used in Node.js (with service account) or browser (with auth)
 const isNode = typeof process !== 'undefined' && process.versions?.node;
 
-let admin, db;
+let db;
 
 if (isNode) {
   // Node.js environment (GitHub Actions, local script)
-  let serviceAccount;
-  
-  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-  } else {
-    // Local development - load from file
-    const keyPath = join(__dirname, '..', 'firebase-admin-key.json');
-    try {
-      serviceAccount = JSON.parse(readFileSync(keyPath, 'utf8'));
-    } catch (error) {
-      console.error('❌ Error loading firebase-admin-key.json');
-      console.error('   Please download service account key from Firebase Console:');
-      console.error('   https://console.firebase.google.com/project/swu-holocron-93a18/settings/serviceaccounts/adminsdk');
-      console.error('   Save it as: firebase-admin-key.json in the project root');
-      process.exit(1);
-    }
-  }
-  
-  admin = await import('firebase-admin');
-  admin.default.initializeApp({
-    credential: admin.default.credential.cert(serviceAccount)
-  });
-  db = admin.default.firestore();
+  db = await initFirestore();
 } else {
   // Browser environment (admin panel)
   const { db: firestoreDb } = await import('../src/firebase.js');
@@ -137,12 +116,21 @@ async function saveSetToFirestore(setCode, setName, cards) {
     .doc('data');
   
   const dataHash = calculateDataHash(cards);
-  
+
+  // FORCE_UPDATE rewrites every set even when the upstream payload is
+  // unchanged. sync-cards.yml has always set this and exposed a force_update
+  // dispatch input, but nothing read it -- so there was no way to repair a
+  // damaged document, because the hash check kept skipping the write.
+  const forceUpdate = String(process.env.FORCE_UPDATE || '').toLowerCase() === 'true';
+
   // Check if data has changed
   const existing = await setRef.get();
-  if (existing.exists && existing.data().dataHash === dataHash) {
+  if (!forceUpdate && existing.exists && existing.data().dataHash === dataHash) {
     console.log(`  No changes detected for ${setCode}, skipping write`);
     return { updated: false, cardCount: cards.length };
+  }
+  if (forceUpdate && existing.exists && existing.data().dataHash === dataHash) {
+    console.log(`  FORCE_UPDATE: rewriting ${setCode} despite unchanged hash`);
   }
   
   const setData = {
@@ -251,8 +239,25 @@ async function seedCardDatabase() {
   const startTime = Date.now();
   const results = {};
   const errors = [];
-  
-  for (const set of SETS) {
+
+  // Discover the set list from the API rather than a hardcoded array. The old
+  // behaviour could only ever seed sets a human had typed in, which is why sets
+  // released a year earlier (IBH, TS26, ASH) were missing entirely.
+  let setsToSeed;
+  try {
+    setsToSeed = await fetchSetCatalog();
+    console.log(`Discovered ${setsToSeed.length} sets from the API`);
+    await writeSetRegistry(db, APP_ID, setsToSeed);
+    console.log('Published set registry');
+  } catch (error) {
+    // Falling back keeps a sync working during an API outage, but it will not
+    // discover anything new -- so say so loudly rather than silently degrading.
+    console.error(`Set discovery failed (${error.message}); falling back to the`);
+    console.error('hardcoded SETS list. NEW SETS WILL NOT BE PICKED UP THIS RUN.');
+    setsToSeed = SETS;
+  }
+
+  for (const set of setsToSeed) {
     try {
       console.log(`\n[${set.code}] ${set.name}`);
       console.log('-'.repeat(40));
@@ -294,7 +299,7 @@ async function seedCardDatabase() {
   
   console.log('');
   console.log('Summary:');
-  console.log(`  ✓ Successful sets: ${successCount}/${SETS.length}`);
+  console.log(`  ✓ Successful sets: ${successCount}/${setsToSeed.length}`);
   console.log(`  ✓ Total cards: ${totalCards}`);
   console.log(`  ✗ Errors: ${errors.length}`);
   console.log(`  ⏱ Duration: ${(duration / 1000).toFixed(2)}s`);

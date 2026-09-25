@@ -108,7 +108,8 @@ describe('CardService', () => {
 
 
     it('getAvailableSets should not have unresolved TODO about path structure', () => {
-      const source = CardService.getAvailableSets.toString();
+      const source = CardService.getAvailableSets.toString()
+        + CardService.getSetRegistry.toString();
 
       // If this fails, someone disabled the function again
       expect(source).not.toMatch(/return\s*\[\s*\]\s*;?\s*\/\/.*disabled/i);
@@ -168,7 +169,9 @@ describe('CardService', () => {
       // This catches the bug where 'public/data/cardDatabase' was passed as one string
       const { doc, collection } = await import('firebase/firestore');
 
-      const source = CardService.getAvailableSets.toString();
+      // The Firestore read lives in getSetRegistry since set discovery replaced
+      // the per-set probe loop; getAvailableSets now delegates to it.
+      const source = CardService.getSetRegistry.toString();
 
       // Should use separate arguments, not concatenated strings
       expect(source).toContain("'public'");
@@ -233,7 +236,7 @@ describe('CardService', () => {
 
   describe('Documentation and Comments', () => {
     it('should have documentation explaining Firestore path structure', () => {
-      const source = CardService.getAvailableSets.toString();
+      const source = CardService.getSetRegistry.toString();
 
       // Should have comments and code referencing path structure
       expect(source).toContain('artifacts');

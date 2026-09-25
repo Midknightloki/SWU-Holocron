@@ -107,7 +107,7 @@ export default function Dashboard({ setCode, cards, collectionData, onImport, on
             <h2 className="text-xl font-bold text-white flex items-center gap-2">
               <AlertCircle size={20} className="text-red-400" /> Missing Unique Titles
             </h2>
-            <p className="text-gray-500 text-sm mt-1">Cards you don't own any version of.</p>
+            <p className="text-gray-500 text-sm mt-1">Cards you don&apos;t own any version of.</p>
           </div>
           {stats.missingList.length > 0 && (
             <button

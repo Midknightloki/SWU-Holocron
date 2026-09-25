@@ -12,7 +12,8 @@
  */
 
 import { SETS } from '../src/cardData.js';
-import { readFileSync } from 'fs';
+import { LEGACY_SET_CODES } from '../src/setCatalog.js';
+import { initFirestore } from './firebaseAdmin.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -22,28 +23,37 @@ const __dirname = dirname(__filename);
 const isNode = typeof process !== 'undefined' && process.versions?.node;
 const shouldCompareAPI = process.argv.includes('--compare-api');
 
-let admin, db;
+let db;
+
+/** Resolved once in main(), then used by every verification pass. */
+let setsToVerify = [];
+
+/**
+ * Sets to verify: whatever the seeder published, not the fallback list.
+ * Legacy buckets (PROMO/OTHER) are excluded -- they are not API sets, so
+ * reporting them as "NOT FOUND" every run is noise, not a finding.
+ */
+async function resolveSetsToVerify(database, appId) {
+  try {
+    const snap = await database.collection('artifacts')
+      .doc(appId)
+      .collection('public')
+      .doc('data')
+      .collection('cardDatabase')
+      .doc('sets')
+      .get();
+
+    const registry = snap.exists ? snap.data()?.sets : null;
+    if (Array.isArray(registry) && registry.length > 0) return registry;
+  } catch (error) {
+    console.error(`  Could not read set registry: ${error.message}`);
+  }
+  console.error('  Falling back to the bundled SETS list.');
+  return SETS.filter((set) => !LEGACY_SET_CODES.includes(set.code));
+}
 
 if (isNode) {
-  let serviceAccount;
-
-  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-  } else {
-    const keyPath = join(__dirname, '..', 'firebase-admin-key.json');
-    try {
-      serviceAccount = JSON.parse(readFileSync(keyPath, 'utf8'));
-    } catch (error) {
-      console.error('❌ Error loading firebase-admin-key.json');
-      process.exit(1);
-    }
-  }
-
-  admin = await import('firebase-admin');
-  admin.default.initializeApp({
-    credential: admin.default.credential.cert(serviceAccount)
-  });
-  db = admin.default.firestore();
+  db = await initFirestore();
 }
 
 const { APP_ID: FIREBASE_APP_ID } = await import('../src/firebase.js');
@@ -61,7 +71,7 @@ async function verifyFirestoreData() {
     totalCards: 0
   };
 
-  for (const set of SETS) {
+  for (const set of setsToVerify) {
     try {
       const docRef = db.collection('artifacts')
         .doc(APP_ID)
@@ -113,7 +123,7 @@ async function verifyFirestoreData() {
 
   console.log('='.repeat(60));
   console.log(`\nSummary:`);
-  console.log(`  Sets found: ${stats.setsFound}/${SETS.length}`);
+  console.log(`  Sets found: ${stats.setsFound}/${setsToVerify.length}`);
   console.log(`  Total cards: ${stats.totalCards}`);
   console.log(`  Issues: ${issues.length}`);
 
@@ -126,7 +136,7 @@ async function compareWithAPIData() {
 
   const differences = [];
 
-  for (const set of SETS) {
+  for (const set of setsToVerify) {
     try {
       // Fetch from Firestore
       const docRef = db.collection('artifacts')
@@ -230,6 +240,10 @@ async function main() {
   console.log('  SWU Holocron - Card Database Verification');
   console.log('='.repeat(60));
 
+  setsToVerify = await resolveSetsToVerify(db, APP_ID);
+  console.log(`
+Verifying ${setsToVerify.length} sets from the registry`);
+
   // Verify Firestore data
   const { stats, issues } = await verifyFirestoreData();
 
@@ -247,7 +261,7 @@ async function main() {
   console.log('  VERIFICATION REPORT');
   console.log('='.repeat(60));
 
-  console.log(`\n✅ Sets verified: ${stats.setsFound}/${SETS.length}`);
+  console.log(`\n✅ Sets verified: ${stats.setsFound}/${setsToVerify.length}`);
   console.log(`📊 Total cards: ${stats.totalCards}`);
 
   if (issues.length > 0) {

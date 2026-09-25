@@ -116,7 +116,7 @@ export const mockCSVMalformed = `Name,Set
 "Missing Number"`;
 
 export const mockCSVWithSpecialChars = `Name,Set,Number,Quantity
-"Han Solo, \"Scoundrel\"",SOR,010,1
+"Han Solo, "Scoundrel"",SOR,010,1
 "Leia, Princess of Alderaan",SOR,011,2
 "Card with, Commas",SOR,012,1`;
 

@@ -17,11 +17,16 @@
     "prepare": "husky install",
     "admin:seed-cards": "node scripts/seedCardDatabase.js",
     "admin:verify-db": "node scripts/verifyCardDatabase.js",
+    "admin:discover-sets": "node scripts/setDiscovery.js",
+    "admin:discover-dry-run": "node scripts/setDiscovery.js --dry-run",
     "admin:scrape-official": "node scripts/scrapeOfficialCards.js",
     "admin:scrape-promo": "node scripts/scrapeOfficialCards.js --promo-only",
     "admin:scrape-dry-run": "node scripts/scrapeOfficialCards.js --dry-run",
     "admin:merge-sources": "node scripts/mergeCardSources.js",
-    "admin:merge-dry-run": "node scripts/mergeCardSources.js --dry-run"
+    "admin:merge-dry-run": "node scripts/mergeCardSources.js --dry-run",
+    "admin:sync-full": "node scripts/cardDbSync.js",
+    "admin:sync-skip-scrape": "node scripts/cardDbSync.js --skip-scrape",
+    "admin:sync-scrape-only": "node scripts/cardDbSync.js --scrape-only"
   },
   "dependencies": {
     "@dataconnect/admin-generated": "file:src/dataconnect-admin-generated",

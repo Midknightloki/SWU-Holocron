@@ -7,7 +7,8 @@
  * documents per set.
  */
 
-import { readFileSync } from 'fs';
+import { initFirestore } from './firebaseAdmin.js';
+import { buildCardListUrl, MAX_PAGE_SIZE } from '../src/officialCardApi.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -20,30 +21,10 @@ const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
 // Can be used in Node.js (with service account) or browser (with auth)
 const isNode = typeof process !== 'undefined' && process.versions?.node;
 
-let admin;
 let db;
 
 if (isNode) {
-  let serviceAccount;
-
-  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-  } else {
-    const keyPath = join(__dirname, '..', 'firebase-admin-key.json');
-    try {
-      serviceAccount = JSON.parse(readFileSync(keyPath, 'utf8'));
-    } catch (error) {
-      console.error('❌ Error loading firebase-admin-key.json');
-      console.error('   Please download service account key from Firebase Console');
-      process.exit(1);
-    }
-  }
-
-  admin = await import('firebase-admin');
-  admin.default.initializeApp({
-    credential: admin.default.credential.cert(serviceAccount)
-  });
-  db = admin.default.firestore();
+  db = await initFirestore();
 } else {
   const { db: firestoreDb } = await import('../src/firebase.js');
   db = firestoreDb;
@@ -61,21 +42,21 @@ function mapOfficialCardToInternal(officialCard) {
   const type = src.type?.data?.attributes || {};
   const type2 = src.type2?.data?.attributes || {};
 
-  const aspects = Array.isArray(src.aspects?.data)
-    ? src.aspects.data.map(a => a.attributes?.englishName || a.attributes?.name).filter(Boolean)
-    : src.aspects || src.affinities || [];
+  // Emit a relation only when the source actually carries it. An absent
+  // relation is not an authoritative "empty" -- see the note on the return
+  // object below.
+  const relation = (key, mapFn) => {
+    if (Array.isArray(src[key]?.data)) return src[key].data.map(mapFn).filter(Boolean);
+    if (Array.isArray(src[key])) return src[key];
+    return undefined;
+  };
 
-  const traits = Array.isArray(src.traits?.data)
-    ? src.traits.data.map(t => t.attributes?.name).filter(Boolean)
-    : src.traits || [];
-
-  const keywords = Array.isArray(src.keywords?.data)
-    ? src.keywords.data.map(k => k.attributes?.name).filter(Boolean)
-    : src.keywords || [];
-
-  const arenas = Array.isArray(src.arenas?.data)
-    ? src.arenas.data.map(a => a.attributes?.name).filter(Boolean)
-    : src.arena || null;
+  const aspects = relation('aspects', (a) => a.attributes?.englishName || a.attributes?.name)
+    ?? (Array.isArray(src.affinities) ? src.affinities : undefined);
+  const traits = relation('traits', (t) => t.attributes?.name);
+  const keywords = relation('keywords', (k) => k.attributes?.name);
+  const arenas = relation('arenas', (a) => a.attributes?.name)
+    ?? (src.arena !== undefined ? src.arena : undefined);
 
   const setCode = expansion.code || src.expansionCode || src.set || src.setCode || 'UNKNOWN';
   const setName = expansion.name || src.expansionName || src.setName || src.set || 'Unknown Set';
@@ -83,33 +64,52 @@ function mapOfficialCardToInternal(officialCard) {
   const frontArt = src.artFront?.data?.attributes?.url || src.frontArt || src.imageUrl || null;
   const backArt = src.artBack?.data?.attributes?.url || src.backArt || null;
 
-  return {
-    Name: src.name ?? src.title ?? null,
-    Subtitle: src.subtitle ?? src.subTitle ?? null,
-    Number: src.number ?? src.cardNumber ?? src.serialCode ?? null,
+  // Fields are emitted ONLY when the official source provides them.
+  //
+  // This previously used `?? false`, `?? null` and `?? ''`, which fabricated a
+  // value whenever the official payload lacked the field. Reconciliation treats
+  // the official site as authoritative, so those inventions overwrote correct
+  // swu-db data: 667 real values were destroyed on every run, including
+  // DoubleSided on all 162 leaders (the official API has no doubleSided field
+  // at all), plus Power, HP and Subtitle on ~370 more cards.
+  //
+  // Official wins for fields it HAS. Omitted keys are skipped by reconcile,
+  // leaving swu-db's value intact. DoubleSided is deliberately not emitted:
+  // the official source has no equivalent, and it is a presentation attribute
+  // that does not affect play.
+  const card = {
     Set: setCode,
     SetName: setName,
-    Type: type.name || type.value || src.type || null,
-    Type2: type2.name || type2.value || null,
-    Cost: src.cost ?? null,
-    Power: src.power ?? src.attack ?? null,
-    HP: src.hp ?? src.health ?? null,
-    Rarity: rarity.name || rarity.englishName || src.rarity || null,
-    Unique: src.unique ?? false,
-    Aspects: aspects,
-    Traits: traits,
-    FrontText: src.text ?? src.frontText ?? src.description ?? '',
-    BackText: src.deployBox ?? src.epicAction ?? src.backText ?? null,
-    Keywords: keywords,
-    Arena: arenas,
-    DoubleSided: src.doubleSided ?? false,
+    Number: src.number ?? src.cardNumber ?? src.serialCode ?? null,
     FrontArt: frontArt,
     BackArt: backArt,
     OfficialUrl: src.url || (cardId ? `${OFFICIAL_BASE_URL}/cards?cid=${cardId}` : null),
-    OfficialCode: src.officialCode ?? src.cardCode ?? src.serialCode ?? src.cardUid ?? null,
     _scrapedFrom: 'official',
     _scrapedAt: Date.now()
   };
+
+  const setIfPresent = (key, value) => {
+    if (value !== undefined && value !== null && value !== '') card[key] = value;
+  };
+
+  setIfPresent('Name', src.name ?? src.title);
+  setIfPresent('Subtitle', src.subtitle ?? src.subTitle);
+  setIfPresent('Type', type.name || type.value || src.type);
+  setIfPresent('Type2', type2.name || type2.value);
+  setIfPresent('Cost', src.cost);
+  setIfPresent('Power', src.power ?? src.attack);
+  setIfPresent('HP', src.hp ?? src.health);
+  setIfPresent('Rarity', rarity.name || rarity.englishName || src.rarity);
+  setIfPresent('FrontText', src.text ?? src.frontText ?? src.description);
+  setIfPresent('BackText', src.deployBox ?? src.epicAction ?? src.backText);
+  setIfPresent('OfficialCode', src.officialCode ?? src.cardCode ?? src.serialCode ?? src.cardUid);
+  if ('unique' in src) card.Unique = src.unique;
+  if (aspects !== undefined) card.Aspects = aspects;
+  if (traits !== undefined) card.Traits = traits;
+  if (keywords !== undefined) card.Keywords = keywords;
+  if (arenas !== undefined) card.Arena = arenas;
+
+  return card;
 }
 
 function cleanUndefined(card) {
@@ -183,18 +183,14 @@ async function autoScroll(page) {
   });
 }
 
-async function fetchCardPages(page, baseUrl, pageSize = 200, maxPages = 30) {
-  if (!baseUrl) return [];
-
-  const urlObj = new URL(baseUrl);
-  urlObj.searchParams.set('pagination[pageSize]', String(pageSize));
-
+async function fetchCardPages(page, baseUrl, pageSize = MAX_PAGE_SIZE, maxPages = 30) {
+  // baseUrl may be null: buildCardListUrl falls back to the known endpoint, so
+  // a failed capture no longer means zero official cards.
   const payloads = [];
   let totalCardsFromMeta = null;
 
   for (let pageNum = 1; pageNum <= maxPages; pageNum += 1) {
-    urlObj.searchParams.set('pagination[page]', String(pageNum));
-    const url = urlObj.toString();
+    const url = buildCardListUrl(baseUrl, { page: pageNum, pageSize });
 
     const { status, json } = await page.evaluate(async (targetUrl) => {
       try {
@@ -327,7 +323,7 @@ async function scrapeWithBrowser(searchFilter = '') {
     };
   });
 
-  const apiPayloads = await fetchCardPages(page, cardListBaseUrl, 40, 30);
+  const apiPayloads = await fetchCardPages(page, cardListBaseUrl, MAX_PAGE_SIZE, 30);
   await browser.close();
   const allPayloads = [...payloads, ...apiPayloads];
   const cards = collectCardsFromPayloads(allPayloads);

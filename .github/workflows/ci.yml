@@ -1,0 +1,185 @@
+name: CI/CD Pipeline
+
+# NOTE: This workflow MUST live in the repository ROOT .github/workflows/.
+# The application itself lives in the nested ./SWU-Holocron/ directory, so every
+# job sets `working-directory` and setup-node needs an explicit
+# cache-dependency-path. HUSKY=0 is required on `npm ci`: the `prepare` script
+# runs `husky install`, which looks for .git in the package directory and fails
+# there because .git is one level up.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    # Run integration tests nightly at 2 AM UTC
+    - cron: '0 2 * * *'
+
+env:
+  HUSKY: 0
+
+jobs:
+  lint:
+    name: Lint Code
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: SWU-Holocron
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: SWU-Holocron/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Gate on errors only. There is a known backlog of ~242 warnings
+      # (react/prop-types, no-unused-vars, no-console, react-hooks/exhaustive-deps)
+      # that accumulated while this workflow was sitting in the wrong directory
+      # and never ran. Errors must stay at zero; warnings are reported below
+      # without blocking so the backlog can be burned down incrementally.
+      - name: Run ESLint (errors block the build)
+        run: npx eslint src --ext js,jsx --quiet
+
+      - name: Report ESLint warnings (non-blocking)
+        continue-on-error: true
+        run: npx eslint src --ext js,jsx
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    defaults:
+      run:
+        working-directory: SWU-Holocron
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: SWU-Holocron/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm run test:unit -- --coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./SWU-Holocron/coverage/coverage-final.json
+          flags: unit
+          name: unit-tests
+          fail_ci_if_error: false
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    # Only run on merge to main or on schedule
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule'
+    defaults:
+      run:
+        working-directory: SWU-Holocron
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: SWU-Holocron/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run integration tests
+        run: npm run test:integration -- --coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./SWU-Holocron/coverage/coverage-final.json
+          flags: integration
+          name: integration-tests
+          fail_ci_if_error: false
+
+  build:
+    name: Build Application
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    defaults:
+      run:
+        working-directory: SWU-Holocron
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: SWU-Holocron/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: SWU-Holocron/dist/
+          retention-days: 7
+
+  coverage-report:
+    name: Coverage Report
+    runs-on: ubuntu-latest
+    needs: [unit-tests, integration-tests]
+    if: always()
+    defaults:
+      run:
+        working-directory: SWU-Holocron
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: SWU-Holocron/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # NOTE: the per-directory thresholds in vite.config.js are currently inert
+      # (Vitest needs glob keys such as 'src/services/**'; a bare 'src/services/'
+      # matches nothing), so this reports coverage rather than enforcing it.
+      # Actual coverage: utils ~87%, services ~64%, components ~48%.
+      - name: Generate full coverage
+        run: npm run test:ci
+
+      # CODECOV_TOKEN is not configured on this repo. The repo is public, so
+      # tokenless upload works; fail_ci_if_error stays false so a Codecov
+      # outage can never fail the build.
+      - name: Upload full coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./SWU-Holocron/coverage/coverage-final.json
+          flags: full
+          name: full-coverage
+          fail_ci_if_error: false
