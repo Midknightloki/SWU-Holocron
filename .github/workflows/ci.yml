@@ -51,6 +51,40 @@ jobs:
         continue-on-error: true
         run: npx eslint src --ext js,jsx
 
+  rules-tests:
+    name: Firestore Rules Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    defaults:
+      run:
+        working-directory: SWU-Holocron
+    steps:
+      - uses: actions/checkout@v4
+
+      # The Firestore emulator ships as a Java jar and firebase-tools requires
+      # Java 21 or newer. Pinned rather than relying on the runner image default.
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: SWU-Holocron/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Rules are deployed by hand and drifted for eight months, leaving six
+      # features denied in production while firestore.rules looked correct.
+      # These tests are what stop the file and reality diverging again.
+      - name: Run Firestore rules tests
+        run: npm run test:rules
+
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest

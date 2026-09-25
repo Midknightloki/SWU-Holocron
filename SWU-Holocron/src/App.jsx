@@ -24,6 +24,7 @@ import CardSubmissionForm from './components/CardSubmissionForm';
 import AdminPanel from './components/AdminPanel';
 import DeckManager from './components/DeckManager';
 import DeckBuilder from './components/DeckBuilder';
+import RedeemInviteModal from './components/RedeemInviteModal';
 
 // Version info
 const VERSION = __APP_VERSION__;
@@ -85,6 +86,7 @@ export default function App() {
   const [sortBy, setSortBy] = useState('number'); // 'number' | 'cost' | 'recent'
   const [sortDir, setSortDir] = useState('asc');   // 'asc' | 'desc'
   const [showMyCollection, setShowMyCollection] = useState(false);
+  const [isRedeemOpen, setIsRedeemOpen] = useState(false);
 
   const fileInputRef = useRef(null);
 
@@ -693,6 +695,14 @@ export default function App() {
                       <span className="font-semibold">{user.displayName || 'Guest user'}</span>
                       <span className="text-[10px] text-gray-400">{user.email || 'Anonymous session'}</span>
                     </div>
+                    {!isAdmin && !isContributor && (
+                      <button
+                        onClick={() => setIsRedeemOpen(true)}
+                        className="text-gray-400 hover:text-yellow-500 text-[11px] font-semibold"
+                      >
+                        Redeem invite
+                      </button>
+                    )}
                     <button
                       onClick={handleLogout}
                       className="text-gray-400 hover:text-white text-[11px] font-semibold"
@@ -1082,6 +1092,18 @@ export default function App() {
       )}
 
       {/* PWA Components */}
+      {isRedeemOpen && (
+        <RedeemInviteModal
+          isAnonymous={user?.isAnonymous}
+          onClose={() => setIsRedeemOpen(false)}
+          onRedeemed={() => {
+            // The role is read from the profile document at sign-in, so the
+            // simplest correct refresh is a reload.
+            setTimeout(() => window.location.reload(), 1200);
+          }}
+        />
+      )}
+
       <PWAUpdatePrompt />
       <InstallPrompt />
 

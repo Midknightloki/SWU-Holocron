@@ -204,6 +204,37 @@ could also be deployed from CI using the same federated identity (with an
 added `roles/firebaserules.admin` binding), which resolves the open question at
 the end of Phase 1 without introducing a deploy key.
 
+### Phase 0 result (completed 2026-09-25)
+
+The live ruleset was retrieved via the `firebaserules.googleapis.com` API. It
+differs substantially from the repo copy, so the earlier analysis — which was
+based on `firestore.rules` in git — **understated the problem**.
+
+- Live ruleset `0d9901f0-…`, last deployed **2026-01-24**, eight months stale.
+- Live contains **three** match blocks: `users/{uid}`, `cardDatabase`, and the
+  expired legacy `sync_*`. The repo has seven plus three helper functions.
+- **No Storage ruleset has ever been released.** `storage.rules` exists in the
+  repo and has never been deployed; only `cloud.firestore` appears under
+  releases.
+
+Features with **no rule at all in production**, and therefore denied by default:
+
+| Path | Feature | In repo rules? |
+|---|---|---|
+| `public/decks/{slug}` | public deck sharing | yes — never deployed |
+| `shells` | contributor content | yes — never deployed |
+| `packets` | contributor content | yes — never deployed |
+| `contributorInvites` | contributor promotion | yes — never deployed |
+| `submissions` | card submission | **no — missing from both** |
+| `admin/sync/logs` | admin sync log view | **no — missing from both** |
+
+So six features are dead in production, not three. Four of them only need the
+repo rules to be deployed; two need rules written.
+
+This also means the repo file cannot be assumed to reflect reality. Deploying
+rules from CI (the open question at the end of Phase 1) would have prevented
+eight months of drift, and is now clearly worth doing rather than optional.
+
 ## Phase 1 — Rules correctness and regression protection
 
 The tests matter more than the fixes. Rules are the one part of this system with
