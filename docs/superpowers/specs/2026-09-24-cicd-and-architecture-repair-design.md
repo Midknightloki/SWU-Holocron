@@ -268,6 +268,45 @@ Credentials.
 **Deliverable:** the card database updates itself, and a seed-only run can no
 longer destroy official-site corrections.
 
+## Phase 2b — Placeholder cards for known-but-unknown cards
+
+**Depends on Phase 1.** Do not start before the submission rules are fixed.
+
+swu-db's set catalog reports sets whose cards endpoint returns nothing, and the
+official scrape does not cover them either. `SOROPJ` is the first case: `/sets`
+says 2 cards, `/cards/SOROPJ` returns 0, and the official site has no data for
+it. Verify currently fails the whole run over it, which in CI means a red build
+and an auto-filed issue on every sync, forever, for something upstream.
+
+The agreed approach is not to suppress it. Where we can be reasonably sure a
+card exists but do not know what it is — the catalog states a card count we
+cannot fill from either source — create a **placeholder card** and let the
+community complete it through the existing card submission system.
+
+Sketch:
+
+1. The seeder compares the catalog's `numberCards` against what it could
+   actually fetch, and emits placeholders for the shortfall, flagged
+   (`isPlaceholder: true`) and carrying only what is known: set, number, and
+   that it needs submission.
+2. Verify treats a set filled by placeholders as complete-with-placeholders —
+   informational, not a failure — so CI stays honest without going permanently
+   red.
+3. The UI marks placeholders visibly and routes to the submission form.
+4. A submission that is accepted replaces the placeholder; a later upstream fix
+   does the same automatically, so the mechanism self-heals from either
+   direction.
+
+**Blocking dependency:** `artifacts/{APP_ID}/submissions` has no Firestore rule,
+so `CardSubmissionForm.jsx:371` cannot write and the submission feature is dead
+(see Phase 1). Shipping placeholders before that is fixed would create cards
+nobody can fill, which is worse than the current gap — it would look like a
+working feature that silently discards every contribution.
+
+Open questions for that phase: whether placeholders should count toward
+collection completion percentages, and whether a placeholder awaiting
+submission should be visible to all users or only to contributors.
+
 ## Phase 3 — Documentation truth pass
 
 The governing rule: **delete rather than preserve.** An unverifiable document is
