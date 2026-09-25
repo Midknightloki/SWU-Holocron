@@ -12,6 +12,7 @@
 import { execSync } from 'child_process';
 import { mkdirSync, writeFileSync } from 'fs';
 import { initFirestore } from './firebaseAdmin.js';
+import { reconcileSet } from '../src/cardReconcile.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -56,15 +57,6 @@ function runStep(label, command) {
   }
 }
 
-function fieldsEqual(a, b) {
-  if (a === b) return true;
-  if (a == null && b == null) return true;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    return JSON.stringify(a) === JSON.stringify(b);
-  }
-  return false;
-}
-
 async function reconcile() {
   const start = Date.now();
   console.log(`\n${'='.repeat(60)}`);
@@ -72,6 +64,7 @@ async function reconcile() {
   console.log(`${'='.repeat(60)}\n`);
 
   const overrides = [];
+  const addedCards = [];
   let setsProcessed = 0;
 
   try {
@@ -131,41 +124,23 @@ async function reconcile() {
 
         const data = dataSnap.data();
         const officialData = officialSnap.data();
-        const apiCards = data.cards || [];
-        const officialCards = officialData.cards || [];
 
-        // Index official cards by Set+Number for fast lookup
-        const officialIndex = new Map();
-        for (const card of officialCards) {
-          const key = `${card.Set || set.code}_${card.Number}`;
-          officialIndex.set(key, card);
-        }
+        const result = reconcileSet({
+          setCode: set.code,
+          apiCards: data.cards || [],
+          officialCards: officialData.cards || [],
+          fields: RECONCILE_FIELDS,
+        });
 
-        let setOverrides = 0;
-        for (const apiCard of apiCards) {
-          const key = `${apiCard.Set || set.code}_${apiCard.Number}`;
-          const officialCard = officialIndex.get(key);
-          if (!officialCard) continue;
+        overrides.push(...result.overrides);
+        addedCards.push(...result.added.map((c) => ({ set: set.code, number: c.Number, name: c.Name })));
 
-          for (const field of RECONCILE_FIELDS) {
-            if (!(field in officialCard)) continue;
-            if (!fieldsEqual(apiCard[field], officialCard[field])) {
-              overrides.push({
-                set: set.code,
-                number: apiCard.Number,
-                field,
-                apiValue: apiCard[field],
-                officialValue: officialCard[field]
-              });
-              apiCard[field] = officialCard[field];
-              setOverrides++;
-            }
-          }
-        }
-
-        if (setOverrides > 0) {
-          await dataDocRef.update({ cards: apiCards });
-          console.log(`  ${set.code}: ${setOverrides} field(s) overridden from official data`);
+        if (result.overrides.length > 0 || result.added.length > 0) {
+          await dataDocRef.update({ cards: result.cards });
+          const parts = [];
+          if (result.overrides.length) parts.push(`${result.overrides.length} field(s) overridden`);
+          if (result.added.length) parts.push(`${result.added.length} card(s) added from official`);
+          console.log(`  ${set.code}: ${parts.join(', ')}`);
         } else {
           console.log(`  ${set.code}: no disagreements`);
         }
@@ -178,13 +153,13 @@ async function reconcile() {
 
     const duration_ms = Date.now() - start;
     console.log(`\n  Reconcile completed in ${(duration_ms / 1000).toFixed(1)}s`);
-    console.log(`  Sets processed: ${setsProcessed}, Total overrides: ${overrides.length}`);
+    console.log(`  Sets processed: ${setsProcessed}, overrides: ${overrides.length}, cards added from official: ${addedCards.length}`);
 
-    return { success: true, duration_ms, overrides, setsProcessed };
+    return { success: true, duration_ms, overrides, addedCards, setsProcessed };
   } catch (error) {
     const duration_ms = Date.now() - start;
     console.error(`  Reconcile FAILED: ${error.message}`);
-    return { success: false, duration_ms, overrides, setsProcessed, error: error.message };
+    return { success: false, duration_ms, overrides, addedCards, setsProcessed, error: error.message };
   }
 }
 
@@ -233,7 +208,7 @@ async function main() {
       errors.push('Reconcile step failed');
     }
   } else {
-    steps.reconcile = { success: true, skipped: true, duration_ms: 0, overrides: [], setsProcessed: 0 };
+    steps.reconcile = { success: true, skipped: true, duration_ms: 0, overrides: [], addedCards: [], setsProcessed: 0 };
   }
 
   // Step 4 - Verify
@@ -262,6 +237,7 @@ async function main() {
       reconcile: {
         success: steps.reconcile.success,
         overrides: steps.reconcile.overrides || [],
+        addedCards: steps.reconcile.addedCards || [],
         setsProcessed: steps.reconcile.setsProcessed || 0
       },
       verify: {
@@ -273,6 +249,7 @@ async function main() {
     summary: {
       setsProcessed: steps.reconcile.setsProcessed || 0,
       totalOverrides: (steps.reconcile.overrides || []).length,
+      totalCardsAddedFromOfficial: (steps.reconcile.addedCards || []).length,
       errors
     }
   };
@@ -294,7 +271,7 @@ async function main() {
   console.log(`  Duration: ${(totalDuration / 1000).toFixed(1)}s`);
   console.log(`  Seed: ${steps.seed.success ? 'OK' : 'FAILED'}`);
   console.log(`  Scrape: ${steps.scrape.success ? 'OK' : 'FAILED'}`);
-  console.log(`  Reconcile: ${steps.reconcile.success ? 'OK' : 'FAILED'} (${(steps.reconcile.overrides || []).length} overrides)`);
+  console.log(`  Reconcile: ${steps.reconcile.success ? 'OK' : 'FAILED'} (${(steps.reconcile.overrides || []).length} overrides, ${(steps.reconcile.addedCards || []).length} added)`);
   console.log(`  Verify: ${steps.verify.success ? 'OK' : 'FAILED'}`);
   console.log(`  Errors: ${errors.length}`);
   console.log('='.repeat(60) + '\n');
