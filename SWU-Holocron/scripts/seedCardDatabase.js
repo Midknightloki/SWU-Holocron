@@ -116,12 +116,21 @@ async function saveSetToFirestore(setCode, setName, cards) {
     .doc('data');
   
   const dataHash = calculateDataHash(cards);
-  
+
+  // FORCE_UPDATE rewrites every set even when the upstream payload is
+  // unchanged. sync-cards.yml has always set this and exposed a force_update
+  // dispatch input, but nothing read it -- so there was no way to repair a
+  // damaged document, because the hash check kept skipping the write.
+  const forceUpdate = String(process.env.FORCE_UPDATE || '').toLowerCase() === 'true';
+
   // Check if data has changed
   const existing = await setRef.get();
-  if (existing.exists && existing.data().dataHash === dataHash) {
+  if (!forceUpdate && existing.exists && existing.data().dataHash === dataHash) {
     console.log(`  No changes detected for ${setCode}, skipping write`);
     return { updated: false, cardCount: cards.length };
+  }
+  if (forceUpdate && existing.exists && existing.data().dataHash === dataHash) {
+    console.log(`  FORCE_UPDATE: rewriting ${setCode} despite unchanged hash`);
   }
   
   const setData = {

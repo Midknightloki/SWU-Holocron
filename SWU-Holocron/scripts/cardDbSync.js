@@ -65,6 +65,7 @@ async function reconcile() {
 
   const overrides = [];
   const addedCards = [];
+  const refusedOverrides = [];
   let setsProcessed = 0;
 
   try {
@@ -134,6 +135,7 @@ async function reconcile() {
 
         overrides.push(...result.overrides);
         addedCards.push(...result.added.map((c) => ({ set: set.code, number: c.Number, name: c.Name })));
+        refusedOverrides.push(...(result.refused || []));
 
         if (result.overrides.length > 0 || result.added.length > 0) {
           await dataDocRef.update({ cards: result.cards });
@@ -153,13 +155,13 @@ async function reconcile() {
 
     const duration_ms = Date.now() - start;
     console.log(`\n  Reconcile completed in ${(duration_ms / 1000).toFixed(1)}s`);
-    console.log(`  Sets processed: ${setsProcessed}, overrides: ${overrides.length}, cards added from official: ${addedCards.length}`);
+    console.log(`  Sets processed: ${setsProcessed}, overrides: ${overrides.length}, added: ${addedCards.length}, refused (official value absent): ${refusedOverrides.length}`);
 
-    return { success: true, duration_ms, overrides, addedCards, setsProcessed };
+    return { success: true, duration_ms, overrides, addedCards, refusedOverrides, setsProcessed };
   } catch (error) {
     const duration_ms = Date.now() - start;
     console.error(`  Reconcile FAILED: ${error.message}`);
-    return { success: false, duration_ms, overrides, addedCards, setsProcessed, error: error.message };
+    return { success: false, duration_ms, overrides, addedCards, refusedOverrides, setsProcessed, error: error.message };
   }
 }
 
@@ -238,6 +240,7 @@ async function main() {
         success: steps.reconcile.success,
         overrides: steps.reconcile.overrides || [],
         addedCards: steps.reconcile.addedCards || [],
+        refusedOverrides: steps.reconcile.refusedOverrides || [],
         setsProcessed: steps.reconcile.setsProcessed || 0
       },
       verify: {

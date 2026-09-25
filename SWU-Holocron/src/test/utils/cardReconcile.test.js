@@ -211,3 +211,134 @@ describe('reconcileSet', () => {
     expect(apiCards[0].Name).toBe('Luke');
   });
 });
+
+describe('reconcileSet: never destroys data', () => {
+  const FIELDS = ['Name', 'Power', 'HP', 'Subtitle', 'Keywords'];
+
+  // The first two production runs replaced 667 real values with empty ones,
+  // because the scraper coerced missing official data into false/null/''
+  // and "official wins" was applied absolutely. Official is authoritative for
+  // fields it actually HAS; absent must mean absent.
+
+  it('does not replace a real value with null', () => {
+    const result = reconcileSet({
+      setCode: 'SOR',
+      apiCards: [{ Set: 'SOR', Number: '005', Power: 6, HP: 9 }],
+      officialCards: [{ Set: 'SOR', Number: 5, Power: null, HP: null }],
+      fields: FIELDS,
+    });
+
+    expect(result.cards[0].Power).toBe(6);
+    expect(result.cards[0].HP).toBe(9);
+    expect(result.overrides).toHaveLength(0);
+  });
+
+  it('does not replace a real value with an empty string', () => {
+    const result = reconcileSet({
+      setCode: 'SOR',
+      apiCards: [{ Set: 'SOR', Number: '005', Subtitle: 'Walking Carpet' }],
+      officialCards: [{ Set: 'SOR', Number: 5, Subtitle: '' }],
+      fields: FIELDS,
+    });
+
+    expect(result.cards[0].Subtitle).toBe('Walking Carpet');
+  });
+
+  it('reports a refused overwrite so a mapping regression is visible', () => {
+    const result = reconcileSet({
+      setCode: 'SOR',
+      apiCards: [{ Set: 'SOR', Number: '005', Power: 6 }],
+      officialCards: [{ Set: 'SOR', Number: 5, Power: null }],
+      fields: FIELDS,
+    });
+
+    expect(result.refused).toHaveLength(1);
+    expect(result.refused[0]).toMatchObject({ field: 'Power', number: '005' });
+  });
+
+  it('still fills a field swu-db lacks -- that is the whole point of the scrape', () => {
+    const result = reconcileSet({
+      setCode: 'SOR',
+      apiCards: [{ Set: 'SOR', Number: '005', Name: 'Luke' }],
+      officialCards: [{ Set: 'SOR', Number: 5, Name: 'Luke', Keywords: ['Sentinel'] }],
+      fields: FIELDS,
+    });
+
+    expect(result.cards[0].Keywords).toEqual(['Sentinel']);
+    expect(result.overrides).toHaveLength(1);
+  });
+
+  it('still applies a genuine official correction between two real values', () => {
+    const result = reconcileSet({
+      setCode: 'SOR',
+      apiCards: [{ Set: 'SOR', Number: '005', Power: 6 }],
+      officialCards: [{ Set: 'SOR', Number: 5, Power: 8 }],
+      fields: FIELDS,
+    });
+
+    expect(result.cards[0].Power).toBe(8);
+  });
+
+  it('allows a legitimate zero, which is a value and not an absence', () => {
+    const result = reconcileSet({
+      setCode: 'SOR',
+      apiCards: [{ Set: 'SOR', Number: '005', Power: 6 }],
+      officialCards: [{ Set: 'SOR', Number: 5, Power: 0 }],
+      fields: FIELDS,
+    });
+
+    expect(result.cards[0].Power).toBe(0);
+  });
+});
+
+describe('reconcileSet: token cards must not hijack real cards', () => {
+  const FIELDS = ['Name', 'Type', 'Unique', 'Subtitle'];
+
+  // The official site numbers its token cards (Experience, Shield) 1 and 2
+  // within each set, colliding with the real cards 1 and 2 -- usually leaders.
+  // Index building was last-write-wins, so in production SOR/001 became:
+  //   {Name: "Experience", Type: "Token Upgrade", Unique: false}
+  // i.e. Director Krennic was overwritten by a token, across ~50 sets.
+
+  it('does not let a token overwrite a real card sharing its number', () => {
+    const result = reconcileSet({
+      setCode: 'SOR',
+      apiCards: [{ Set: 'SOR', Number: '001', Name: 'Director Krennic', Type: 'Leader', Unique: true }],
+      officialCards: [
+        { Set: 'SOR', Number: 1, Name: 'Director Krennic', Type: 'Leader', Unique: true },
+        { Set: 'SOR', Number: 1, Name: 'Experience', Type: 'Token Upgrade', Unique: false },
+      ],
+      fields: FIELDS,
+    });
+
+    expect(result.cards[0].Name).toBe('Director Krennic');
+    expect(result.cards[0].Type).toBe('Leader');
+    expect(result.cards[0].Unique).toBe(true);
+  });
+
+  it('does not add a token as a new card', () => {
+    const result = reconcileSet({
+      setCode: 'SOR',
+      apiCards: [{ Set: 'SOR', Number: '001', Name: 'Director Krennic' }],
+      officialCards: [
+        { Set: 'SOR', Number: 1, Name: 'Director Krennic' },
+        { Set: 'SOR', Number: 2, Name: 'Shield', Type: 'Token Unit' },
+      ],
+      fields: FIELDS,
+    });
+
+    expect(result.added).toHaveLength(0);
+    expect(result.cards).toHaveLength(1);
+  });
+
+  it('still reconciles a normal card whose type merely contains the word token', () => {
+    const result = reconcileSet({
+      setCode: 'SOR',
+      apiCards: [{ Set: 'SOR', Number: '050', Name: 'Old', Type: 'Unit' }],
+      officialCards: [{ Set: 'SOR', Number: 50, Name: 'New', Type: 'Unit' }],
+      fields: FIELDS,
+    });
+
+    expect(result.cards[0].Name).toBe('New');
+  });
+});

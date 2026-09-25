@@ -65,6 +65,14 @@ export function cardMatchKey(setCode, number) {
 const isAbsent = (v) => v === null || v === undefined || v === '';
 
 /**
+ * Token cards (Experience, Shield) are numbered 1 and 2 by the official site
+ * *within each set*, colliding with the real cards 1 and 2 -- usually leaders.
+ * They cannot be matched by Set+Number, so they are excluded from
+ * reconciliation rather than allowed to hijack a real card.
+ */
+export const isTokenCard = (card) => String(card?.Type || '').trim().toLowerCase().startsWith('token');
+
+/**
  * Compare two field values for *semantic* equality.
  *
  * Deliberately tolerant of representation (numeric strings, letter case,
@@ -105,15 +113,20 @@ export function valuesEqual(a, b) {
  * Returns new card objects; the caller's arrays are not mutated.
  *
  * @param {{setCode:string, apiCards:Array, officialCards:Array, fields:string[]}} input
- * @returns {{cards:Array, overrides:Array, added:Array}}
+ * @returns {{cards:Array, overrides:Array, added:Array, refused:Array}}
  */
 export function reconcileSet({ setCode, apiCards = [], officialCards = [], fields = [] }) {
   const overrides = [];
   const added = [];
+  const refused = [];
 
   const officialIndex = new Map();
   for (const card of officialCards) {
-    officialIndex.set(cardMatchKey(card.Set || setCode, card.Number), card);
+    if (isTokenCard(card)) continue;
+    const key = cardMatchKey(card.Set || setCode, card.Number);
+    // First entry wins: a later collision must never silently replace an
+    // already-indexed card.
+    if (!officialIndex.has(key)) officialIndex.set(key, card);
   }
 
   const matchedOfficialKeys = new Set();
@@ -129,6 +142,23 @@ export function reconcileSet({ setCode, apiCards = [], officialCards = [], field
     for (const field of fields) {
       if (!(field in officialCard)) continue;
       if (valuesEqual(apiCard[field], officialCard[field])) continue;
+
+      // Official is authoritative for fields it actually HAS. An absent value
+      // is not an authoritative "no" -- the scraper once coerced missing data
+      // into false/null/'' and destroyed 667 real values per run. Refusals are
+      // reported rather than silently skipped, so a mapping regression is
+      // visible instead of invisible. An empty array or a zero is a value, not
+      // an absence.
+      if (isAbsent(officialCard[field]) && !isAbsent(apiCard[field])) {
+        refused.push({
+          set: setCode,
+          number: apiCard.Number,
+          field,
+          keptValue: apiCard[field],
+          reason: 'official value absent',
+        });
+        continue;
+      }
 
       if (updated === apiCard) updated = { ...apiCard };
       overrides.push({
@@ -152,5 +182,5 @@ export function reconcileSet({ setCode, apiCards = [], officialCards = [], field
     cards.push(card);
   }
 
-  return { cards, overrides, added };
+  return { cards, overrides, added, refused };
 }

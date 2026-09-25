@@ -42,21 +42,21 @@ function mapOfficialCardToInternal(officialCard) {
   const type = src.type?.data?.attributes || {};
   const type2 = src.type2?.data?.attributes || {};
 
-  const aspects = Array.isArray(src.aspects?.data)
-    ? src.aspects.data.map(a => a.attributes?.englishName || a.attributes?.name).filter(Boolean)
-    : src.aspects || src.affinities || [];
+  // Emit a relation only when the source actually carries it. An absent
+  // relation is not an authoritative "empty" -- see the note on the return
+  // object below.
+  const relation = (key, mapFn) => {
+    if (Array.isArray(src[key]?.data)) return src[key].data.map(mapFn).filter(Boolean);
+    if (Array.isArray(src[key])) return src[key];
+    return undefined;
+  };
 
-  const traits = Array.isArray(src.traits?.data)
-    ? src.traits.data.map(t => t.attributes?.name).filter(Boolean)
-    : src.traits || [];
-
-  const keywords = Array.isArray(src.keywords?.data)
-    ? src.keywords.data.map(k => k.attributes?.name).filter(Boolean)
-    : src.keywords || [];
-
-  const arenas = Array.isArray(src.arenas?.data)
-    ? src.arenas.data.map(a => a.attributes?.name).filter(Boolean)
-    : src.arena || null;
+  const aspects = relation('aspects', (a) => a.attributes?.englishName || a.attributes?.name)
+    ?? (Array.isArray(src.affinities) ? src.affinities : undefined);
+  const traits = relation('traits', (t) => t.attributes?.name);
+  const keywords = relation('keywords', (k) => k.attributes?.name);
+  const arenas = relation('arenas', (a) => a.attributes?.name)
+    ?? (src.arena !== undefined ? src.arena : undefined);
 
   const setCode = expansion.code || src.expansionCode || src.set || src.setCode || 'UNKNOWN';
   const setName = expansion.name || src.expansionName || src.setName || src.set || 'Unknown Set';
@@ -64,33 +64,52 @@ function mapOfficialCardToInternal(officialCard) {
   const frontArt = src.artFront?.data?.attributes?.url || src.frontArt || src.imageUrl || null;
   const backArt = src.artBack?.data?.attributes?.url || src.backArt || null;
 
-  return {
-    Name: src.name ?? src.title ?? null,
-    Subtitle: src.subtitle ?? src.subTitle ?? null,
-    Number: src.number ?? src.cardNumber ?? src.serialCode ?? null,
+  // Fields are emitted ONLY when the official source provides them.
+  //
+  // This previously used `?? false`, `?? null` and `?? ''`, which fabricated a
+  // value whenever the official payload lacked the field. Reconciliation treats
+  // the official site as authoritative, so those inventions overwrote correct
+  // swu-db data: 667 real values were destroyed on every run, including
+  // DoubleSided on all 162 leaders (the official API has no doubleSided field
+  // at all), plus Power, HP and Subtitle on ~370 more cards.
+  //
+  // Official wins for fields it HAS. Omitted keys are skipped by reconcile,
+  // leaving swu-db's value intact. DoubleSided is deliberately not emitted:
+  // the official source has no equivalent, and it is a presentation attribute
+  // that does not affect play.
+  const card = {
     Set: setCode,
     SetName: setName,
-    Type: type.name || type.value || src.type || null,
-    Type2: type2.name || type2.value || null,
-    Cost: src.cost ?? null,
-    Power: src.power ?? src.attack ?? null,
-    HP: src.hp ?? src.health ?? null,
-    Rarity: rarity.name || rarity.englishName || src.rarity || null,
-    Unique: src.unique ?? false,
-    Aspects: aspects,
-    Traits: traits,
-    FrontText: src.text ?? src.frontText ?? src.description ?? '',
-    BackText: src.deployBox ?? src.epicAction ?? src.backText ?? null,
-    Keywords: keywords,
-    Arena: arenas,
-    DoubleSided: src.doubleSided ?? false,
+    Number: src.number ?? src.cardNumber ?? src.serialCode ?? null,
     FrontArt: frontArt,
     BackArt: backArt,
     OfficialUrl: src.url || (cardId ? `${OFFICIAL_BASE_URL}/cards?cid=${cardId}` : null),
-    OfficialCode: src.officialCode ?? src.cardCode ?? src.serialCode ?? src.cardUid ?? null,
     _scrapedFrom: 'official',
     _scrapedAt: Date.now()
   };
+
+  const setIfPresent = (key, value) => {
+    if (value !== undefined && value !== null && value !== '') card[key] = value;
+  };
+
+  setIfPresent('Name', src.name ?? src.title);
+  setIfPresent('Subtitle', src.subtitle ?? src.subTitle);
+  setIfPresent('Type', type.name || type.value || src.type);
+  setIfPresent('Type2', type2.name || type2.value);
+  setIfPresent('Cost', src.cost);
+  setIfPresent('Power', src.power ?? src.attack);
+  setIfPresent('HP', src.hp ?? src.health);
+  setIfPresent('Rarity', rarity.name || rarity.englishName || src.rarity);
+  setIfPresent('FrontText', src.text ?? src.frontText ?? src.description);
+  setIfPresent('BackText', src.deployBox ?? src.epicAction ?? src.backText);
+  setIfPresent('OfficialCode', src.officialCode ?? src.cardCode ?? src.serialCode ?? src.cardUid);
+  if ('unique' in src) card.Unique = src.unique;
+  if (aspects !== undefined) card.Aspects = aspects;
+  if (traits !== undefined) card.Traits = traits;
+  if (keywords !== undefined) card.Keywords = keywords;
+  if (arenas !== undefined) card.Arena = arenas;
+
+  return card;
 }
 
 function cleanUndefined(card) {
