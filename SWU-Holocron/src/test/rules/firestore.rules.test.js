@@ -55,7 +55,9 @@ beforeAll(async () => {
     firestore: {
       rules: readFileSync('firestore.rules', 'utf8'),
       host: '127.0.0.1',
-      port: 8080,
+      // 8085 rather than the 8080 default: that port is commonly occupied
+      // on a dev machine. Must match the emulators block in firebase.json.
+      port: 8085,
     },
   });
 });
