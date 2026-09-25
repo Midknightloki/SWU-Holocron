@@ -17,6 +17,7 @@
     "prepare": "husky install",
     "admin:seed-cards": "node scripts/seedCardDatabase.js",
     "admin:verify-db": "node scripts/verifyCardDatabase.js",
+    "test:rules": "firebase emulators:exec --only firestore --project swu-holocron-rules-test \"vitest run --config vitest.rules.config.js\"",
     "admin:discover-sets": "node scripts/setDiscovery.js",
     "admin:discover-dry-run": "node scripts/setDiscovery.js --dry-run",
     "admin:scrape-official": "node scripts/scrapeOfficialCards.js",

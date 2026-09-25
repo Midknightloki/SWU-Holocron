@@ -111,6 +111,9 @@ export default defineConfig({
     globals: true,
     environment: 'happy-dom',
     setupFiles: './src/test/setup.js',
+    // Rules tests need a running Firestore emulator; they have their own
+    // config and npm script (see vitest.rules.config.js / npm run test:rules).
+    exclude: ['**/node_modules/**', '**/dist/**', 'src/test/rules/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'json'],
