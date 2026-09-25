@@ -1,65 +1,140 @@
 rules_version = '2';
 
+// Covered by src/test/rules/firestore.rules.test.js — run `npm run test:rules`.
+//
+// These rules had drifted for eight months: the deployed ruleset carried three
+// match blocks while this file carried seven, so several features were denied in
+// production while the file looked correct. Rules now deploy from CI, and the
+// tests gate that deploy.
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function profile(appId) {
+      return get(/databases/$(database)/documents/artifacts/$(appId)/users/$(request.auth.uid)).data;
+    }
+
+    function hasProfile(appId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/artifacts/$(appId)/users/$(request.auth.uid));
+    }
+
     function isAdmin(appId) {
-      return request.auth != null
-        && exists(/databases/$(database)/documents/artifacts/$(appId)/users/$(request.auth.uid))
-        && get(/databases/$(database)/documents/artifacts/$(appId)/users/$(request.auth.uid)).data.isAdmin == true;
+      return hasProfile(appId) && profile(appId).isAdmin == true;
     }
 
     function isContributor(appId) {
-      return request.auth != null
-        && exists(/databases/$(database)/documents/artifacts/$(appId)/users/$(request.auth.uid))
-        && get(/databases/$(database)/documents/artifacts/$(appId)/users/$(request.auth.uid)).data.isContributor == true;
+      return hasProfile(appId) && profile(appId).isContributor == true;
     }
 
     function canWriteContent(appId) {
       return isAdmin(appId) || isContributor(appId);
     }
 
-    // Primary collection: user-scoped data under artifacts/{APP_ID}/users/{uid}
-    match /artifacts/{appId}/users/{userId}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+    // Roles are granted ONLY by the Admin SDK, via the invite-redemption Cloud
+    // Function. They live on the user's own profile document, which the user may
+    // otherwise write — so without this guard any authenticated account,
+    // including an anonymous guest, could set isAdmin on itself.
+    function touchesRoles() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['isAdmin', 'isContributor']);
     }
 
-    // Public card database: read-only access to cardDatabase for all authenticated users
+    function declaresRoles() {
+      return request.resource.data.keys().hasAny(['isAdmin', 'isContributor']);
+    }
+
+    // ---------------------------------------------------------------------
+    // User profile. Read/write your own, except the role fields.
+    // ---------------------------------------------------------------------
+    match /artifacts/{appId}/users/{userId} {
+      allow read:   if isSelf(userId);
+      allow create: if isSelf(userId) && !declaresRoles();
+      allow update: if isSelf(userId) && !touchesRoles();
+      allow delete: if isSelf(userId);
+    }
+
+    // User-owned subcollections: collection, decks, versions, gamelogs.
+    // Requiring at least one segment after {userId} keeps this from also
+    // matching the profile document and re-opening the role guard above.
+    match /artifacts/{appId}/users/{userId}/{sub}/{document=**} {
+      allow read, write: if isSelf(userId);
+    }
+
+    // ---------------------------------------------------------------------
+    // Card database. Written by the pipeline through the Admin SDK, which
+    // bypasses rules; never writable from a client.
+    // ---------------------------------------------------------------------
     match /artifacts/{appId}/public/data/cardDatabase/{document=**} {
-      allow read: if request.auth != null;
+      allow read: if isSignedIn();
       allow write: if false;
     }
 
-    // Temporary legacy read-only access for sync_* collections during migration
-    match /artifacts/{appId}/public/data/{syncId}/{document=**} {
-      allow read: if request.auth != null && request.time < timestamp.date(2025, 2, 1);
-      allow write: if false;
-    }
-
-    // Public shared decks: read by anyone, write only by the deck owner
-    match /artifacts/{appId}/public/decks/{slug} {
+    // ---------------------------------------------------------------------
+    // Public deck sharing.
+    //
+    // Path is `publicDecks/{slug}` (4 segments). The previous
+    // `public/decks/{slug}` was 5 segments — a collection path — so doc() threw
+    // before rules were ever consulted and sharing had never worked.
+    // ---------------------------------------------------------------------
+    match /artifacts/{appId}/publicDecks/{slug} {
       allow read: if true;
-      allow create, update: if request.auth != null
+      allow create, update: if isSignedIn()
         && request.resource.data.uid == request.auth.uid;
-      allow delete: if request.auth != null
-        && resource.data.uid == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
     }
 
-    // Shells: readable by all authenticated users, writable by admins and contributors
-    match /artifacts/{appId}/shells/{shellId} {
-      allow read: if request.auth != null;
-      allow create, update, delete: if canWriteContent(appId);
+    // ---------------------------------------------------------------------
+    // Card submissions. Anyone signed in may submit; only the author or a
+    // reviewer may read one back.
+    // ---------------------------------------------------------------------
+    match /artifacts/{appId}/submissions/{submissionId} {
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow read:   if isSignedIn()
+        && (resource.data.uid == request.auth.uid || canWriteContent(appId));
+      allow update, delete: if canWriteContent(appId);
     }
 
-    // Packets: readable by all authenticated users, writable by admins and contributors
-    match /artifacts/{appId}/packets/{packetId} {
-      allow read: if request.auth != null;
-      allow create, update, delete: if canWriteContent(appId);
+    // ---------------------------------------------------------------------
+    // Admin surfaces. Written by the sync pipeline via the Admin SDK.
+    // ---------------------------------------------------------------------
+    match /artifacts/{appId}/admin/{document=**} {
+      allow read: if isAdmin(appId);
+      allow write: if false;
     }
 
-    // Contributor invites: readable and writable only by admins
+    // ---------------------------------------------------------------------
+    // Contributor invites. An invitee never reads this collection: they present
+    // a code and a Cloud Function grants the role with the Admin SDK. Keeping it
+    // admin-only means invite codes cannot be enumerated.
+    // ---------------------------------------------------------------------
     match /artifacts/{appId}/contributorInvites/{inviteId} {
       allow read, write: if isAdmin(appId);
     }
+
+    // ---------------------------------------------------------------------
+    // Contributor content.
+    // ---------------------------------------------------------------------
+    match /artifacts/{appId}/shells/{shellId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if canWriteContent(appId);
+    }
+
+    match /artifacts/{appId}/packets/{packetId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if canWriteContent(appId);
+    }
+
+    // Legacy `sync_*` collections are retired. The migration window expired
+    // 2025-02-01 and those users were already locked out; the rule is removed
+    // rather than extended, along with the legacy path in App.jsx.
   }
 }

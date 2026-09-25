@@ -1,3 +1,4 @@
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db, APP_ID } from '../firebase';
 import {
   collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc,
@@ -94,16 +95,26 @@ export const GuidedModeService = {
   },
 
   // Called on login: if user's email matches a pending invite, promote to contributor.
-  async checkAndApplyInvite(uid, email) {
-    if (!email) return false;
-    const normalized = email.toLowerCase().trim();
-    const snap = await getDocs(invitesCol());
-    const invite = snap.docs.find(d => d.data().email === normalized);
-    if (!invite) return false;
+  /**
+   * Redeem a contributor invite code.
+   *
+   * The grant happens server-side in the redeemInviteCode Cloud Function, which
+   * uses the Admin SDK. It cannot happen here: firestore.rules forbids a client
+   * from writing the isAdmin/isContributor fields, because when the client did
+   * write them any account could simply grant itself administrator.
+   *
+   * Errors are deliberately propagated -- the previous flow swallowed them, so a
+   * failed invite looked identical to no invite.
+   *
+   * @param {string} code invite code from the invitation link
+   * @returns {Promise<boolean>} true when the role was granted
+   */
+  async redeemInviteCode(code) {
+    const trimmed = typeof code === 'string' ? code.trim() : '';
+    if (!trimmed) throw new Error('Enter your invite code.');
 
-    const userRef = doc(db, 'artifacts', APP_ID, 'users', uid);
-    await setDoc(userRef, { isContributor: true }, { merge: true });
-    await deleteDoc(doc(invitesCol(), invite.id));
-    return true;
+    const redeem = httpsCallable(getFunctions(), 'redeemInviteCode');
+    const result = await redeem({ code: trimmed });
+    return result?.data?.granted === true;
   },
 };

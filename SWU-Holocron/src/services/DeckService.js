@@ -30,8 +30,11 @@ import {
 // Public deck path helpers
 // ---------------------------------------------------------------------------
 
+// `publicDecks/{slug}` is 4 segments, a valid document path. The previous
+// 'public','decks',slug was 5 segments -- a collection -- so doc() threw before
+// Firestore was ever reached and public deck sharing had never worked.
 const publicDeckRef = (slug) =>
-  doc(db, 'artifacts', APP_ID, 'public', 'decks', slug);
+  doc(db, 'artifacts', APP_ID, 'publicDecks', slug);
 
 const generateSlug = () => {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';

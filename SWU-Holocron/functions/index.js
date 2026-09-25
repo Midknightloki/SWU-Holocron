@@ -2,6 +2,13 @@ const { setGlobalOptions } = require("firebase-functions");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
+const admin = require("firebase-admin");
+
+if (!admin.apps.length) {
+  admin.initializeApp();
+}
+
+const APP_ID = "swu-holocron-v1";
 
 const anthropicKey = defineSecret("ANTHROPIC_API_KEY");
 
@@ -128,3 +135,78 @@ Respond with ONLY a valid JSON array — no markdown, no explanation:
     return { suggestions: valid };
   }
 );
+
+/**
+ * redeemInviteCode — grants the contributor role in exchange for a valid invite
+ * code.
+ *
+ * WHY THIS IS A FUNCTION
+ *
+ * Roles live on the user's own profile document. Previously the client wrote
+ * `isContributor: true` there itself, which meant the grant was unenforceable:
+ * any authenticated account -- including an anonymous guest -- could simply set
+ * isAdmin on itself and become an administrator. firestore.rules now forbids a
+ * client from touching the role fields at all, so the grant has to happen here,
+ * where the Admin SDK legitimately bypasses rules.
+ *
+ * The invite code is the document id, so a redeemer never needs read access to
+ * the invites collection and codes cannot be enumerated.
+ *
+ * Request data: { code: string }
+ * Response:     { granted: true, role: 'contributor' }
+ */
+exports.redeemInviteCode = onCall({ maxInstances: 5 }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Sign in before redeeming an invite.");
+  }
+  if (request.auth.token?.firebase?.sign_in_provider === "anonymous") {
+    throw new HttpsError(
+      "permission-denied",
+      "Guest accounts cannot be contributors. Sign in with Google first."
+    );
+  }
+
+  const code = typeof request.data?.code === "string" ? request.data.code.trim() : "";
+  if (!code) {
+    throw new HttpsError("invalid-argument", "An invite code is required.");
+  }
+
+  const db = admin.firestore();
+  const inviteRef = db
+    .collection("artifacts").doc(APP_ID)
+    .collection("contributorInvites").doc(code);
+  const userRef = db
+    .collection("artifacts").doc(APP_ID)
+    .collection("users").doc(request.auth.uid);
+
+  try {
+    await db.runTransaction(async (tx) => {
+      const invite = await tx.get(inviteRef);
+
+      // Same message whether the code is wrong or already used, so the response
+      // cannot be used to probe which codes exist.
+      if (!invite.exists || invite.data().claimed === true) {
+        throw new HttpsError("not-found", "That invite code is not valid.");
+      }
+
+      const expiresAt = invite.data().expiresAt;
+      if (expiresAt && expiresAt < Date.now()) {
+        throw new HttpsError("not-found", "That invite code is not valid.");
+      }
+
+      tx.set(userRef, { isContributor: true }, { merge: true });
+      tx.update(inviteRef, {
+        claimed: true,
+        claimedBy: request.auth.uid,
+        claimedAt: Date.now(),
+      });
+    });
+  } catch (error) {
+    if (error instanceof HttpsError) throw error;
+    logger.error("redeemInviteCode failed", { uid: request.auth.uid, error: error.message });
+    throw new HttpsError("internal", "Could not redeem that invite.");
+  }
+
+  logger.info("contributor role granted", { uid: request.auth.uid });
+  return { granted: true, role: "contributor" };
+});

@@ -112,22 +112,22 @@ describe('card database', () => {
 describe('public decks', () => {
   it('lets the owner publish their own deck', async () => {
     const db = asUser('plain-uid');
-    await assertSucceeds(setDoc(doc(db, p('public', 'decks', 'abc12345')), { uid: 'plain-uid', name: 'My Deck' }));
+    await assertSucceeds(setDoc(doc(db, p('publicDecks', 'abc12345')), { uid: 'plain-uid', name: 'My Deck' }));
   });
 
   it('lets anyone read a shared deck, including a signed-out visitor', async () => {
-    await seedDoc(p('public', 'decks', 'abc12345'), { uid: 'plain-uid', name: 'My Deck' });
-    await assertSucceeds(getDoc(doc(asGuest(), p('public', 'decks', 'abc12345'))));
+    await seedDoc(p('publicDecks', 'abc12345'), { uid: 'plain-uid', name: 'My Deck' });
+    await assertSucceeds(getDoc(doc(asGuest(), p('publicDecks', 'abc12345'))));
   });
 
   it('stops a user publishing a deck under someone else’s uid', async () => {
     const db = asUser('plain-uid');
-    await assertFails(setDoc(doc(db, p('public', 'decks', 'abc12345')), { uid: 'other-uid', name: 'Not Mine' }));
+    await assertFails(setDoc(doc(db, p('publicDecks', 'abc12345')), { uid: 'other-uid', name: 'Not Mine' }));
   });
 
   it('stops a user deleting someone else’s deck', async () => {
-    await seedDoc(p('public', 'decks', 'abc12345'), { uid: 'other-uid', name: 'Theirs' });
-    await assertFails(deleteDoc(doc(asUser('plain-uid'), p('public', 'decks', 'abc12345'))));
+    await seedDoc(p('publicDecks', 'abc12345'), { uid: 'other-uid', name: 'Theirs' });
+    await assertFails(deleteDoc(doc(asUser('plain-uid'), p('publicDecks', 'abc12345'))));
   });
 });
 
@@ -186,25 +186,61 @@ describe('admin sync logs', () => {
 });
 
 describe('contributor invites', () => {
-  // AuthContext calls checkAndApplyInvite on every non-anonymous login. The
-  // rule is admin-only, so an invitee can never read the invite addressed to
-  // them -- and the call is wrapped in .catch(() => {}), so it fails silently.
+  // Redemption happens in a callable Cloud Function using the Admin SDK, so the
+  // invitee never reads this collection: they present a code and the server
+  // grants the role. That keeps the collection admin-only, which is tighter
+  // than letting invitees query it.
 
   beforeEach(async () => {
-    await seedDoc(p('contributorInvites', 'invite-1'), { email: 'invitee@example.com', claimed: false });
+    await seedDoc(p('contributorInvites', 'CODE-1234'), { code: 'CODE-1234', claimed: false });
   });
 
-  it('lets an admin manage invites', async () => {
-    await assertSucceeds(getDoc(doc(asUser('admin-uid'), p('contributorInvites', 'invite-1'))));
-    await assertSucceeds(setDoc(doc(asUser('admin-uid'), p('contributorInvites', 'invite-2')), { email: 'x@y.z' }));
+  it('lets an admin create and read invites', async () => {
+    await assertSucceeds(getDoc(doc(asUser('admin-uid'), p('contributorInvites', 'CODE-1234'))));
+    await assertSucceeds(setDoc(doc(asUser('admin-uid'), p('contributorInvites', 'CODE-5678')), { code: 'CODE-5678' }));
   });
 
-  it('lets an authenticated user look up an invite so it can be applied', async () => {
-    await assertSucceeds(getDocs(collection(asUser('plain-uid'), p('contributorInvites'))));
+  it('denies an ordinary user reading an invite', async () => {
+    await assertFails(getDoc(doc(asUser('plain-uid'), p('contributorInvites', 'CODE-1234'))));
+  });
+
+  it('denies an ordinary user enumerating invites', async () => {
+    await assertFails(getDocs(collection(asUser('plain-uid'), p('contributorInvites'))));
   });
 
   it('stops a non-admin creating an invite for themselves', async () => {
-    await assertFails(setDoc(doc(asUser('plain-uid'), p('contributorInvites', 'self')), { email: 'me@example.com' }));
+    await assertFails(setDoc(doc(asUser('plain-uid'), p('contributorInvites', 'self')), { code: 'self' }));
+  });
+});
+
+describe('role fields cannot be self-granted', () => {
+  // Roles live on the user's own profile document, which the user may write.
+  // Without an explicit guard, any authenticated account -- including an
+  // anonymous guest -- can set isAdmin on itself. Roles are granted only by the
+  // Admin SDK (the invite-redemption function), never by a client.
+
+  it('denies a user granting themselves isContributor', async () => {
+    await assertFails(setDoc(doc(asUser('plain-uid'), p('users', 'plain-uid')), { isContributor: true }, { merge: true }));
+  });
+
+  it('denies a user granting themselves isAdmin', async () => {
+    await assertFails(setDoc(doc(asUser('plain-uid'), p('users', 'plain-uid')), { isAdmin: true }, { merge: true }));
+  });
+
+  it('denies an anonymous guest granting themselves a role', async () => {
+    await assertFails(setDoc(doc(asUser('guest-uid'), p('users', 'guest-uid')), { isAdmin: true }));
+  });
+
+  it('denies a user stripping a role from themselves to dodge the guard', async () => {
+    await assertFails(setDoc(doc(asUser('admin-uid'), p('users', 'admin-uid')), { isAdmin: false }, { merge: true }));
+  });
+
+  it('still lets a user write their own non-role profile fields', async () => {
+    await assertSucceeds(setDoc(doc(asUser('plain-uid'), p('users', 'plain-uid')), { displayName: 'Loki' }, { merge: true }));
+  });
+
+  it('still lets a user write their own collection subcollection', async () => {
+    await assertSucceeds(setDoc(doc(asUser('plain-uid'), p('users', 'plain-uid', 'collection', 'SOR_001_std')), { quantity: 2 }));
   });
 });
 
@@ -229,8 +265,9 @@ describe('shells and packets', () => {
 });
 
 describe('legacy sync collections', () => {
-  // The legacy read window expired 2025-02-01, so these users are already
-  // locked out. The rule and the App.jsx code path should be retired together.
+  // Retired by decision: the read window expired 2025-02-01 and those users are
+  // already locked out. The rule is removed rather than extended, and the
+  // App.jsx legacy path goes with it.
 
   it('denies legacy sync reads now that the migration window has closed', async () => {
     await seedDoc(p('public', 'data', 'sync_abc123', 'SOR_001_std'), { quantity: 1 });
