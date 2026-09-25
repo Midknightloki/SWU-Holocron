@@ -155,3 +155,9 @@ dev-dist/
 # Captured test output / scratch artifacts -- these were committed by accident
 test_results*.txt
 dup_test.txt
+
+# Firebase emulator debug output
+firestore-debug.log
+firebase-debug.log
+ui-debug.log
+pubsub-debug.log
