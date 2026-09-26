@@ -22,6 +22,7 @@ import {
   importFromMeleeText,
 } from '../utils/deckImportExport';
 import { getCardSuggestions } from '../services/AiSuggestionsService';
+import { rankCandidates } from '../utils/suggestionRanking';
 import { checkDeckLegality, getBanStatus, getMinDeckSize, getRequiredLeaderCount } from '../services/LegalityService';
 
 const TAG_CATEGORIES = [
@@ -41,6 +42,9 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
   // Wizard state
   const [step, setStep] = useState(deck?.id ? 4 : 0); // 0: Start, 1: Format, 2: Leader, 3: Base, 4: Deck, 5: Analysis
   const [selectedFormat, setSelectedFormat] = useState(deck?.format || 'Premier');
+  // Set codes in release order, used to score candidates by proximity to the
+  // leader's set. getAvailableSets returns registry order, which is by release date.
+  const [setOrder, setSetOrder] = useState([]);
 
   // Deck state
   const [deckName, setDeckName] = useState(deck?.name || '');
@@ -105,6 +109,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
         const sets = await CardService.getAvailableSets();
         // If discovery returns nothing, fallback to mainline sets
         const setsToLoad = sets.length > 0 ? sets : SETS.map((s) => s.code);
+        setSetOrder(setsToLoad);
 
         const cardMap = {};
         const allCardsList = [];
@@ -540,7 +545,21 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
         type: card.Type,
       }));
 
-      const available = allCards
+      // What the deck already contains, so candidates can be ranked against it.
+      const deckTraits = [];
+      const deckTypes = [];
+      mainDeckCards.forEach(({ card }) => {
+        (card.Traits || []).forEach(t => deckTraits.push(t));
+        if (card.Type) deckTypes.push(card.Type);
+      });
+
+      const ownedIds = new Set();
+      allCards.forEach(card => {
+        const id = `${card.Set}_${card.Number}`;
+        if (getCardOwnership(id).total > 0) ownedIds.add(id);
+      });
+
+      const candidates = allCards
         .filter(card => card.Type !== 'Leader' && card.Type !== 'Base')
         .filter(card => {
           const cardId = `${card.Set}_${card.Number}`;
@@ -554,8 +573,23 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
           cost: card.Cost ?? null,
           aspects: card.Aspects || [],
           traits: (card.Traits || []).slice(0, 3),
-        }))
-        .slice(0, 300);
+        }));
+
+      // Rank rather than truncate. `.slice(0, 300)` on a list loaded in set
+      // release order sent 300 SOR cards and nothing else -- 3.2% of the pool,
+      // all from the oldest set -- so a JTL deck could never be offered a JTL
+      // card. Priority: owned, then aspect fit, then tribal, then sets near
+      // the leader's.
+      const available = rankCandidates({
+        cards: candidates,
+        deckAspects: Array.from(aspects),
+        deckTraits,
+        deckTypes,
+        ownedIds,
+        leaderSetCode: String(selectedLeader || '').split('_')[0],
+        setOrder,
+        limit: 300,
+      });
 
       const suggestions = await getCardSuggestions({
         leaderName: leader?.Name || selectedLeader,
@@ -572,7 +606,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     } finally {
       setIsLoadingSuggestions(false);
     }
-  }, [selectedLeader, selectedBase, cardDataMap, mainDeckCards, deckCards, allCards]);
+  }, [selectedLeader, selectedBase, cardDataMap, mainDeckCards, deckCards, allCards, getCardOwnership, setOrder]);
 
   const leaderCard = selectedLeader ? cardDataMap[selectedLeader] : null;
   const baseCard = selectedBase ? cardDataMap[selectedBase] : null;
