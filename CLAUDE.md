@@ -346,7 +346,12 @@ it is an ESLint *error*, so CI blocks on it.
 
 Long-standing, still true, and each one a reasonable thing to pick up:
 
-- **No error boundaries anywhere.** A render error in any component blanks the app.
+- **Error boundaries cover the views, not every component.** `ErrorBoundary.jsx`
+  wraps each view in `App.jsx` (keyed on `view`, so navigating clears a crash),
+  the card modal and search overlays, and both roots in `main.jsx`. A render
+  error inside one view no longer blanks the app. It catches render errors only
+  — not event handlers, promises or timers, which React does not route to a
+  boundary.
 - **No store.** Everything prop-drills from `App.jsx`; collection update callbacks
   are threaded through every component that touches quantities.
 - **No memoization on the card grid**, which routinely renders 200+ cards.
