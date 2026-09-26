@@ -51,7 +51,7 @@ exports.getCardSuggestions = onCall(
       throw new HttpsError("unauthenticated", "Authentication required.");
     }
 
-    const { leaderName, baseName, aspects, deckCards, availableCards } = request.data;
+    const { leaderName, baseName, aspects, deckCards, availableCards, deckConcept } = request.data;
 
     if (!leaderName || !baseName) {
       throw new HttpsError("invalid-argument", "leaderName and baseName are required.");
@@ -67,6 +67,13 @@ exports.getCardSuggestions = onCall(
       project: GCP_PROJECT,
       location: VERTEX_LOCATION,
     });
+
+    // The user's own description of what they are building. The shortlist is
+    // already keyword-weighted toward it; this gives the model the intent in
+    // full, which keyword matching cannot capture ("go wide", "tempo").
+    const concept = typeof deckConcept === "string" ? deckConcept.trim().slice(0, 200) : "";
+    const conceptLine = concept ? `
+- Concept (the player's stated plan): ${concept}` : "";
 
     const cardListText = availableCards
       .map((c) => {
@@ -84,7 +91,7 @@ exports.getCardSuggestions = onCall(
 
     const prompt = `You are a Star Wars: Unlimited deck-building expert. Analyze the deck below and suggest exactly 5 cards from the available pool that would strengthen it.
 
-DECK:
+DECK:${conceptLine}
 - Leader: ${leaderName}
 - Base: ${baseName}
 - Aspects: ${(aspects || []).join(", ") || "None"}
@@ -95,6 +102,7 @@ ${cardListText}
 
 Rules:
 1. Only recommend cards whose ID appears in the AVAILABLE CARDS list above.
+${concept ? "0. Above all, favour cards that serve the stated concept." : ""}
 2. Prioritize cards that match the deck's aspects to avoid penalty costs.
 3. Consider synergy with the leader's playstyle and existing cards.
 4. Each reason must be exactly one concise sentence.

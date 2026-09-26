@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { rankCandidates } from '../../utils/suggestionRanking.js';
+import { rankCandidates, extractConceptTerms } from '../../utils/suggestionRanking.js';
 
 /**
  * Candidate selection for AI deck suggestions.
@@ -250,5 +250,91 @@ describe('rankCandidates: one slot per distinct card', () => {
   it('keeps cards that merely lack a name rather than collapsing them together', () => {
     const cards = [{ id: 'SOR_1' }, { id: 'SOR_2' }];
     expect(rankCandidates({ ...base, cards })).toHaveLength(2);
+  });
+});
+
+describe('extractConceptTerms', () => {
+  // The ranker cannot understand "swarm aggro"; it can only match words it
+  // already knows. The vocabulary is built from the card pool itself, so a
+  // stray adjective never becomes a ranking signal.
+  const VOCAB = ['imperial', 'trooper', 'vehicle', 'unit', 'event', 'upgrade', 'force', 'spy'];
+
+  it('finds vocabulary terms in free text', () => {
+    expect(extractConceptTerms('Imperial trooper swarm', VOCAB).sort())
+      .toEqual(['imperial', 'trooper']);
+  });
+
+  it('matches a plural against its singular vocabulary entry', () => {
+    expect(extractConceptTerms('lots of vehicles', VOCAB)).toContain('vehicle');
+  });
+
+  it('ignores words that are not in the vocabulary', () => {
+    expect(extractConceptTerms('fast aggressive tempo deck', VOCAB)).toEqual([]);
+  });
+
+  it('does not match a term embedded inside another word', () => {
+    // "forceful" must not register as the Force trait.
+    expect(extractConceptTerms('a forceful plan', VOCAB)).toEqual([]);
+  });
+
+  it('is case-insensitive and de-duplicates', () => {
+    expect(extractConceptTerms('IMPERIAL imperial Imperial', VOCAB)).toEqual(['imperial']);
+  });
+
+  it('returns nothing for empty or missing input', () => {
+    expect(extractConceptTerms('', VOCAB)).toEqual([]);
+    expect(extractConceptTerms(null, VOCAB)).toEqual([]);
+    expect(extractConceptTerms('imperial', null)).toEqual([]);
+  });
+});
+
+describe('rankCandidates: deck concept', () => {
+  it('ranks a concept match above aspect and tribal signals', () => {
+    const conceptMatch = card({ id: 'LOF_060', aspects: ['Heroism'], traits: ['Vehicle'] });
+    const aspectMatch = card({ id: 'LOF_061', aspects: ['Villainy', 'Vigilance'], traits: [] });
+
+    const result = rankCandidates({
+      ...base,
+      cards: [aspectMatch, conceptMatch],
+      conceptTerms: ['vehicle'],
+    });
+
+    expect(result[0].id).toBe('LOF_060');
+  });
+
+  it('still puts an owned card above a concept match', () => {
+    // Ownership stays the top signal: suggest what can be built today.
+    const owned = card({ id: 'SOR_070', aspects: ['Heroism'], traits: [] });
+    const conceptMatch = card({ id: 'LOF_071', aspects: ['Villainy'], traits: ['Vehicle'] });
+
+    const result = rankCandidates({
+      ...base,
+      cards: [conceptMatch, owned],
+      ownedIds: new Set(['SOR_070']),
+      conceptTerms: ['vehicle'],
+    });
+
+    expect(result[0].id).toBe('SOR_070');
+  });
+
+  it('matches a concept term against the card type as well as its traits', () => {
+    const eventCard = card({ id: 'LOF_080', type: 'Event', aspects: [] });
+    const unitCard = card({ id: 'LOF_081', type: 'Unit', aspects: ['Villainy'] });
+
+    const result = rankCandidates({ ...base, cards: [unitCard, eventCard], conceptTerms: ['event'] });
+
+    expect(result[0].id).toBe('LOF_080');
+  });
+
+  it('changes nothing when no concept is given', () => {
+    const cards = [
+      card({ id: 'LOF_090', aspects: ['Villainy', 'Vigilance'] }),
+      card({ id: 'LOF_091', aspects: ['Heroism'] }),
+    ];
+
+    const withNone = rankCandidates({ ...base, cards }).map((c) => c.id);
+    const withEmpty = rankCandidates({ ...base, cards, conceptTerms: [] }).map((c) => c.id);
+
+    expect(withEmpty).toEqual(withNone);
   });
 });

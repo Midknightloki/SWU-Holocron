@@ -23,6 +23,11 @@
  */
 
 const W_OWNED = 10000;
+// Deck concept sits below ownership and above every card-intrinsic signal:
+// a card that fits the stated plan beats a merely on-aspect one, but a card
+// already in the binder still comes first.
+const W_CONCEPT_EACH = 1500;
+const W_CONCEPT_CAP = 2;
 // Aspect tiers, best first. Aspect requirements are a balancing cost in SWU: a
 // card demanding two aspects the deck has is usually stronger for its cost,
 // while an aspect-neutral card is playable anywhere and pays for that in cost
@@ -37,17 +42,74 @@ const W_SET_LEADER = 30;
 const W_SET_ADJACENT = 20;
 const W_TYPE_MATCH = 10;
 
+const WORD_CHARS = new Set('abcdefghijklmnopqrstuvwxyz0123456789'.split(''));
 const asArray = (v) => (Array.isArray(v) ? v : []);
 const lower = (v) => String(v ?? '').trim().toLowerCase();
+
+/**
+ * Pull the terms a deck concept has in common with the card pool's vocabulary.
+ *
+ * The ranker cannot understand "swarm aggro" -- that judgement belongs to the
+ * model, which receives the concept text verbatim. What this does is far more
+ * modest and entirely deterministic: find the trait, type and keyword names the
+ * user actually named, so the 300-card shortlist is concept-aware rather than
+ * concept-blind. Matching against the pool's own vocabulary means a stray
+ * adjective can never become a ranking signal.
+ *
+ * @param {string} conceptText free text from the user
+ * @param {string[]} vocabulary known traits, types and keywords
+ * @returns {string[]} matched terms, lower-cased and de-duplicated
+ */
+export function extractConceptTerms(conceptText, vocabulary) {
+  const text = lower(conceptText);
+  if (!text || !Array.isArray(vocabulary)) return [];
+
+  const isWordChar = (ch) => ch !== undefined && WORD_CHARS.has(ch);
+
+  // Whole-word match, tolerating a trailing plural, so 'vehicles' finds
+  // 'vehicle' while 'forceful' never registers the Force trait. Done by index
+  // rather than a built regex: vocabulary terms are data, and building a
+  // pattern from data needs escaping that is easy to get wrong.
+  const containsTerm = (haystack, term) => {
+    let i = haystack.indexOf(term);
+    while (i !== -1) {
+      const before = i === 0 ? undefined : haystack[i - 1];
+      let afterIdx = i + term.length;
+      if (haystack[afterIdx] === 's') afterIdx += 1;
+      const after = haystack[afterIdx];
+      if (!isWordChar(before) && !isWordChar(after)) return true;
+      i = haystack.indexOf(term, i + 1);
+    }
+    return false;
+  };
+
+  const found = new Set();
+  for (const raw of vocabulary) {
+    const term = lower(raw);
+    if (term && containsTerm(text, term)) found.add(term);
+  }
+  return [...found];
+}
 
 /**
  * Score a single candidate. Higher is better.
  */
 function scoreCard(card, ctx) {
-  const { deckAspectSet, deckTraitSet, ownedIds, setIndexOf, leaderIndex, deckTypeSet } = ctx;
+  const { deckAspectSet, deckTraitSet, ownedIds, setIndexOf, leaderIndex, deckTypeSet, conceptTermSet } = ctx;
   let score = 0;
 
   if (ownedIds.has(card.id)) score += W_OWNED;
+
+  // Concept fit: how many of the terms the user named this card carries, across
+  // its traits and its type.
+  if (conceptTermSet.size > 0) {
+    const searchable = [...asArray(card.traits).map(lower), lower(card.type)].filter(Boolean);
+    let hits = 0;
+    for (const term of conceptTermSet) {
+      if (searchable.includes(term)) hits += 1;
+    }
+    score += Math.min(hits, W_CONCEPT_CAP) * W_CONCEPT_EACH;
+  }
 
   // Aspect fit. Counted with multiplicity, so a card costing the same aspect
   // twice registers as two requirements.
@@ -88,6 +150,8 @@ function scoreCard(card, ctx) {
  * @param {string[]} input.deckAspects aspects of the leader and base
  * @param {string[]} input.deckTraits  traits already present in the deck
  * @param {string[]} [input.deckTypes] card types already present in the deck
+ * @param {string[]} [input.conceptTerms] vocabulary terms drawn from the user's
+ *   deck concept (see extractConceptTerms)
  * @param {Set<string>} input.ownedIds ids the user owns at least one copy of
  * @param {string} input.leaderSetCode set code of the chosen leader
  * @param {string[]} input.setOrder    set codes in release order
@@ -99,6 +163,7 @@ export function rankCandidates({
   deckAspects = [],
   deckTraits = [],
   deckTypes = [],
+  conceptTerms = [],
   ownedIds = new Set(),
   leaderSetCode = '',
   setOrder = [],
@@ -113,6 +178,7 @@ export function rankCandidates({
     deckAspectSet: new Set(deckAspects.map(lower).filter(Boolean)),
     deckTraitSet: new Set(deckTraits.map(lower).filter(Boolean)),
     deckTypeSet: new Set(deckTypes.map(lower).filter(Boolean)),
+    conceptTermSet: new Set(asArray(conceptTerms).map(lower).filter(Boolean)),
     ownedIds: ownedIds instanceof Set ? ownedIds : new Set(ownedIds || []),
     setIndexOf,
     leaderIndex,
