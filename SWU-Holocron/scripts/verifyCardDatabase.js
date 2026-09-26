@@ -13,6 +13,7 @@
 
 import { SETS } from '../src/cardData.js';
 import { LEGACY_SET_CODES } from '../src/setCatalog.js';
+import { PLACEHOLDER_FLAG, classifySetCompleteness } from '../src/placeholderCards.js';
 import { initFirestore } from './firebaseAdmin.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -149,7 +150,13 @@ async function compareWithAPIData() {
         .doc('data');
 
       const docSnap = await docRef.get();
-      const firestoreCards = docSnap.exists ? docSnap.data().cards : [];
+      const storedCards = docSnap.exists ? docSnap.data().cards : [];
+
+      // Placeholders stand in for cards the catalogue lists and no source
+      // describes, so they must not be compared against the API -- they would
+      // read as a count mismatch, which is the failure this is meant to end.
+      const firestoreCards = storedCards.filter((c) => c?.[PLACEHOLDER_FLAG] !== true);
+      const placeholderCount = storedCards.length - firestoreCards.length;
 
       // Fetch from API
       console.log(`Fetching ${set.code} from API...`);
@@ -161,7 +168,7 @@ async function compareWithAPIData() {
       const apiData = await response.json();
       const apiCards = Array.isArray(apiData) ? apiData : (apiData.data || []);
 
-      // Compare counts
+      // Compare real cards against the API
       if (firestoreCards.length !== apiCards.length) {
         differences.push(
           `${set.code}: Count mismatch (Firestore: ${firestoreCards.length}, API: ${apiCards.length})`
@@ -169,6 +176,29 @@ async function compareWithAPIData() {
         console.log(`⚠️  ${set.code} - Count mismatch (FS: ${firestoreCards.length}, API: ${apiCards.length})`);
       } else {
         console.log(`✅ ${set.code} - Counts match (${apiCards.length} cards)`);
+      }
+
+      // Then say where the set stands against the catalogue, which is a
+      // different question and not always a problem. A set the catalogue says is
+      // short is only a failure when it is released AND not placeheld; an
+      // unreleased set is simply unspoiled, and upstream is not ours to fix.
+      const completeness = classifySetCompleteness({
+        set,
+        cards: storedCards,
+        catalog: setsToVerify,
+      });
+
+      if (completeness.status === 'complete-with-placeholders') {
+        console.log(`   ${set.code} - complete with ${completeness.placeholders} placeholder(s) awaiting submission`);
+      } else if (completeness.status === 'awaiting-release') {
+        console.log(`   ${set.code} - awaiting release, ${completeness.real}/${completeness.expected} revealed`);
+      } else if (completeness.status === 'incomplete') {
+        differences.push(
+          `${set.code}: ${completeness.missing} card(s) in the catalogue are missing and not placeheld`
+        );
+        console.log(`⚠️  ${set.code} - ${completeness.missing} card(s) unaccounted for`);
+      } else if (placeholderCount > 0) {
+        console.log(`   ${set.code} - ${placeholderCount} placeholder(s) present`);
       }
 
       // Sample check: verify first card
