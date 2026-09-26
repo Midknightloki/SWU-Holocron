@@ -1,4 +1,5 @@
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { generateInviteCode, normalizeInviteCode } from '../utils/inviteCodes';
 import { db, APP_ID } from '../firebase';
 import {
   collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc,
@@ -78,16 +79,49 @@ export const GuidedModeService = {
 
   async getInvites() {
     const snap = await getDocs(invitesCol());
-    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const invites = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    // Newest first. A just-written createdAt is still a pending serverTimestamp
+    // locally, so treat a missing value as newest rather than oldest.
+    const issuedAt = (invite) => {
+      const raw = invite.createdAt;
+      if (!raw) return Infinity;
+      return typeof raw.toMillis === 'function' ? raw.toMillis() : Number(raw) || 0;
+    };
+    return invites.sort((a, b) => issuedAt(b) - issuedAt(a));
   },
 
-  async createInvite(adminUid, email) {
-    const normalized = email.toLowerCase().trim();
-    await addDoc(invitesCol(), {
-      email: normalized,
+  /**
+   * Issue a contributor invite.
+   *
+   * The generated code is the document id, because that is what the
+   * redeemInviteCode function looks up. It used to be an addDoc auto-id, which
+   * meant the code existed but was never shown to the admin and could not
+   * realistically be typed by the recipient.
+   *
+   * `email` is a label for the admin's own benefit. Nothing matches on it: the
+   * grant is earned by presenting the code, not by signing in with an address.
+   *
+   * @param {string} adminUid the issuing admin
+   * @param {{email?: string, expiresInDays?: number}|string} options
+   * @returns {Promise<string>} the code to hand to the recipient
+   */
+  async createInvite(adminUid, options = {}) {
+    const { email = '', expiresInDays = 0 } =
+      typeof options === 'string' ? { email: options } : (options || {});
+
+    const code = generateInviteCode();
+    await setDoc(doc(invitesCol(), code), {
+      email: email.toLowerCase().trim() || null,
+      claimed: false,
       createdBy: adminUid,
       createdAt: serverTimestamp(),
+      // Milliseconds, not a Timestamp: the function compares this against
+      // Date.now(), and a Timestamp would compare as NaN and never expire.
+      expiresAt: expiresInDays > 0 ? Date.now() + expiresInDays * 86400000 : null,
     });
+
+    return code;
   },
 
   async deleteInvite(inviteId) {
@@ -110,11 +144,14 @@ export const GuidedModeService = {
    * @returns {Promise<boolean>} true when the role was granted
    */
   async redeemInviteCode(code) {
-    const trimmed = typeof code === 'string' ? code.trim() : '';
-    if (!trimmed) throw new Error('Enter your invite code.');
+    // Forgives case, spacing and hyphens. A code is read off a screen and typed
+    // by hand, so `h7qk 3mrt xb29` has to reach the same document as the issued
+    // `H7QK-3MRT-XB29`.
+    const normalized = normalizeInviteCode(code);
+    if (!normalized) throw new Error('Enter your invite code.');
 
     const redeem = httpsCallable(getFunctions(), 'redeemInviteCode');
-    const result = await redeem({ code: trimmed });
+    const result = await redeem({ code: normalized });
     return result?.data?.granted === true;
   },
 };
