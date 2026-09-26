@@ -3,7 +3,7 @@
  * @unit @critical
  *
  * TODO.Future: Some tests in this file have failing assertions related to Firebase mock setup.
- * See TEST_FAILURE_ANALYSIS.md for detailed analysis of mock structure mismatches and
+ * See TESTING.md ("Skipped suites, and why") for the mock structure mismatches and
  * implementation detail testing that needs to be refactored.
  * These are not real bugs but test infrastructure issues that should be addressed in a
  * separate effort when Firebase mocking infrastructure is improved.

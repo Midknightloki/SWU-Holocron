@@ -2,7 +2,7 @@
  * TODO.Future: This test suite has 15 timeout failures due to component async initialization.
  * The AdvancedSearch component loads all card sets on mount (heavy async operation),
  * but tests don't properly await this or mock it completely.
- * See TEST_FAILURE_ANALYSIS.md for detailed analysis.
+ * See TESTING.md ("Skipped suites, and why") for the reasoning.
  * The component works fine in production - this is purely a test infrastructure/mocking limitation.
  * Should be addressed with better Firestore mocking and async test setup patterns.
  */
@@ -21,7 +21,7 @@ vi.mock('../../services/CardService', () => ({
   }
 }));
 
-describe.skip('AdvancedSearch - Component async initialization timeout (See TEST_FAILURE_ANALYSIS.md)', () => {
+describe.skip('AdvancedSearch - Component async initialization timeout (see TESTING.md, Skipped suites)', () => {
   const mockCards = [
     {
       Set: 'SOR',

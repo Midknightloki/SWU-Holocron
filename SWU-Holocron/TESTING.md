@@ -1,353 +1,161 @@
-# SWU Holocron - Testing & CI/CD Documentation
+# Testing
 
-## Overview
-
-This document describes the comprehensive testing infrastructure and CI/CD pipeline for SWU Holocron, a Star Wars Unlimited TCG collection tracker.
-
-## Project Structure
-
-```
-src/
-├── utils/              # Pure utility functions (100% test coverage target)
-│   ├── csvParser.js
-│   ├── statsCalculator.js
-│   └── collectionHelpers.js
-├── services/
-│   └── CardService.js
-├── components/
-│   ├── Dashboard.jsx
-│   ├── CardModal.jsx
-│   └── LandingScreen.jsx
-├── test/
-│   ├── setup.js                    # Test configuration
-│   ├── utils/
-│   │   ├── mockData.js            # Test fixtures
-│   │   ├── csvParser.test.js
-│   │   ├── statsCalculator.test.js
-│   │   └── collectionHelpers.test.js
-│   ├── components/
-│   │   ├── Dashboard.test.jsx
-│   │   └── CardModal.test.jsx
-│   └── integration/
-│       ├── csvImport.test.js
-│       ├── collectionSync.test.js
-│       └── offlineMode.test.js
-```
-
-## Testing Stack
-
-- **Test Runner**: Vitest 1.6.0 (fast, Vite-native)
-- **Test Environment**: happy-dom (faster than jsdom)
-- **React Testing**: @testing-library/react 14.0
-- **Coverage**: @vitest/coverage-v8
-
-## Test Categories
-
-### 1. Unit Tests (`@unit @critical`)
-**Target**: 80% coverage on critical paths
-**Execution Time**: <100ms per suite
-**Location**: `src/test/utils/**/*.test.js`
-
-Tests pure functions with no external dependencies:
-- CSV parsing and generation
-- Statistics calculation
-- Collection ID generation
-- Data transformation utilities
-
-**Run**: `npm run test:unit`
-
-### 2. Component Tests (`@component`)
-**Target**: 70% coverage
-**Execution Time**: <200ms per test
-**Location**: `src/test/components/**/*.test.jsx`
-
-Tests React components with mocked dependencies:
-- Dashboard rendering and interactions
-- CardModal quantity controls
-- LandingScreen form handling
-
-**Run**: `npm test -- --testNamePattern="@component"`
-
-### 3. Integration Tests (`@integration @slow`)
-**Target**: Key user flows
-**Execution Time**: <2s per test
-**Location**: `src/test/integration/**/*.test.js`
-
-Tests complete workflows:
-- CSV import/export round-trip
-- Collection sync (sync code vs guest mode)
-- Offline data reconstruction
-- Firebase batch operations
-
-**Run**: `npm run test:integration`
-
-## Environment Tags
-
-Tests are tagged to identify platform-specific code requiring React Native migration:
-
-- `@environment:web-file-api` - Browser File API (CSV import/export)
-- `@environment:firebase` - Firebase/Firestore operations
-- `@environment:firebase-emulator` - Requires Firebase emulator
-- `@environment:web-localstorage` - localStorage (→ AsyncStorage in RN)
-
-## Running Tests
+Vitest with Testing Library, in the `happy-dom` environment. All commands run
+from `SWU-Holocron/` (the nested application directory, not the git root).
 
 ```bash
-# Install dependencies
-npm install
+npx vitest run                  # whole suite, once
+npm test                        # watch mode
+npm run test:ci                 # once, with a coverage report
+npm run test:changed            # only tests affected by changed files
+npm run test:rules              # Firestore rules, against the emulator
 
-# Run all tests with coverage
-npm run test:ci
-
-# Run in watch mode (development)
-npm test
-
-# Run only unit tests (fast)
-npm run test:unit
-
-# Run only integration tests
-npm run test:integration
-
-# Run tests for changed files only
-npm run test:changed
-
-# Open coverage UI
-npm run test:ui
+npx vitest run src/test/services/CardService.test.js     # one file
+npx vitest run -t "should generate a unique collection ID" # one test
+npx vitest related --run src/utils/csvParser.js           # what lint-staged would run
 ```
 
-## Coverage Thresholds
+`test:unit` and `test:integration` are **the same command** — both are
+`vitest run --reporter=verbose` over everything. "Run only the unit tests" is not
+currently a thing you can do.
 
-Configured in `vite.config.js`:
+## Where tests live
 
-| Path | Lines | Functions | Branches | Statements |
-|------|-------|-----------|----------|------------|
-| `src/services/` | 80% | 80% | 80% | 80% |
-| `src/utils/` | 80% | 80% | 80% | 80% |
-| `src/components/` | 70% | 70% | 70% | 70% |
+Two places, for historical reasons. Check both before concluding something is
+untested.
 
-## Git Hooks (Husky)
+| Location | Contents |
+|---|---|
+| `src/test/utils/` | 13 files — pure functions |
+| `src/test/services/` | 6 files |
+| `src/test/components/` | 5 files — the older component tests |
+| `src/test/contexts/` | 1 file — `AuthContext` |
+| `src/test/integration/` | 10 files |
+| `src/test/rules/` | 1 file — Firestore rules, emulator only |
+| `src/components/__tests__/` | 7 files — the newer deck-feature components |
 
-### Pre-commit Hook
-**Purpose**: Fast quality checks before commit
-**Execution Time**: <5s
-**Actions**:
-1. Run ESLint on staged files
-2. Run Prettier formatting
-3. Run related unit tests for changed files
+`src/test/fixtures/` holds recorded API payloads; `src/test/utils/mockData.js`
+holds hand-written fixtures.
 
-**Setup**:
-```bash
-npm run prepare  # Initialize Husky
+### Conventions
+
+- **A test file containing JSX must be named `.jsx`**, or esbuild will not parse
+  it. Every current JSX test file follows this.
+- `src/test/setup.js` globally mocks `../firebase` to
+  `{ auth: null, db: null, isConfigured: false }` and stubs `localStorage`. Any
+  code path that needs a real `db` must be mocked per-test.
+- When you add a method to a service, **add it to that service's mocks too**.
+  Component tests mock whole service objects, so a new method is `undefined`
+  inside them, and an unhandled rejection from it can pass locally and fail in
+  CI on timing.
+
+## Coverage
+
+Measured, as of the last run:
+
+| Area | Lines |
+|---|---|
+| `src/utils/` | ~89% |
+| `src/contexts/` | ~75% |
+| `src/services/` | ~70% |
+| `src/components/` | ~49% |
+| Whole repo, including `scripts/`, `functions/` and `Prototype/` | ~45% |
+
+### The thresholds do not enforce anything
+
+`vite.config.js` declares per-directory thresholds that look like a gate:
+
+```js
+'src/services/': { lines: 80, ... },
+'src/utils/':    { lines: 80, ... },
+'src/components/': { lines: 70, ... },
 ```
 
-### Pre-push Hook
-**Purpose**: Ensure tests pass before pushing
-**Execution Time**: <10s
-**Actions**:
-1. Run all unit tests
-2. Verify no lint errors
+Vitest matches those keys as **globs**, and a bare `src/services/` matches no
+files, so none of them apply. `npm run test:ci` exits 0 well below the stated
+bar. Writing them as `src/services/**` would switch enforcement on — and fail
+immediately at the numbers above. Pair that change with a target or a ratchet,
+not with a bare flip.
 
-## CI/CD Pipeline (GitHub Actions)
+## Environment tags
 
-### Stage 1: Unit Tests (gates PR merge)
-**Trigger**: On every PR and push to main
-**Execution Time**: ~2-3 minutes
-**Jobs**:
-- Install dependencies (cached)
-- Run linting
-- Run unit tests in parallel
-- Generate coverage report
-- Upload to Codecov
+Comments marking platform coupling, so the React Native migration can find it.
+Worth preserving and extending:
 
-**Configuration**: `.github/workflows/ci.yml`
+`@environment:firebase`, `@environment:firebase-emulator`,
+`@environment:web-file-api`, `@environment:web-localstorage`,
+`@environment:react`, `@environment:web`, `@environment:none`, plus
+`@critical`.
 
-```yaml
-jobs:
-  unit-tests:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run test:unit
-      - uses: codecov/codecov-action@v3
-        with:
-          files: ./coverage/coverage-final.json
-          flags: unit
-```
+## Firestore rules tests
 
-### Stage 2: Integration Tests (post-merge or nightly)
-**Trigger**: After merge to main, or nightly cron
-**Execution Time**: ~5-10 minutes
-**Jobs**:
-- Run integration tests
-- Test with Firebase emulator (optional)
-- Generate full coverage report
+`npm run test:rules` runs `firebase emulators:exec` against a throwaway project
+id and executes `src/test/rules/` with its own Vitest config
+(`vitest.rules.config.js`). It needs a JDK — CI installs Temurin 21.
 
-## Codecov Integration
+These tests are the reason `firestore.rules` can be deployed automatically:
+`deploy-firestore-rules.yml` publishes rules only after they pass.
 
-### Configuration (`.codecov.yml`)
+`@firebase/rules-unit-testing` is pinned to **3.0.4**. Version 5 requires
+`firebase@^12` and this project is on `^10`.
 
-```yaml
-coverage:
-  status:
-    project:
-      default:
-        target: 80%
-        threshold: 2%
-    patch:
-      default:
-        target: 80%
+## Skipped suites, and why
 
-comment:
-  layout: "condensed_header, condensed_files, condensed_footer"
-  require_changes: true
+Read this before "fixing" a skip. Each one was examined and left off
+deliberately.
 
-flags:
-  unit:
-    paths:
-      - src/utils/
-      - src/services/
-  integration:
-    paths:
-      - src/
-```
+| Skipped | Why |
+|---|---|
+| `src/components/__tests__/AdvancedSearch.test.jsx` — one `describe.skip` | The component's async initialization does not settle inside the test timeout. The failures were timeouts, not assertions; the non-skipped tests in the same file cover the search behaviour. |
+| `src/test/integration/cardSubmission.test.jsx` — whole suite | Needs an App-level harness that does not exist: the real routing, the full context provider chain, and Firebase initialization mocked deeply enough to render the submission flow end to end. |
+| `src/test/integration/syncCodeEntry.test.jsx` — whole suite | Tests the legacy sync-code flow, which Google SSO replaced. Kept rather than deleted because `MigrationService` still has to migrate those collections. |
+| `src/test/utils/duplicateDetection.test.js` — 3 tests | Firebase mock setup: the assertions depend on query call counts and ordering the mock does not reproduce. The functions themselves are covered by the other 15 tests in the file. |
+| `src/test/components/AdminPanel.test.jsx` — 3 tests | Depend on sync metadata and log documents that the mocked Firestore does not return. |
 
-### Badge
-Add to README.md:
-```markdown
-[![codecov](https://codecov.io/gh/YOUR_USERNAME/SWU-Holocron/branch/main/graph/badge.svg)](https://codecov.io/gh/YOUR_USERNAME/SWU-Holocron)
-```
+The common thread in the integration skips is that there is no shared test
+harness for "render the real app with real routing". Building one is the
+prerequisite for un-skipping them, and it is a larger job than any individual
+skip suggests.
 
-## Writing New Tests
+## Git hooks do not run
 
-### Unit Test Template
+`.husky/pre-commit` (`lint-staged`) and `.husky/pre-push` (`npm run test:unit`)
+exist as files and **have never executed**. `npm install`'s `prepare` step runs
+`husky install` from `SWU-Holocron/`, which has no `.git` — that lives one level
+up at the git root — so the install fails, no `.husky/_` shim is written, and
+`core.hooksPath` is never set.
 
-```javascript
-/**
- * @vitest-environment happy-dom
- * @unit @critical
- */
+So CI is the only gate. Run `npm run lint` and `npx vitest run` yourself before
+pushing.
 
-import { describe, it, expect } from 'vitest';
-import { yourFunction } from '../../utils/yourModule';
+## CI
 
-describe('yourFunction', () => {
-  it('should handle normal case', () => {
-    const result = yourFunction('input');
-    expect(result).toBe('expected');
-  });
+`.github/workflows/ci.yml`, at the **git root** — GitHub Actions does not read
+the nested `SWU-Holocron/.github/workflows/`. Every job needs
+`defaults.run.working-directory: SWU-Holocron`, a `cache-dependency-path` for
+`setup-node`, and `HUSKY=0` on `npm ci`.
 
-  it('should handle edge case', () => {
-    expect(() => yourFunction(null)).toThrow('error message');
-  });
-});
-```
+Jobs: lint, test, build, and `rules-tests` (which installs a JDK for the
+emulator).
 
-### Component Test Template
+The lint gate is deliberately `eslint src --ext js,jsx --quiet` — **errors only**.
+Warnings are reported but do not fail the build, because there is a large
+inherited backlog (`react/prop-types`, `no-unused-vars`, `no-console`,
+`react-hooks/exhaustive-deps`). Keeping errors at zero is the actual contract.
 
-```javascript
-/**
- * @vitest-environment happy-dom
- * @unit @component
- */
+Codecov upload is configured without `CODECOV_TOKEN`. The repository is public so
+tokenless upload works, and `fail_ci_if_error` is off, so it cannot fail a build
+either way.
 
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
-import YourComponent from '../../components/YourComponent';
+## Writing tests here
 
-describe('YourComponent', () => {
-  it('should render correctly', () => {
-    render(<YourComponent prop="value" />);
-    expect(screen.getByText('value')).toBeInTheDocument();
-  });
-  
-  it('should handle user interaction', () => {
-    const onClickMock = vi.fn();
-    render(<YourComponent onClick={onClickMock} />);
-    fireEvent.click(screen.getByRole('button'));
-    expect(onClickMock).toHaveBeenCalledTimes(1);
-  });
-});
-```
+The project's stated workflow is test-first: a failing test, the minimum
+implementation, then refactor against a green suite.
 
-## React Native Migration Notes
+Two things happy-dom cannot do, so do not try to test them here:
 
-### Tests Requiring Adaptation
-
-1. **CSV Import/Export** (`@environment:web-file-api`)
-   - Replace `File` API with `react-native-document-picker`
-   - Replace `Blob` / `URL.createObjectURL` with `react-native-fs`
-   - Update tests to mock native modules
-
-2. **localStorage** (`@environment:web-localstorage`)
-   - Replace with `@react-native-async-storage/async-storage`
-   - Update synchronous calls to async/await
-   - Mock AsyncStorage in tests
-
-3. **Image Loading**
-   - Replace `<img>` with `react-native-fast-image`
-   - Update lazy loading tests
-
-4. **Firebase** (`@environment:firebase`)
-   - No changes needed (Firebase SDK supports RN)
-   - Ensure Firestore persistence enabled
-
-### Migration Checklist
-
-- [ ] Update all files tagged with `@environment:web-file-api`
-- [ ] Convert localStorage to AsyncStorage
-- [ ] Replace `<img>` with `<FastImage>`
-- [ ] Update test mocks for native modules
-- [ ] Set up detox for E2E testing in RN
-- [ ] Update CI to test iOS/Android builds
-
-## Troubleshooting
-
-### Tests Timing Out
-- Check for missing `await` on async operations
-- Increase timeout in specific tests: `it('test', async () => { ... }, 10000)`
-
-### Coverage Not Updating
-- Clear coverage directory: `rm -rf coverage`
-- Re-run with `npm run test:ci`
-
-### Mocks Not Working
-- Ensure mocks are defined in `src/test/setup.js`
-- Check mock is before imports in test file
-
-### Firebase Errors in Tests
-- Firebase is mocked by default in `setup.js`
-- For integration tests with emulator, start emulator first: `firebase emulators:start`
-
-## Performance Benchmarks
-
-| Test Suite | Target Time | Current Status |
-|------------|-------------|----------------|
-| Unit Tests (all) | <2s | ✅ 1.8s |
-| Component Tests | <3s | ✅ 2.5s |
-| Integration Tests | <10s | ✅ 8s |
-| Full CI Pipeline | <5min | ✅ 4min |
-
-## Continuous Improvement
-
-### Weekly Reviews
-- Check coverage trends on Codecov
-- Identify slow tests (>500ms)
-- Review failed test patterns
-
-### Monthly Goals
-- Maintain 80%+ coverage on critical paths
-- Keep CI pipeline under 5 minutes
-- Zero flaky tests
-
-## Resources
-
-- [Vitest Docs](https://vitest.dev/)
-- [Testing Library](https://testing-library.com/docs/react-testing-library/intro/)
-- [Codecov Docs](https://docs.codecov.com/)
-- [Husky Docs](https://typicode.github.io/husky/)
+- **Layout.** `getBoundingClientRect` and `offsetHeight` are always 0, so CSS
+  bugs — a collapsed flex height, a sticky offset — are invisible to the suite.
+  Verify those in a browser and record the measurement in the commit message.
+- **Painting.** Compositing and rasterization artifacts are not observable from
+  JavaScript at all.
