@@ -22,6 +22,9 @@ vi.mock('../../services/DeckService', () => ({
 
 vi.mock('../../services/CardService', () => ({
   CardService: {
+    getSetRegistry: vi.fn(async () => [
+      { code: 'SOR', name: 'Spark of Rebellion', isBaseSet: true },
+    ]),
     getCardImage: vi.fn().mockReturnValue('https://example.com/card.jpg'),
   }
 }));
