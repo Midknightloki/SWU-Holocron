@@ -210,6 +210,26 @@ sign-in, plus it reads `isAdmin`/`isContributor` off the user's profile doc. Rol
 are Firestore data, not custom claims, so they must also be enforced in
 `firestore.rules`; the `view === 'admin'` guard in `App.jsx` is UI-only.
 
+**Guest mode is a one-way door, and this is the sharpest edge in the app.** A
+guest is a real Firebase anonymous account with a real uid, so `isSignedIn()` is
+true and the collection is written to Firestore at
+`users/{anonymous-uid}/collection` like anyone else's. But the only thing holding
+that identity is the browser's local storage. Clear site data, switch browsers or
+open the app on a phone and the account is gone — with the collection still
+sitting in Firestore, unreachable and never cleaned up.
+
+Signing in with Google afterwards does not rescue it. `loginWithGoogle` calls
+`signInWithPopup`, which issues a **different uid**; it does not call
+`linkWithPopup`, and nothing migrates the guest collection. So a guest who builds
+a collection and then signs in properly finds it empty.
+
+Roles are never read for anonymous users (`if (u && !u.isAnonymous)`), and
+`redeemInviteCode` rejects them outright, so a guest cannot be a contributor or
+an admin.
+
+The fix, if this is picked up, is `linkWithPopup` when the current user is
+anonymous — which upgrades the account in place and keeps the uid.
+
 ### Constants split
 
 `src/cardData.js` holds pure data (`API_BASE`, `SETS`, `FALLBACK_DATA`) and is
@@ -228,14 +248,14 @@ Tests live in **two** places — `src/test/{utils,services,components,contexts,i
 and `src/components/__tests__/` (the newer deck-feature components). Check both
 before assuming a component is untested.
 
-Coverage thresholds in `vite.config.js` **look** per-directory
-(`src/services/` and `src/utils/` at 80%, `src/components/` at 70%) but are
-inert: Vitest matches these keys as globs, and a bare `src/services/` matches no
-files. Real coverage is utils ~89%, contexts ~75%, services ~70%, components
-~49%, and ~45% across the whole repo (which counts `scripts/`, `functions/` and
-`Prototype/` at zero), so `npm run test:ci` exits 0 well below the stated bar.
-Writing them as `src/services/**` would switch enforcement on — and immediately
-fail.
+Coverage thresholds in `vite.config.js` used to be inert: Vitest matches those
+keys as globs, and they were written as bare directories (`src/services/`), which
+match no files, so `npm run test:ci` passed at any coverage while appearing to
+demand 80%. They are now real globs with floors set a few points under the
+measured numbers — utils ~89%, contexts ~75%, services ~70%, components ~49%
+(and ~45% across the whole repo, which counts `scripts/`, `functions/` and
+`Prototype/` at zero). It is a ratchet: **raise a floor when coverage rises,
+never lower one to make a run pass.**
 
 `test:unit` and `test:integration` are currently the same command, so "unit" runs
 integration tests too. Several suites are deliberately skipped — AdvancedSearch

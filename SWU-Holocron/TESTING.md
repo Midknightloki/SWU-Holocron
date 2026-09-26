@@ -61,21 +61,24 @@ Measured, as of the last run:
 | `src/components/` | ~49% |
 | Whole repo, including `scripts/`, `functions/` and `Prototype/` | ~45% |
 
-### The thresholds do not enforce anything
+### The thresholds are a ratchet
 
-`vite.config.js` declares per-directory thresholds that look like a gate:
+They enforce, as of the fix below. They used to be decorative: Vitest matches
+threshold keys as **globs**, and they were written as bare directories
+(`'src/services/'`), which match no files. So `npm run test:ci` passed at any
+coverage at all while appearing to demand 80%.
 
-```js
-'src/services/': { lines: 80, ... },
-'src/utils/':    { lines: 80, ... },
-'src/components/': { lines: 70, ... },
-```
+They are now `src/utils/**`, `src/services/**`, `src/contexts/**` and
+`src/components/**`, with each floor a few points under what the suite actually
+achieves. That catches a regression without failing today.
 
-Vitest matches those keys as **globs**, and a bare `src/services/` matches no
-files, so none of them apply. `npm run test:ci` exits 0 well below the stated
-bar. Writing them as `src/services/**` would switch enforcement on — and fail
-immediately at the numbers above. Pair that change with a target or a ratchet,
-not with a bare flip.
+**Raise a floor when you raise the coverage. Do not lower one to make a run go
+green** — that is how the numbers became decorative the first time.
+
+The gate was verified in both directions: the real floors pass, and a deliberately
+impossible one fails with
+`ERROR: Coverage for lines (89.1%) does not meet "src/utils/**" threshold (99%)`
+and exit 1.
 
 ## Environment tags
 

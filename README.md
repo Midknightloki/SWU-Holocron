@@ -189,7 +189,11 @@ Deployment details, manual procedures and past incidents are in the
   schedule yet
 - `localStorage` card caches have no expiry, so a re-seed may not be visible
   until a forced reload
-- Guest mode is local to one browser; nothing syncs until you sign in
+- **Guest mode is tied to one browser.** A guest collection is saved to the
+  server, but the account that owns it exists only in that browser's storage:
+  clear site data or switch device and it cannot be recovered. Signing in with
+  Google afterwards creates a separate account and does not carry a guest
+  collection over. Sign in first if you intend to keep anything.
 - iOS Safari supports a reduced set of PWA features
 - No error boundaries: a render error in any component blanks the app
 
