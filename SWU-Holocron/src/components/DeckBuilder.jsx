@@ -979,15 +979,20 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
           </h4>
           <div className="flex items-end gap-1 h-20">
             {costCurve.map((count, cost) => (
-              <div key={cost} className="flex-1 flex flex-col items-center gap-1">
+              <div key={cost} className="flex-1 h-full flex flex-col items-center gap-1">
+                {/* Track: a definite height for the bar's percentage to resolve against. */}
                 <div
-                  className="w-full bg-yellow-500 rounded-t transition-all hover:bg-yellow-400"
-                  style={{
-                    height: maxCostInCurve > 0 ? `${(count / maxCostInCurve) * 100}%` : '0%'
-                  }}
-                  title={`Cost ${cost}: ${count} cards`}
-                />
-                <span className="text-xs text-gray-500 font-semibold">{cost}+</span>
+                  className="relative w-full flex-1"
+                  title={`Cost ${cost === 7 ? '7+' : cost}: ${count} cards`}
+                >
+                  <div
+                    className="absolute bottom-0 inset-x-0 bg-yellow-500 rounded-t transition-all hover:bg-yellow-400"
+                    style={{
+                      height: maxCostInCurve > 0 ? `${(count / maxCostInCurve) * 100}%` : '0%'
+                    }}
+                  />
+                </div>
+                <span className="text-xs text-gray-500 font-semibold">{cost === 7 ? '7+' : cost}</span>
               </div>
             ))}
           </div>
@@ -1242,12 +1247,18 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
             </h4>
             <div className="flex items-end gap-2 h-48 px-4">
               {costCurve.map((count, cost) => (
-                <div key={cost} className="flex-1 flex flex-col items-center gap-2 group">
+                <div key={cost} className="flex-1 h-full flex flex-col items-center gap-2 group">
+                  {/* Track: a definite height for the bar's percentage to resolve against. */}
                   <div
-                    className="w-full bg-yellow-500/80 rounded-t-lg transition-all group-hover:bg-yellow-500 relative"
-                    style={{ height: maxCostInCurve > 0 ? `${(count / maxCostInCurve) * 100}%` : '0%' }}
+                    className="relative w-full flex-1"
+                    title={`Cost ${cost === 7 ? '7+' : cost}: ${count} cards`}
                   >
-                    {count > 0 && <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-xs font-bold text-white">{count}</span>}
+                    <div
+                      className="absolute bottom-0 inset-x-0 bg-yellow-500/80 rounded-t-lg transition-all group-hover:bg-yellow-500"
+                      style={{ height: maxCostInCurve > 0 ? `${(count / maxCostInCurve) * 100}%` : '0%' }}
+                    >
+                      {count > 0 && <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-xs font-bold text-white">{count}</span>}
+                    </div>
                   </div>
                   <span className="text-xs font-bold text-gray-500">{cost === 7 ? '7+' : cost}</span>
                 </div>
