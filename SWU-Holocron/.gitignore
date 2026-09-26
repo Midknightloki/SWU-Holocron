@@ -161,3 +161,4 @@ firestore-debug.log
 firebase-debug.log
 ui-debug.log
 pubsub-debug.log
+live-deployed.rules
