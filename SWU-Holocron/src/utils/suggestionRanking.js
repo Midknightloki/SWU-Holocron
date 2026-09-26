@@ -28,6 +28,11 @@ const W_OWNED = 10000;
 // already in the binder still comes first.
 const W_CONCEPT_EACH = 1500;
 const W_CONCEPT_CAP = 2;
+// Rules-text matching is fuzzier than a trait or type name, so it scores lower
+// than a vocabulary hit -- but still above every card-intrinsic signal, because
+// a theme the player named is a stronger wish than an aspect coincidence.
+const W_CONCEPT_TEXT_EACH = 1300;
+const W_CONCEPT_TEXT_CAP = 2;
 // Aspect tiers, best first. Aspect requirements are a balancing cost in SWU: a
 // card demanding two aspects the deck has is usually stronger for its cost,
 // while an aspect-neutral card is playable anywhere and pays for that in cost
@@ -91,11 +96,46 @@ export function extractConceptTerms(conceptText, vocabulary) {
   return [...found];
 }
 
+// Words too common to be a useful signal: they appear in the rules text of
+// almost every card, or carry no theme at all.
+const CONCEPT_STOPWORDS = new Set([
+  'deck', 'deckbuilding', 'build', 'building', 'cards', 'card', 'play', 'playing',
+  'that', 'this', 'with', 'from', 'into', 'your', 'you', 'them', 'they', 'when',
+  'some', 'more', 'most', 'lots', 'want', 'like', 'good', 'best', 'really',
+  'theme', 'themed', 'strategy', 'around', 'focus', 'focused', 'using', 'use',
+]);
+
+/**
+ * Significant words from a deck concept, for matching against card rules text.
+ *
+ * Mechanics such as "indirect damage" live in rules text, not in traits or
+ * keywords: against the live database "indirect" appears in the rules text of
+ * 23 cards and in zero traits and zero keywords. A vocabulary built from
+ * traits, types and keywords is blind to that whole class of theme, so the
+ * words themselves are matched against the text as well.
+ *
+ * @param {string} conceptText
+ * @returns {string[]} lower-cased significant words, de-duplicated
+ */
+export function extractConceptPhrases(conceptText) {
+  const text = lower(conceptText);
+  if (!text) return [];
+
+  const words = text.split(/[^a-z0-9]+/).filter(Boolean);
+  const out = new Set();
+  for (const word of words) {
+    if (word.length < 4) continue;
+    if (CONCEPT_STOPWORDS.has(word)) continue;
+    out.add(word);
+  }
+  return [...out];
+}
+
 /**
  * Score a single candidate. Higher is better.
  */
 function scoreCard(card, ctx) {
-  const { deckAspectSet, deckTraitSet, ownedIds, setIndexOf, leaderIndex, deckTypeSet, conceptTermSet } = ctx;
+  const { deckAspectSet, deckTraitSet, ownedIds, setIndexOf, leaderIndex, deckTypeSet, conceptTermSet, conceptPhraseList } = ctx;
   let score = 0;
 
   if (ownedIds.has(card.id)) score += W_OWNED;
@@ -109,6 +149,18 @@ function scoreCard(card, ctx) {
       if (searchable.includes(term)) hits += 1;
     }
     score += Math.min(hits, W_CONCEPT_CAP) * W_CONCEPT_EACH;
+  }
+
+  // Themes described in rules text rather than named as traits.
+  if (conceptPhraseList.length > 0) {
+    const body = lower(card.text);
+    if (body) {
+      let textHits = 0;
+      for (const phrase of conceptPhraseList) {
+        if (body.includes(phrase)) textHits += 1;
+      }
+      score += Math.min(textHits, W_CONCEPT_TEXT_CAP) * W_CONCEPT_TEXT_EACH;
+    }
   }
 
   // Aspect fit. Counted with multiplicity, so a card costing the same aspect
@@ -164,6 +216,7 @@ export function rankCandidates({
   deckTraits = [],
   deckTypes = [],
   conceptTerms = [],
+  conceptPhrases = [],
   ownedIds = new Set(),
   leaderSetCode = '',
   setOrder = [],
@@ -179,6 +232,7 @@ export function rankCandidates({
     deckTraitSet: new Set(deckTraits.map(lower).filter(Boolean)),
     deckTypeSet: new Set(deckTypes.map(lower).filter(Boolean)),
     conceptTermSet: new Set(asArray(conceptTerms).map(lower).filter(Boolean)),
+    conceptPhraseList: asArray(conceptPhrases).map(lower).filter(Boolean),
     ownedIds: ownedIds instanceof Set ? ownedIds : new Set(ownedIds || []),
     setIndexOf,
     leaderIndex,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { rankCandidates, extractConceptTerms } from '../../utils/suggestionRanking.js';
+import { rankCandidates, extractConceptTerms, extractConceptPhrases } from '../../utils/suggestionRanking.js';
 
 /**
  * Candidate selection for AI deck suggestions.
@@ -336,5 +336,89 @@ describe('rankCandidates: deck concept', () => {
     const withEmpty = rankCandidates({ ...base, cards, conceptTerms: [] }).map((c) => c.id);
 
     expect(withEmpty).toEqual(withNone);
+  });
+});
+
+describe('extractConceptPhrases', () => {
+  // Themes like "indirect damage" are mechanics described in rules text, not
+  // traits or keywords. Against the live database "indirect" appears in the
+  // rules text of 23 cards and in zero traits and zero keywords, so a
+  // vocabulary built from traits/types/keywords could never see it.
+
+  it('keeps the meaningful words and drops the filler', () => {
+    // "theme" is filler: it describes the sentence, not the cards.
+    expect(extractConceptPhrases('indirect damage theme')).toEqual(['indirect', 'damage']);
+  });
+
+  it('drops filler words that would match almost any card', () => {
+    const out = extractConceptPhrases('a deck that can with some cards');
+    expect(out).not.toContain('deck');
+    expect(out).not.toContain('that');
+    expect(out).not.toContain('with');
+    expect(out).not.toContain('some');
+  });
+
+  it('drops very short words', () => {
+    expect(extractConceptPhrases('go up to it')).toEqual([]);
+  });
+
+  it('de-duplicates and lower-cases', () => {
+    expect(extractConceptPhrases('Damage DAMAGE damage')).toEqual(['damage']);
+  });
+
+  it('returns nothing for empty input', () => {
+    expect(extractConceptPhrases('')).toEqual([]);
+    expect(extractConceptPhrases(null)).toEqual([]);
+  });
+});
+
+describe('rankCandidates: concept phrases in rules text', () => {
+  it('ranks a card whose rules text mentions the theme above one that does not', () => {
+    const onTheme = card({ id: 'LOF_100', aspects: [], text: 'Deal 2 indirect damage to a player.' });
+    const offTheme = card({ id: 'LOF_101', aspects: ['Villainy'], text: 'Draw a card.' });
+
+    const result = rankCandidates({
+      ...base,
+      cards: [offTheme, onTheme],
+      conceptPhrases: ['indirect', 'damage'],
+    });
+
+    expect(result[0].id).toBe('LOF_100');
+  });
+
+  it('still ranks a trait/type concept match above a rules-text one', () => {
+    // Vocabulary terms are a precise signal; text matching is fuzzy.
+    const byTrait = card({ id: 'LOF_110', traits: ['Vehicle'], text: '' });
+    const byText = card({ id: 'LOF_111', traits: [], text: 'vehicle vehicle vehicle' });
+
+    const result = rankCandidates({
+      ...base,
+      cards: [byText, byTrait],
+      conceptTerms: ['vehicle'],
+      conceptPhrases: ['vehicle'],
+    });
+
+    expect(result[0].id).toBe('LOF_110');
+  });
+
+  it('keeps ownership above any concept signal', () => {
+    const owned = card({ id: 'SOR_120', aspects: ['Heroism'], text: '' });
+    const onTheme = card({ id: 'LOF_121', aspects: ['Villainy'], text: 'indirect damage' });
+
+    const result = rankCandidates({
+      ...base,
+      cards: [onTheme, owned],
+      ownedIds: new Set(['SOR_120']),
+      conceptPhrases: ['indirect', 'damage'],
+    });
+
+    expect(result[0].id).toBe('SOR_120');
+  });
+
+  it('changes nothing when no phrases are supplied', () => {
+    const cards = [card({ id: 'LOF_130', text: 'indirect damage' }), card({ id: 'LOF_131' })];
+    const a = rankCandidates({ ...base, cards }).map((c) => c.id);
+    const b = rankCandidates({ ...base, cards, conceptPhrases: [] }).map((c) => c.id);
+    expect(a).toEqual(b);
   });
 });

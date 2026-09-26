@@ -239,6 +239,47 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
         )}
 
         <div className={embedded ? 'py-2' : 'max-w-7xl mx-auto px-4 py-6'}>
+          {/* Sticky search. This sits OUTSIDE the grid on purpose: a sticky
+              element only sticks within its parent box, and inside the filters
+              column -- which is short once filters are collapsed -- it had almost
+              no room to travel and scrolled away with the results. */}
+          <div className="sticky top-0 z-20 -mx-1 px-1 pt-1 pb-3 bg-gray-800/95 backdrop-blur-sm space-y-3">
+          <div>
+            <label className="block text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">
+              Search Text
+            </label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+              <input
+                type="text"
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                placeholder="Name, text, traits..."
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2 pl-10 pr-4 text-white placeholder:text-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+
+          {/* Filters Toggle Button (Mobile) */}
+          <button
+            onClick={() => setFiltersExpanded(!filtersExpanded)}
+            className="w-full flex items-center justify-between p-4 bg-gray-800 border border-gray-700 rounded-lg text-white font-semibold hover:bg-gray-750 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <Filter size={20} />
+              <span>Advanced Filters</span>
+              {activeFiltersCount > 0 && (
+                <span className="bg-blue-600 text-xs px-2 py-0.5 rounded-full">
+                  {activeFiltersCount}
+                </span>
+              )}
+            </div>
+            <ChevronDown
+              size={20}
+              className={`transition-transform ${filtersExpanded ? 'rotate-180' : ''}`}
+            />
+          </button>
+          </div>
           <div className={`grid gap-6 ${embedded ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-3'}`}>
             {/* Filters Panel */}
             <div className="space-y-6 lg:col-span-1">
@@ -246,43 +287,6 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
                   scroll container. Previously they scrolled away with the
                   filters, so adjusting a filter meant scrolling up, then back
                   down to the results -- 30-50 times per deck. */}
-              <div className="sticky top-0 z-20 -mx-1 px-1 pt-1 pb-3 bg-gray-800/95 backdrop-blur-sm space-y-3">
-              <div>
-                <label className="block text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">
-                  Search Text
-                </label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-                  <input
-                    type="text"
-                    value={searchText}
-                    onChange={(e) => setSearchText(e.target.value)}
-                    placeholder="Name, text, traits..."
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2 pl-10 pr-4 text-white placeholder:text-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-
-              {/* Filters Toggle Button (Mobile) */}
-              <button
-                onClick={() => setFiltersExpanded(!filtersExpanded)}
-                className="w-full flex items-center justify-between p-4 bg-gray-800 border border-gray-700 rounded-lg text-white font-semibold hover:bg-gray-750 transition-colors"
-              >
-                <div className="flex items-center gap-2">
-                  <Filter size={20} />
-                  <span>Advanced Filters</span>
-                  {activeFiltersCount > 0 && (
-                    <span className="bg-blue-600 text-xs px-2 py-0.5 rounded-full">
-                      {activeFiltersCount}
-                    </span>
-                  )}
-                </div>
-                <ChevronDown
-                  size={20}
-                  className={`transition-transform ${filtersExpanded ? 'rotate-180' : ''}`}
-                />
-              </button>
-              </div>
 
               {/* Collapsible Filters Content */}
               <div className={`space-y-6 ${filtersExpanded ? 'block' : 'hidden'}`}>
