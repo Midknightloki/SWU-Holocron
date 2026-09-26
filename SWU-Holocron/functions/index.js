@@ -13,6 +13,15 @@ const APP_ID = "swu-holocron-v1";
 // account through Application Default Credentials, so there is no secret to
 // store, rotate or leak. Billing goes through this GCP project.
 const VERTEX_LOCATION = process.env.GOOGLE_CLOUD_LOCATION || "us-central1";
+
+// 2nd-gen functions run on Cloud Run, which does NOT inject GOOGLE_CLOUD_PROJECT
+// the way 1st-gen did. Left to that variable alone the SDK receives undefined
+// and throws "Authentication is not set up" at construction.
+const GCP_PROJECT =
+  process.env.GOOGLE_CLOUD_PROJECT ||
+  process.env.GCLOUD_PROJECT ||
+  process.env.GCP_PROJECT ||
+  "swu-holocron-93a18";
 const GEMINI_MODEL = "gemini-2.5-flash";
 
 setGlobalOptions({ maxInstances: 10 });
@@ -55,7 +64,7 @@ exports.getCardSuggestions = onCall(
     const { GoogleGenAI } = require("@google/genai");
     const ai = new GoogleGenAI({
       enterprise: true,
-      project: process.env.GOOGLE_CLOUD_PROJECT,
+      project: GCP_PROJECT,
       location: VERTEX_LOCATION,
     });
 
