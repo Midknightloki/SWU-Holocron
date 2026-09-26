@@ -432,7 +432,7 @@ export default function App() {
   };
 
   // Grid Quantity Handler
-  const handleGridQuantityChange = async (card, delta) => {
+  const handleGridQuantityChange = async (card, delta, { isFoil = false } = {}) => {
     if (!db || !user) {
       console.error('Cannot update: no db or user');
       return;
@@ -444,7 +444,7 @@ export default function App() {
       return;
     }
 
-    const collId = getCollectionId(card.Set, card.Number, false); // Default to standard
+    const collId = getCollectionId(card.Set, card.Number, isFoil);
     const currentQty = collectionData[collId]?.quantity || 0;
     const newQty = currentQty + delta;
 
@@ -455,10 +455,15 @@ export default function App() {
       if (newQty > 0) {
         await setDoc(docRef, {
           quantity: newQty,
-          set: activeSet,
+          // The card's own set, not the active filter: callers outside the grid
+          // (the deck builder's shopping list) pass cards from any set, and the
+          // 'ALL'/'OTHER' filters are not set codes. The doc id was always keyed
+          // on card.Set, so this field disagreeing with it was a latent bug --
+          // the legacy migration re-keys documents from it.
+          set: card.Set || activeSet,
           number: card.Number,
           name: card.Name,
-          isFoil: false,
+          isFoil,
           timestamp: Date.now()
         }, { merge: true });
         console.log('✓ Card updated successfully');
@@ -936,6 +941,7 @@ export default function App() {
                 <DeckBuilder
                   deck={activeDeck}
                   collectionData={collectionData}
+                  onUpdateQuantity={handleGridQuantityChange}
                   onClose={() => {
                     setActiveDeck(null);
                     setView('decks');

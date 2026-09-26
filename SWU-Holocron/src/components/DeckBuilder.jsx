@@ -36,7 +36,7 @@ const TAG_CATEGORIES = [
  * Two-panel layout: search (left) and deck list (right)
  * Enforces SWU deck rules: 1 Leader, 1 Base, 50 main deck cards, max 3x per card
  */
-export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) {
+export default function DeckBuilder({ deck, collectionData, onClose, onSaved, onUpdateQuantity }) {
   const { user } = useAuth();
 
   // Wizard state
@@ -1965,6 +1965,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
                         deck={currentDeckSnapshot}
                         collectionData={collectionData}
                         cardDatabase={allCards}
+                        onUpdateQuantity={onUpdateQuantity}
                       />
                     </div>
                   )}
@@ -2090,6 +2091,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
                           deck={currentDeckSnapshot}
                           collectionData={collectionData}
                           cardDatabase={allCards}
+                          onUpdateQuantity={onUpdateQuantity}
                         />
                       </div>
                     )}
