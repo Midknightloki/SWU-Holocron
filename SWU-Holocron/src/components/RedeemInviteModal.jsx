@@ -84,7 +84,7 @@ export default function RedeemInviteModal({ onClose, onRedeemed, isAnonymous }) 
               id="invite-code"
               value={code}
               onChange={(e) => setCode(e.target.value)}
-              placeholder="e.g. HOLOCRON-4F2A"
+              placeholder="e.g. H7QK-3MRT-XB29"
               autoComplete="off"
               autoFocus
               className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:border-yellow-500/50 focus:outline-none"

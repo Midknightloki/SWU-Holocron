@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Database, RefreshCw, Clock, CheckCircle, XCircle, AlertTriangle,
-  Shield, Plus, Trash2, Edit2, Package, Wand2, Users, Save, X, Mail
+  Shield, Plus, Trash2, Edit2, Package, Wand2, Users, Save, X, Mail, Copy, Ticket
 } from 'lucide-react';
 import { db, APP_ID } from '../firebase';
 import { SETS } from '../constants';
 import { collection, doc, getDoc, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { GuidedModeService } from '../services/GuidedModeService';
+import { inviteStatus } from '../utils/inviteCodes';
 import { CardService } from '../services/CardService';
 
 const PACKET_ROLES = ['Ramp', 'Removal', 'Draw', 'Aggression', 'Control', 'Combo', 'Utility', 'Tech'];
@@ -340,6 +341,9 @@ export default function AdminPanel() {
   const [inviteError, setInviteError] = useState('');
   const [inviteSaving, setInviteSaving] = useState(false);
   const [invitesLoading, setInvitesLoading] = useState(false);
+  const [inviteExpiryDays, setInviteExpiryDays] = useState(14);
+  const [issuedCode, setIssuedCode] = useState('');
+  const [copiedCode, setCopiedCode] = useState('');
 
   useEffect(() => {
     loadDashboardData();
@@ -459,13 +463,19 @@ export default function AdminPanel() {
 
   const handleSendInvite = async () => {
     setInviteError('');
-    if (!inviteEmail.trim() || !inviteEmail.includes('@')) {
-      setInviteError('Enter a valid email address.');
+    // The label is optional -- an invite is redeemed with its code, not by
+    // matching an address -- but a malformed one is worth catching.
+    if (inviteEmail.trim() && !inviteEmail.includes('@')) {
+      setInviteError('That does not look like an email address. Leave it blank if you would rather not label the invite.');
       return;
     }
     setInviteSaving(true);
     try {
-      await GuidedModeService.createInvite(user.uid, inviteEmail);
+      const code = await GuidedModeService.createInvite(user.uid, {
+        email: inviteEmail,
+        expiresInDays: inviteExpiryDays,
+      });
+      setIssuedCode(code);
       setInviteEmail('');
       await loadInvites();
     } catch (err) {
@@ -475,8 +485,22 @@ export default function AdminPanel() {
     }
   };
 
+  const handleCopyCode = async (code) => {
+    try {
+      // @environment:web — clipboard is unavailable over plain http and when
+      // permission is refused, so the code stays selectable on screen either way.
+      await navigator.clipboard.writeText(code);
+      setCopiedCode(code);
+      setTimeout(() => setCopiedCode(''), 2000);
+    } catch (err) {
+      console.error('Could not copy the invite code:', err);
+    }
+  };
+
   const handleDeleteInvite = async (inviteId) => {
+    if (!window.confirm('Revoke this invite? The code stops working immediately.')) return;
     await GuidedModeService.deleteInvite(inviteId);
+    if (issuedCode === inviteId) setIssuedCode('');
     await loadInvites();
   };
 
@@ -782,57 +806,141 @@ export default function AdminPanel() {
           <div className="space-y-6">
             <h2 className="text-xl font-bold text-white flex items-center gap-2"><Users size={20} className="text-purple-400" /> Contributor Invites</h2>
             <p className="text-gray-400 text-sm">
-              Invite a user by email. When they next log in with that email address, they will automatically receive contributor access to manage shells and packets.
+              Issue a code and send it to the person yourself. They sign in with Google,
+              open <span className="text-gray-300">Redeem Invite</span>, and enter the code
+              to gain contributor access to shells and packets. The code is the invite:
+              access is granted on redemption, not by matching an email address, and a code
+              can only be used once.
             </p>
 
             <div className="bg-gray-800 border border-gray-700 rounded-xl p-6 space-y-4">
-              <h3 className="text-base font-semibold text-white flex items-center gap-2"><Mail size={16} /> Send Invite</h3>
-              <div className="flex gap-3">
-                <input
-                  type="email"
-                  value={inviteEmail}
-                  onChange={e => { setInviteEmail(e.target.value); setInviteError(''); }}
-                  placeholder="contributor@example.com"
-                  className="flex-1 px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-purple-500"
-                  style={{ minHeight: '44px' }}
-                />
-                <button
-                  onClick={handleSendInvite}
-                  disabled={inviteSaving}
-                  className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-700 text-white font-bold rounded-lg text-sm"
-                  style={{ minHeight: '44px' }}
-                >
-                  {inviteSaving ? <RefreshCw size={14} className="animate-spin" /> : <Plus size={14} />}
-                  Invite
-                </button>
+              <h3 className="text-base font-semibold text-white flex items-center gap-2"><Ticket size={16} /> Issue a Code</h3>
+
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="flex-1">
+                  <label className="block text-xs uppercase tracking-wider text-gray-500 mb-1" htmlFor="invite-label">
+                    Who is it for? <span className="text-gray-600">(optional label)</span>
+                  </label>
+                  <input
+                    id="invite-label"
+                    type="email"
+                    value={inviteEmail}
+                    onChange={e => { setInviteEmail(e.target.value); setInviteError(''); }}
+                    placeholder="contributor@example.com"
+                    className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-purple-500"
+                    style={{ minHeight: '44px' }}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs uppercase tracking-wider text-gray-500 mb-1" htmlFor="invite-expiry">
+                    Expires
+                  </label>
+                  <select
+                    id="invite-expiry"
+                    value={inviteExpiryDays}
+                    onChange={e => setInviteExpiryDays(Number(e.target.value))}
+                    className="w-full sm:w-auto px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-purple-500"
+                    style={{ minHeight: '44px' }}
+                  >
+                    <option value={7}>in 7 days</option>
+                    <option value={14}>in 14 days</option>
+                    <option value={30}>in 30 days</option>
+                    <option value={0}>never</option>
+                  </select>
+                </div>
+                <div className="flex items-end">
+                  <button
+                    onClick={handleSendInvite}
+                    disabled={inviteSaving}
+                    className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-700 text-white font-bold rounded-lg text-sm"
+                    style={{ minHeight: '44px' }}
+                  >
+                    {inviteSaving ? <RefreshCw size={14} className="animate-spin" /> : <Plus size={14} />}
+                    Issue
+                  </button>
+                </div>
               </div>
+
               {inviteError && <p className="text-red-400 text-sm">{inviteError}</p>}
+
+              {issuedCode && (
+                <div className="bg-purple-500/10 border border-purple-500/40 rounded-lg p-4 space-y-2">
+                  <p className="text-xs uppercase tracking-wider text-purple-300 font-bold">New code — send this to them</p>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <code className="text-2xl font-mono font-bold text-white tracking-widest select-all">{issuedCode}</code>
+                    <button
+                      onClick={() => handleCopyCode(issuedCode)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-200"
+                    >
+                      {copiedCode === issuedCode ? <CheckCircle size={14} className="text-green-400" /> : <Copy size={14} />}
+                      {copiedCode === issuedCode ? 'Copied' : 'Copy'}
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-400">
+                    Copy it now — it stays listed below, but nothing emails it for you.
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
-              <h3 className="text-base font-semibold text-white mb-4">Pending Invites</h3>
+              <h3 className="text-base font-semibold text-white mb-4">Invites</h3>
               {invitesLoading ? (
                 <div className="flex justify-center py-8"><RefreshCw size={20} className="animate-spin text-gray-400" /></div>
               ) : invites.length === 0 ? (
-                <p className="text-gray-500 text-center py-6">No pending invites.</p>
+                <p className="text-gray-500 text-center py-6">No invites yet.</p>
               ) : (
                 <div className="space-y-2">
-                  {invites.map(invite => (
-                    <div key={invite.id} className="flex items-center justify-between bg-gray-900 px-4 py-3 rounded-lg border border-gray-700">
-                      <div>
-                        <p className="text-white text-sm font-medium">{invite.email}</p>
-                        {invite.createdAt && (
-                          <p className="text-gray-500 text-xs mt-0.5">Invited {new Date(invite.createdAt?.toDate?.() || invite.createdAt).toLocaleDateString()}</p>
-                        )}
+                  {invites.map(invite => {
+                    const status = inviteStatus(invite);
+                    const badge = {
+                      claimed: { label: 'Claimed', className: 'bg-green-500/20 text-green-300 border-green-500/40' },
+                      expired: { label: 'Expired', className: 'bg-gray-700 text-gray-400 border-gray-600' },
+                      pending: { label: 'Pending', className: 'bg-amber-500/20 text-amber-300 border-amber-500/40' },
+                    }[status];
+
+                    return (
+                      <div key={invite.id} className="flex items-center justify-between gap-3 bg-gray-900 px-4 py-3 rounded-lg border border-gray-700">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <code className="font-mono text-sm text-white tracking-wider select-all">{invite.id}</code>
+                            <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${badge.className}`}>
+                              {badge.label}
+                            </span>
+                          </div>
+                          <p className="text-gray-500 text-xs mt-1 flex items-center gap-2 flex-wrap">
+                            {invite.email && <span className="flex items-center gap-1"><Mail size={11} /> {invite.email}</span>}
+                            {invite.createdAt && (
+                              <span>Issued {new Date(invite.createdAt?.toDate?.() || invite.createdAt).toLocaleDateString()}</span>
+                            )}
+                            {typeof invite.expiresAt === 'number' && status !== 'claimed' && (
+                              <span className="flex items-center gap-1"><Clock size={11} /> {new Date(invite.expiresAt).toLocaleDateString()}</span>
+                            )}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          {status === 'pending' && (
+                            <button
+                              onClick={() => handleCopyCode(invite.id)}
+                              title="Copy code"
+                              aria-label={`Copy code ${invite.id}`}
+                              className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-white hover:bg-gray-700 rounded"
+                            >
+                              {copiedCode === invite.id ? <CheckCircle size={14} className="text-green-400" /> : <Copy size={14} />}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleDeleteInvite(invite.id)}
+                            title="Revoke invite"
+                            aria-label={`Revoke invite ${invite.id}`}
+                            className="w-8 h-8 flex items-center justify-center text-red-400 hover:bg-red-500/20 rounded"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
                       </div>
-                      <button
-                        onClick={() => handleDeleteInvite(invite.id)}
-                        className="w-8 h-8 flex items-center justify-center text-red-400 hover:bg-red-500/20 rounded"
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
