@@ -76,11 +76,10 @@ npm install
 npm run dev            # http://localhost:5173
 ```
 
-`npm install` exits non-zero on its `prepare` step, which runs `husky install`
-and cannot find `.git` from the nested directory. Dependencies still install.
-Set `HUSKY=0` to silence it. The consequence is that the git hooks have never
-been active, so **run `npm run lint` and `npx vitest run` yourself before
-pushing** — CI is the only gate.
+That `npm install` also installs the git hooks: `pre-commit` lints and tests
+staged files, `pre-push` runs the suite. Set `HUSKY=0` to skip them. CI is still
+the authoritative gate, so `npm run lint` and `npx vitest run` should pass before
+you push either way.
 
 Firebase configuration lives in `src/firebase.js`. See
 [FIREBASE-SETUP-GUIDE.md](./SWU-Holocron/docs/FIREBASE-SETUP-GUIDE.md) to point
