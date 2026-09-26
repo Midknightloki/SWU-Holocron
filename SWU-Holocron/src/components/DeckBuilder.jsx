@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   Save, X, Plus, Minus, Search, BarChart3, CheckCircle, AlertCircle,
   Swords, ChevronDown, Loader2, ShoppingCart, Download, Upload, Copy, ClipboardPaste,
@@ -85,6 +85,17 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
   const [deckTags, setDeckTags] = useState(deck?.tags || []);
   const [tagInput, setTagInput] = useState('');
   const [showTagSuggestions, setShowTagSuggestions] = useState(false);
+  const tagInputRef = useRef(null);
+  // Blur closes the suggestion list on a delay so a click on a suggestion lands
+  // first. Refocusing has to cancel that, or the list closes under the user.
+  const tagBlurTimer = useRef(null);
+  const cancelTagBlur = useCallback(() => {
+    if (tagBlurTimer.current) {
+      clearTimeout(tagBlurTimer.current);
+      tagBlurTimer.current = null;
+    }
+  }, []);
+  useEffect(() => cancelTagBlur, [cancelTagBlur]);
 
   // Guided mode state: null | 'shell' | 'packets'
   const [guidedStep, setGuidedStep] = useState(null);
@@ -470,8 +481,13 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     if (!t || deckTags.includes(t)) return;
     setDeckTags(prev => [...prev, t]);
     setTagInput('');
-    setShowTagSuggestions(false);
-  }, [deckTags]);
+    // Stay open. Closing here stranded the user: the input keeps focus, so
+    // `onFocus` cannot fire again, and the only way back to the list was to
+    // click away and click back. Tags are usually added in twos and threes.
+    setShowTagSuggestions(true);
+    cancelTagBlur();
+    tagInputRef.current?.focus();
+  }, [deckTags, cancelTagBlur]);
 
   const handleRemoveTag = useCallback((tag) => {
     setDeckTags(prev => prev.filter(t => t !== tag));
@@ -1019,11 +1035,15 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
         )}
         <div className="relative">
           <input
+            ref={tagInputRef}
             type="text"
             value={tagInput}
             onChange={(e) => { setTagInput(e.target.value); setShowTagSuggestions(true); }}
-            onFocus={() => setShowTagSuggestions(true)}
-            onBlur={() => setTimeout(() => setShowTagSuggestions(false), 150)}
+            onFocus={() => { cancelTagBlur(); setShowTagSuggestions(true); }}
+            onBlur={() => {
+              cancelTagBlur();
+              tagBlurTimer.current = setTimeout(() => setShowTagSuggestions(false), 150);
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') { e.preventDefault(); if (tagInput.trim()) handleAddTag(tagInput); }
               if (e.key === 'Escape') setShowTagSuggestions(false);
