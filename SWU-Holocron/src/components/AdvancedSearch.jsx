@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Search, X, Filter, Loader2, Tag, Plus, Minus, ChevronDown } from 'lucide-react';
 import { SETS, ASPECTS } from '../constants';
+import { rankSearchResults } from '../utils/cardSearchRanking';
 import { CardService } from '../services/CardService';
 import { getPlaysetQuantity } from '../utils/collectionHelpers';
 
@@ -149,12 +150,10 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
         }
       }
 
-      setSearchResults(uniqueCards.sort((a, b) => {
-        // Sort by name first, then by set
-        const nameCompare = a.Name.localeCompare(b.Name);
-        if (nameCompare !== 0) return nameCompare;
-        return a.Set.localeCompare(b.Set);
-      }));
+      // Order by relevance, not alphabetically. A trait match used to rank as
+      // highly as a name match, so "trooper" buried the 29 cards named trooper
+      // among 178 that merely carry the trait.
+      setSearchResults(rankSearchResults(uniqueCards, searchText));
     } finally {
       setIsSearching(false);
     }
@@ -243,7 +242,11 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
           <div className={`grid gap-6 ${embedded ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-3'}`}>
             {/* Filters Panel */}
             <div className="space-y-6 lg:col-span-1">
-              {/* Text Search - Always Visible */}
+              {/* Search box and filter toggle stay pinned to the top of the
+                  scroll container. Previously they scrolled away with the
+                  filters, so adjusting a filter meant scrolling up, then back
+                  down to the results -- 30-50 times per deck. */}
+              <div className="sticky top-0 z-20 -mx-1 px-1 pt-1 pb-3 bg-gray-800/95 backdrop-blur-sm space-y-3">
               <div>
                 <label className="block text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">
                   Search Text
@@ -263,7 +266,7 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
               {/* Filters Toggle Button (Mobile) */}
               <button
                 onClick={() => setFiltersExpanded(!filtersExpanded)}
-                className="lg:hidden w-full flex items-center justify-between p-4 bg-gray-800 border border-gray-700 rounded-lg text-white font-semibold hover:bg-gray-750 transition-colors"
+                className="w-full flex items-center justify-between p-4 bg-gray-800 border border-gray-700 rounded-lg text-white font-semibold hover:bg-gray-750 transition-colors"
               >
                 <div className="flex items-center gap-2">
                   <Filter size={20} />
@@ -279,9 +282,10 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
                   className={`transition-transform ${filtersExpanded ? 'rotate-180' : ''}`}
                 />
               </button>
+              </div>
 
               {/* Collapsible Filters Content */}
-              <div className={`space-y-6 ${filtersExpanded ? 'block' : 'hidden'} lg:block`}>
+              <div className={`space-y-6 ${filtersExpanded ? 'block' : 'hidden'}`}>
 
             {/* Sets Filter */}
             <div>
