@@ -10,6 +10,12 @@ vi.mock('../../services/CardService', () => ({
     fetchSetData: vi.fn(),
     getCollectionId: vi.fn((set, number) => `${set}-${number}`),
     getCardImage: vi.fn((set, image) => `/images/${set}/${image}`),
+    // AdvancedSearch reads the registry to learn which sets are base sets,
+    // which decides a card's base printing.
+    getSetRegistry: vi.fn(async () => [
+      { code: 'SOR', name: 'Spark of Rebellion', isBaseSet: true },
+      { code: 'SHD', name: 'Shadows of the Galaxy', isBaseSet: true },
+    ]),
   }
 }));
 

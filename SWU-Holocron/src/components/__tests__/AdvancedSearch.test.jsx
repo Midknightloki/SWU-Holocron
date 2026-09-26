@@ -15,6 +15,9 @@ import { CardService } from '../../services/CardService';
 // Mock the CardService
 vi.mock('../../services/CardService', () => ({
   CardService: {
+    getSetRegistry: vi.fn(async () => [
+      { code: 'SOR', name: 'Spark of Rebellion', isBaseSet: true },
+    ]),
     fetchSetData: vi.fn(),
     getCardImage: vi.fn((set, number) => `https://api.swu-db.com/cards/${set}/${number}?format=image`),
     getCollectionId: vi.fn((set, number) => `${set}_${number}_std`)

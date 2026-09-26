@@ -7,6 +7,9 @@ import { CardService } from '../../services/CardService';
 // Mock CardService
 vi.mock('../../services/CardService', () => ({
   CardService: {
+    getSetRegistry: vi.fn(async () => [
+      { code: 'SOR', name: 'Spark of Rebellion', isBaseSet: true },
+    ]),
     getCollectionId: vi.fn((set, number, isFoil) => `${set}_${number}_${isFoil ? 'foil' : 'std'}`),
     getCardImage: vi.fn((set, number) => `/cards/${set}/${number}.jpg`),
     getBackImage: vi.fn((set, number) => `/cards/${set}/${number}_back.jpg`),

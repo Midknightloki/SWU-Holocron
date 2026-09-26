@@ -23,6 +23,7 @@ import {
 } from '../utils/deckImportExport';
 import { getCardSuggestions } from '../services/AiSuggestionsService';
 import { rankCandidates, extractConceptTerms, extractConceptPhrases } from '../utils/suggestionRanking';
+import { cardIdentity, dedupeToBasePrintings } from '../utils/cardIdentity';
 import { checkDeckLegality, getBanStatus, getMinDeckSize, getRequiredLeaderCount } from '../services/LegalityService';
 
 const TAG_CATEGORIES = [
@@ -45,6 +46,9 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
   // Set codes in release order, used to score candidates by proximity to the
   // leader's set. getAvailableSets returns registry order, which is by release date.
   const [setOrder, setSetOrder] = useState([]);
+  // Base (non-promo) set codes. Card numbers only compare within a set, so
+  // choosing a card's base printing needs to know which sets are base sets.
+  const [baseSetCodes, setBaseSetCodes] = useState(() => new Set());
   // Free-text deck plan. Sent to the model verbatim for the final pick, and
   // keyword-matched against the card pool to shape the shortlist.
   const [deckConcept, setDeckConcept] = useState(deck?.concept || '');
@@ -113,6 +117,14 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
         // If discovery returns nothing, fallback to mainline sets
         const setsToLoad = sets.length > 0 ? sets : SETS.map((s) => s.code);
         setSetOrder(setsToLoad);
+        try {
+          const registry = await CardService.getSetRegistry();
+          setBaseSetCodes(new Set(registry.filter(r => r.isBaseSet).map(r => r.code)));
+        } catch (e) {
+          // Without the registry the base-printing choice falls back to the
+          // lowest number, which is right within a set and wrong across sets.
+          console.warn('Could not read set registry for base-set codes:', e);
+        }
 
         const cardMap = {};
         const allCardsList = [];
@@ -569,13 +581,18 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
       // keywords, so the vocabulary above cannot see them.
       const conceptPhrases = extractConceptPhrases(deckConcept);
 
-      const ownedIds = new Set();
+      // Ownership is a property of the CARD, not of one printing: owning the
+      // prestige variant means you own the card. Collect owned identities, then
+      // mark the base printing of each as owned, so suggestions never tell you
+      // to buy something already in your binder.
+      const ownedIdentities = new Set();
       allCards.forEach(card => {
-        const id = `${card.Set}_${card.Number}`;
-        if (getCardOwnership(id).total > 0) ownedIds.add(id);
+        if (getCardOwnership(`${card.Set}_${card.Number}`).total > 0) {
+          ownedIdentities.add(cardIdentity(card));
+        }
       });
 
-      const candidates = allCards
+      const candidatesAll = allCards
         .filter(card => card.Type !== 'Leader' && card.Type !== 'Base')
         .filter(card => {
           const cardId = `${card.Set}_${card.Number}`;
@@ -591,8 +608,17 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
           traits: (card.Traits || []).slice(0, 3),
           // Used for concept matching only. The prompt line is built from id,
           // name, type, cost, aspects and traits, so this adds no tokens.
+          subtitle: card.Subtitle || '',
           text: `${card.FrontText || ''} ${card.BackText || ''}`.trim(),
         }));
+
+      // Collapse printings to the base card before ranking, so a prestige
+      // variant can never take the slot -- or be reported as unowned when the
+      // base printing sits in the collection.
+      const candidates = dedupeToBasePrintings(candidatesAll, { baseSetCodes });
+      const ownedIds = new Set(
+        candidates.filter(c => ownedIdentities.has(cardIdentity(c))).map(c => c.id),
+      );
 
       // Rank rather than truncate. `.slice(0, 300)` on a list loaded in set
       // release order sent 300 SOR cards and nothing else -- 3.2% of the pool,
@@ -632,7 +658,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     } finally {
       setIsLoadingSuggestions(false);
     }
-  }, [selectedLeader, selectedBase, cardDataMap, mainDeckCards, deckCards, allCards, getCardOwnership, setOrder, deckConcept]);
+  }, [selectedLeader, selectedBase, cardDataMap, mainDeckCards, deckCards, allCards, getCardOwnership, setOrder, deckConcept, baseSetCodes]);
 
   const leaderCard = selectedLeader ? cardDataMap[selectedLeader] : null;
   const baseCard = selectedBase ? cardDataMap[selectedBase] : null;

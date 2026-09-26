@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Search, X, Filter, Loader2, Tag, Plus, Minus, ChevronDown } from 'lucide-react';
 import { SETS, ASPECTS } from '../constants';
 import { rankSearchResults } from '../utils/cardSearchRanking';
+import { dedupeToBasePrintings } from '../utils/cardIdentity';
 import { CardService } from '../services/CardService';
 import { getPlaysetQuantity } from '../utils/collectionHelpers';
 
@@ -17,6 +18,21 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
   const [allCards, setAllCards] = useState([]);
   const [loadedSets, setLoadedSets] = useState(new Set());
   const [filtersExpanded, setFiltersExpanded] = useState(false);
+  // Card numbers only compare within a set, so picking a card's base printing
+  // needs to know which sets are base sets rather than promos.
+  const [baseSetCodes, setBaseSetCodes] = useState(() => new Set());
+
+  useEffect(() => {
+    let cancelled = false;
+    CardService.getSetRegistry()
+      .then(registry => {
+        if (!cancelled) {
+          setBaseSetCodes(new Set(registry.filter(r => r.isBaseSet).map(r => r.code)));
+        }
+      })
+      .catch(err => console.warn('Could not read set registry:', err));
+    return () => { cancelled = true; };
+  }, []);
 
   // Load ALL sets on mount for comprehensive search
   useEffect(() => {
@@ -138,17 +154,12 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
         return true;
       });
 
-      // Deduplicate by card name (keep first occurrence of each unique name)
-      const uniqueCards = [];
-      const seenNames = new Set();
-
-      for (const card of filtered) {
-        const nameKey = `${card.Name}${card.Subtitle || ''}`;
-        if (!seenNames.has(nameKey)) {
-          seenNames.add(nameKey);
-          uniqueCards.push(card);
-        }
-      }
+      // One row per card, showing the BASE printing. Identity is name +
+      // subtitle; among printings the lowest number is the base. This used to
+      // keep whichever printing came first in filter order, so searching a card
+      // by full name could return its prestige variant -- and then report it
+      // missing from the collection, because the player owns the base.
+      const uniqueCards = dedupeToBasePrintings(filtered, { baseSetCodes });
 
       // Order by relevance, not alphabetically. A trait match used to rank as
       // highly as a name match, so "trooper" buried the 29 cards named trooper
