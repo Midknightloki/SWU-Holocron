@@ -24,7 +24,21 @@ const GCP_PROJECT =
   "swu-holocron-93a18";
 const GEMINI_MODEL = "gemini-2.5-flash";
 
-setGlobalOptions({ maxInstances: 10 });
+// Runtime identity for both functions. Without this they run as the project's
+// default compute service account, which holds roles/editor -- project-wide write
+// access, for code whose whole job is one Vertex AI call and three Firestore
+// operations. This account holds datastore.user, aiplatform.user and
+// logging.logWriter and nothing else.
+//
+// Set here rather than with `gcloud run services update`, which the next
+// `firebase deploy` would overwrite.
+//
+// REQUIRES the account to exist first. See docs/FUNCTIONS-RUNTIME-SA.md --
+// deploying before those commands have run fails (safely: the running functions
+// are left alone).
+const RUNTIME_SERVICE_ACCOUNT = `swu-functions@${GCP_PROJECT}.iam.gserviceaccount.com`;
+
+setGlobalOptions({ maxInstances: 10, serviceAccount: RUNTIME_SERVICE_ACCOUNT });
 
 /**
  * getCardSuggestions — proxies deck state to Gemini 2.5 Flash on Vertex AI
