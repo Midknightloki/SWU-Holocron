@@ -25,10 +25,36 @@ import AdminPanel from './components/AdminPanel';
 import DeckManager from './components/DeckManager';
 import DeckBuilder from './components/DeckBuilder';
 import RedeemInviteModal from './components/RedeemInviteModal';
+import ErrorBoundary from './components/ErrorBoundary';
 
 // Version info
 const VERSION = __APP_VERSION__;
 const BUILD_TIME = __BUILD_TIME__;
+
+/**
+ * Fallback for a crashed overlay. The default ErrorBoundary fallback renders
+ * inline, which for a modal or the full-page search means the message appears
+ * below the page content, out of sight. This keeps it where the user is looking.
+ *
+ * @environment:react
+ */
+const OverlayError = ({ what, onDismiss }) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90">
+    <div className="w-full max-w-md bg-gray-900 border border-red-500/40 rounded-2xl p-6 space-y-4 text-center">
+      <p className="text-white font-bold">The {what} view broke</p>
+      <p className="text-sm text-gray-400">
+        Nothing else is affected. Close this and carry on.
+      </p>
+      <button
+        type="button"
+        onClick={onDismiss}
+        className="px-4 py-2 bg-yellow-500 hover:bg-yellow-400 text-black font-bold rounded-lg text-sm"
+      >
+        Close
+      </button>
+    </div>
+  </div>
+);
 
 // Helper to determine collection path
 // @environment:firebase
@@ -432,7 +458,7 @@ export default function App() {
   };
 
   // Grid Quantity Handler
-  const handleGridQuantityChange = async (card, delta) => {
+  const handleGridQuantityChange = async (card, delta, { isFoil = false } = {}) => {
     if (!db || !user) {
       console.error('Cannot update: no db or user');
       return;
@@ -444,7 +470,7 @@ export default function App() {
       return;
     }
 
-    const collId = getCollectionId(card.Set, card.Number, false); // Default to standard
+    const collId = getCollectionId(card.Set, card.Number, isFoil);
     const currentQty = collectionData[collId]?.quantity || 0;
     const newQty = currentQty + delta;
 
@@ -455,10 +481,15 @@ export default function App() {
       if (newQty > 0) {
         await setDoc(docRef, {
           quantity: newQty,
-          set: activeSet,
+          // The card's own set, not the active filter: callers outside the grid
+          // (the deck builder's shopping list) pass cards from any set, and the
+          // 'ALL'/'OTHER' filters are not set codes. The doc id was always keyed
+          // on card.Set, so this field disagreeing with it was a latent bug --
+          // the legacy migration re-keys documents from it.
+          set: card.Set || activeSet,
           number: card.Number,
           name: card.Name,
-          isFoil: false,
+          isFoil,
           timestamp: Date.now()
         }, { merge: true });
         console.log('✓ Card updated successfully');
@@ -906,7 +937,10 @@ export default function App() {
             <p className="animate-pulse">Accessing Imperial Archives...</p>
           </div>
         ) : (
-          <>
+          /* Keyed on the view so navigating away from a crashed view remounts the
+             boundary and clears it. The header and nav stay outside, so there is
+             always a way out. */
+          <ErrorBoundary key={view} label={`the ${view} view`}>
             {view === 'dashboard' ? (
               <Dashboard
                 setCode={activeSet}
@@ -936,6 +970,7 @@ export default function App() {
                 <DeckBuilder
                   deck={activeDeck}
                   collectionData={collectionData}
+                  onUpdateQuantity={handleGridQuantityChange}
                   onClose={() => {
                     setActiveDeck(null);
                     setView('decks');
@@ -1078,38 +1113,48 @@ export default function App() {
                 )}
               </>
             )}
-          </>
+          </ErrorBoundary>
         )}
       </main>
 
       {/* Card Modal */}
       {selectedCard && (
-        <CardModal
-          initialCard={selectedCard}
-          allCards={cards}
-          setCode={activeSet}
-          user={user}
-          collectionData={collectionData}
-          onClose={() => setSelectedCard(null)}
-          onSubmitCard={() => {
-            setSelectedCard(null);
-            setView('submit');
-          }}
-        />
+        <ErrorBoundary
+          label="the card view"
+          fallback={<OverlayError what="card" onDismiss={() => setSelectedCard(null)} />}
+        >
+          <CardModal
+            initialCard={selectedCard}
+            allCards={cards}
+            setCode={activeSet}
+            user={user}
+            collectionData={collectionData}
+            onClose={() => setSelectedCard(null)}
+            onSubmitCard={() => {
+              setSelectedCard(null);
+              setView('submit');
+            }}
+          />
+        </ErrorBoundary>
       )}
 
       {/* Advanced Search - Full page view */}
       {isSearchOpen && (
-        <AdvancedSearch
-          onCardClick={(card) => {
-            setSelectedCard(card);
-            // Don't close search - let modal overlay on top of results
-          }}
-          collectionData={collectionData}
-          currentSet={activeSet}
-          onClose={() => setIsSearchOpen(false)}
-          onUpdateQuantity={handleGridQuantityChange}
-        />
+        <ErrorBoundary
+          label="search"
+          fallback={<OverlayError what="search" onDismiss={() => setIsSearchOpen(false)} />}
+        >
+          <AdvancedSearch
+            onCardClick={(card) => {
+              setSelectedCard(card);
+              // Don't close search - let modal overlay on top of results
+            }}
+            collectionData={collectionData}
+            currentSet={activeSet}
+            onClose={() => setIsSearchOpen(false)}
+            onUpdateQuantity={handleGridQuantityChange}
+          />
+        </ErrorBoundary>
       )}
 
       {/* PWA Components */}

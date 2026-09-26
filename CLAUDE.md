@@ -22,10 +22,15 @@ been active** (no `.husky/_` shim, `core.hooksPath` unset). `pre-commit` and
 `pre-push` exist as files but do not run. Set `HUSKY=0` to silence it; CI does
 exactly that on `npm ci`.
 
-The git root holds only ops/docs material: `AGENT_CONTEXT.md` (the most detailed
-existing guide — read it for known-issue history and deployment runbooks),
-deployment markdown, `deploy.js`, `homelab-tools/swu-deploy-dashboard/` (static
-dashboard that polls `/version.json`), and scratch files. `Melee.txt` and
+The git root holds only ops/docs material: this file, `README.md`, `deploy.js`,
+`homelab-tools/swu-deploy-dashboard/` (static dashboard that polls
+`/version.json`), and scratch files. Eleven overlapping markdown files that used
+to live here — `AGENT_CONTEXT.md`, `START_HERE.md`, two documentation indexes and
+a set of dated Firebase-deployment guides — were retired: they documented a
+deployment model that never existed (see Deployment below) and a feature set
+years out of date. `SWU-Holocron/docs/DEPLOYMENT_RUNBOOK.md` and
+`SWU-Holocron/TESTING.md` are now the single runbook and the single testing
+reference. `Melee.txt` and
 `decklist.swu.text` are tracked deck-list parser samples; `cards.json`,
 `cards-page.html`, `debug_nextjs.py` and `image/` are gitignored local clutter.
 
@@ -97,7 +102,7 @@ artifacts/{APP_ID}/admin/sync/logs
 
 Firestore requires alternating collection/document segments, so path arity is
 load-bearing — a 6-segment `collection()` throws at runtime. This has broken the
-app before (see `AGENT_CONTEXT.md`). The client SDK also cannot list
+app before. The client SDK also cannot list
 subcollections, which is why the `sets` document doubles as a **set registry**:
 it holds the discovered set list, and its subcollections hold each set's cards.
 
@@ -120,10 +125,11 @@ Real promos arrive under their true codes (`SOROP`, `P26`, `HMWP`, …).
 `src/setCatalog.js` holds the normalisation and must stay Vite-free so Node
 scripts can import it.
 
-Firestore/Storage rules (`firestore.rules`, `storage.rules`) are **not** deployed
-by any CI job — they must be published manually via
-`firebase deploy --only firestore:rules` or the console. Changing a path in code
-usually means changing rules too.
+Firestore rules **are** deployed by CI: `deploy-firestore-rules.yml` publishes
+`firestore.rules` on a push to `main` that changes it, gated on the emulator
+tests in `src/test/rules/` passing. `storage.rules` is still manual. Changing a
+path in code usually means changing rules too, so expect the rules tests to fail
+first — that is the gate working.
 
 ### Card data: four tiers, and a cache with no expiry
 
@@ -216,16 +222,21 @@ before assuming a component is untested.
 Coverage thresholds in `vite.config.js` **look** per-directory
 (`src/services/` and `src/utils/` at 80%, `src/components/` at 70%) but are
 inert: Vitest matches these keys as globs, and a bare `src/services/` matches no
-files. Real coverage is utils ~87%, services ~64%, components ~48% (~33%
-overall), so `npm run test:ci` exits 0 well below the stated bar. Writing them as
-`src/services/**` would switch enforcement on — and immediately fail. The
-README's "80%+ coverage" claim describes only `src/utils/`.
+files. Real coverage is utils ~89%, contexts ~75%, services ~70%, components
+~49%, and ~45% across the whole repo (which counts `scripts/`, `functions/` and
+`Prototype/` at zero), so `npm run test:ci` exits 0 well below the stated bar.
+Writing them as `src/services/**` would switch enforcement on — and immediately
+fail.
 
 `test:unit` and `test:integration` are currently the same command, so "unit" runs
-integration tests too. Several suites are deliberately skipped with reasons in
-`TEST_FAILURE_ANALYSIS.md` and `INTEGRATION-TESTS-FUTURE.md` (AdvancedSearch async
-init timeout, card-submission integration, legacy sync-code flow, some
-duplicate-detection Firebase-mock tests) — read those before "fixing" a skip.
+integration tests too. Several suites are deliberately skipped — AdvancedSearch
+async init timeout, card-submission integration, the legacy sync-code flow, some
+duplicate-detection Firebase-mock tests, three AdminPanel tests. Each skip and
+its reason is in `SWU-Holocron/TESTING.md`; read that before "fixing" one.
+
+happy-dom does not lay out or paint, so `getBoundingClientRect` is always 0 there
+and CSS bugs are invisible to the suite. Verify those in a browser and record the
+measurement.
 
 ## Deployment
 
@@ -238,18 +249,31 @@ Because the app is one level down, every root workflow job needs
 
 **One live deploy path:** `build-and-push-docker.yml` builds with context
 `./SWU-Holocron`, injects `public/version.json` (commit sha, message, build
-time), pushes to `ghcr.io`, and Watchtower on the homelab host pulls it within
-~5 min. Multi-stage build → nginx with SPA rewrite (`nginx.conf`).
-`/version.json` is served `no-store` with `Access-Control-Allow-Origin: *` so
-the external deploy dashboard can poll it.
+time) and pushes to `ghcr.io` — then a **second job in the same workflow**, on a
+self-hosted runner on the homelab host, runs `docker compose pull web && docker
+compose up -d web`. Multi-stage build → nginx with SPA rewrite (`nginx.conf`),
+behind a cloudflared tunnel at `swu.holocronlabs.net`. `/version.json` is served
+`no-store` with `Access-Control-Allow-Origin: *` so the external deploy
+dashboard can poll it.
+
+**There is no Watchtower.** Earlier docs described the host polling for a new
+commit every five minutes and rebuilding the image itself; no workflow, compose
+file or Dockerfile in this repo has ever contained a Watchtower container. The
+deploy is push-triggered and runs seconds after the build, and the host never
+builds. When a deploy does not land, check the build job and the runner service
+— there is no poller to wait for.
+
+The build only fires on pushes to `main` touching `SWU-Holocron/**`, `Dockerfile`
+or that workflow, so a docs-only or workflow-only commit does not deploy. Use
+`workflow_dispatch` for those.
 
 **Not running, and why** — only `DISCORD_WEBHOOK_URL` is configured as a repo
 secret:
 
 | Workflow | Blocked on |
 |---|---|
-| `sync-cards.yml` (at root, `workflow_dispatch` only) | `FIREBASE_SERVICE_ACCOUNT`. Its cron is commented out deliberately: a failing run auto-files a GitHub issue, so enabling it without the secret means a red run and a new bug every night. Until it runs, the card database changes **only** via a manual `npm run admin:seed-cards`. |
-| `firebase-hosting-{merge,pull-request}.yml` (still nested, dormant) | `FIREBASE_SERVICE_ACCOUNT_SWU_HOLOCRON_93A18`, plus they'd add a second deploy target alongside Docker/Watchtower. |
+| `sync-cards.yml` (at root, `workflow_dispatch` only) | Nothing, now — it authenticates keylessly through Workload Identity Federation as `card-sync@`, no secret required (`docs/CI-KEYLESS-AUTH.md`). Its weekly cron stays commented out until one manual run has been watched end to end, because a failing run auto-files a GitHub issue. Until then the card database changes only via a manual run or `npm run admin:seed-cards`. |
+| `firebase-hosting-{merge,pull-request}.yml` (still nested, dormant) | `FIREBASE_SERVICE_ACCOUNT_SWU_HOLOCRON_93A18`, plus they'd add a second deploy target alongside the Docker pipeline. |
 | Codecov upload in `ci.yml` | `CODECOV_TOKEN` absent; the repo is public so tokenless upload works, and `fail_ci_if_error` is off so it can't fail a build. |
 
 `deploy.js` at the git root is a stub — the Admin SDK cannot upload hosting.
@@ -322,7 +346,12 @@ it is an ESLint *error*, so CI blocks on it.
 
 Long-standing, still true, and each one a reasonable thing to pick up:
 
-- **No error boundaries anywhere.** A render error in any component blanks the app.
+- **Error boundaries cover the views, not every component.** `ErrorBoundary.jsx`
+  wraps each view in `App.jsx` (keyed on `view`, so navigating clears a crash),
+  the card modal and search overlays, and both roots in `main.jsx`. A render
+  error inside one view no longer blanks the app. It catches render errors only
+  — not event handlers, promises or timers, which React does not route to a
+  boundary.
 - **No store.** Everything prop-drills from `App.jsx`; collection update callbacks
   are threaded through every component that touches quantities.
 - **No memoization on the card grid**, which routinely renders 200+ cards.

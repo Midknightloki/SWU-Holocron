@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   Save, X, Plus, Minus, Search, BarChart3, CheckCircle, AlertCircle,
   Swords, ChevronDown, Loader2, ShoppingCart, Download, Upload, Copy, ClipboardPaste,
@@ -23,6 +23,7 @@ import {
 } from '../utils/deckImportExport';
 import { getCardSuggestions } from '../services/AiSuggestionsService';
 import { rankCandidates, extractConceptTerms, extractConceptPhrases } from '../utils/suggestionRanking';
+import { cardIdentity, dedupeToBasePrintings } from '../utils/cardIdentity';
 import { checkDeckLegality, getBanStatus, getMinDeckSize, getRequiredLeaderCount } from '../services/LegalityService';
 
 const TAG_CATEGORIES = [
@@ -36,7 +37,7 @@ const TAG_CATEGORIES = [
  * Two-panel layout: search (left) and deck list (right)
  * Enforces SWU deck rules: 1 Leader, 1 Base, 50 main deck cards, max 3x per card
  */
-export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) {
+export default function DeckBuilder({ deck, collectionData, onClose, onSaved, onUpdateQuantity }) {
   const { user } = useAuth();
 
   // Wizard state
@@ -45,6 +46,9 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
   // Set codes in release order, used to score candidates by proximity to the
   // leader's set. getAvailableSets returns registry order, which is by release date.
   const [setOrder, setSetOrder] = useState([]);
+  // Base (non-promo) set codes. Card numbers only compare within a set, so
+  // choosing a card's base printing needs to know which sets are base sets.
+  const [baseSetCodes, setBaseSetCodes] = useState(() => new Set());
   // Free-text deck plan. Sent to the model verbatim for the final pick, and
   // keyword-matched against the card pool to shape the shortlist.
   const [deckConcept, setDeckConcept] = useState(deck?.concept || '');
@@ -81,6 +85,17 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
   const [deckTags, setDeckTags] = useState(deck?.tags || []);
   const [tagInput, setTagInput] = useState('');
   const [showTagSuggestions, setShowTagSuggestions] = useState(false);
+  const tagInputRef = useRef(null);
+  // Blur closes the suggestion list on a delay so a click on a suggestion lands
+  // first. Refocusing has to cancel that, or the list closes under the user.
+  const tagBlurTimer = useRef(null);
+  const cancelTagBlur = useCallback(() => {
+    if (tagBlurTimer.current) {
+      clearTimeout(tagBlurTimer.current);
+      tagBlurTimer.current = null;
+    }
+  }, []);
+  useEffect(() => cancelTagBlur, [cancelTagBlur]);
 
   // Guided mode state: null | 'shell' | 'packets'
   const [guidedStep, setGuidedStep] = useState(null);
@@ -113,6 +128,14 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
         // If discovery returns nothing, fallback to mainline sets
         const setsToLoad = sets.length > 0 ? sets : SETS.map((s) => s.code);
         setSetOrder(setsToLoad);
+        try {
+          const registry = await CardService.getSetRegistry();
+          setBaseSetCodes(new Set(registry.filter(r => r.isBaseSet).map(r => r.code)));
+        } catch (e) {
+          // Without the registry the base-printing choice falls back to the
+          // lowest number, which is right within a set and wrong across sets.
+          console.warn('Could not read set registry for base-set codes:', e);
+        }
 
         const cardMap = {};
         const allCardsList = [];
@@ -458,8 +481,13 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     if (!t || deckTags.includes(t)) return;
     setDeckTags(prev => [...prev, t]);
     setTagInput('');
-    setShowTagSuggestions(false);
-  }, [deckTags]);
+    // Stay open. Closing here stranded the user: the input keeps focus, so
+    // `onFocus` cannot fire again, and the only way back to the list was to
+    // click away and click back. Tags are usually added in twos and threes.
+    setShowTagSuggestions(true);
+    cancelTagBlur();
+    tagInputRef.current?.focus();
+  }, [deckTags, cancelTagBlur]);
 
   const handleRemoveTag = useCallback((tag) => {
     setDeckTags(prev => prev.filter(t => t !== tag));
@@ -569,13 +597,18 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
       // keywords, so the vocabulary above cannot see them.
       const conceptPhrases = extractConceptPhrases(deckConcept);
 
-      const ownedIds = new Set();
+      // Ownership is a property of the CARD, not of one printing: owning the
+      // prestige variant means you own the card. Collect owned identities, then
+      // mark the base printing of each as owned, so suggestions never tell you
+      // to buy something already in your binder.
+      const ownedIdentities = new Set();
       allCards.forEach(card => {
-        const id = `${card.Set}_${card.Number}`;
-        if (getCardOwnership(id).total > 0) ownedIds.add(id);
+        if (getCardOwnership(`${card.Set}_${card.Number}`).total > 0) {
+          ownedIdentities.add(cardIdentity(card));
+        }
       });
 
-      const candidates = allCards
+      const candidatesAll = allCards
         .filter(card => card.Type !== 'Leader' && card.Type !== 'Base')
         .filter(card => {
           const cardId = `${card.Set}_${card.Number}`;
@@ -591,8 +624,17 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
           traits: (card.Traits || []).slice(0, 3),
           // Used for concept matching only. The prompt line is built from id,
           // name, type, cost, aspects and traits, so this adds no tokens.
+          subtitle: card.Subtitle || '',
           text: `${card.FrontText || ''} ${card.BackText || ''}`.trim(),
         }));
+
+      // Collapse printings to the base card before ranking, so a prestige
+      // variant can never take the slot -- or be reported as unowned when the
+      // base printing sits in the collection.
+      const candidates = dedupeToBasePrintings(candidatesAll, { baseSetCodes });
+      const ownedIds = new Set(
+        candidates.filter(c => ownedIdentities.has(cardIdentity(c))).map(c => c.id),
+      );
 
       // Rank rather than truncate. `.slice(0, 300)` on a list loaded in set
       // release order sent 300 SOR cards and nothing else -- 3.2% of the pool,
@@ -632,7 +674,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     } finally {
       setIsLoadingSuggestions(false);
     }
-  }, [selectedLeader, selectedBase, cardDataMap, mainDeckCards, deckCards, allCards, getCardOwnership, setOrder, deckConcept]);
+  }, [selectedLeader, selectedBase, cardDataMap, mainDeckCards, deckCards, allCards, getCardOwnership, setOrder, deckConcept, baseSetCodes]);
 
   const leaderCard = selectedLeader ? cardDataMap[selectedLeader] : null;
   const baseCard = selectedBase ? cardDataMap[selectedBase] : null;
@@ -724,7 +766,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
               <img
                 src={CardService.getCardImage(card.Set, card.Number)}
                 alt={card.Name}
-                className="w-20 h-28 rounded object-cover border border-gray-600 hover:border-yellow-400 transition-colors"
+                className="w-28 h-20 rounded object-contain bg-gray-900 border border-gray-600 hover:border-yellow-400 transition-colors"
                 onError={(e) => { e.target.style.display = 'none'; }}
               />
             </button>
@@ -781,7 +823,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
               <img
                 src={CardService.getCardImage(baseCard.Set, baseCard.Number)}
                 alt={baseCard.Name}
-                className="w-20 h-28 rounded object-cover border border-gray-600 hover:border-yellow-400 transition-colors"
+                className="w-28 h-20 rounded object-contain bg-gray-900 border border-gray-600 hover:border-yellow-400 transition-colors"
                 onError={(e) => { e.target.style.display = 'none'; }}
               />
             </button>
@@ -953,15 +995,20 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
           </h4>
           <div className="flex items-end gap-1 h-20">
             {costCurve.map((count, cost) => (
-              <div key={cost} className="flex-1 flex flex-col items-center gap-1">
+              <div key={cost} className="flex-1 h-full flex flex-col items-center gap-1">
+                {/* Track: a definite height for the bar's percentage to resolve against. */}
                 <div
-                  className="w-full bg-yellow-500 rounded-t transition-all hover:bg-yellow-400"
-                  style={{
-                    height: maxCostInCurve > 0 ? `${(count / maxCostInCurve) * 100}%` : '0%'
-                  }}
-                  title={`Cost ${cost}: ${count} cards`}
-                />
-                <span className="text-xs text-gray-500 font-semibold">{cost}+</span>
+                  className="relative w-full flex-1"
+                  title={`Cost ${cost === 7 ? '7+' : cost}: ${count} cards`}
+                >
+                  <div
+                    className="absolute bottom-0 inset-x-0 bg-yellow-500 rounded-t transition-all hover:bg-yellow-400"
+                    style={{
+                      height: maxCostInCurve > 0 ? `${(count / maxCostInCurve) * 100}%` : '0%'
+                    }}
+                  />
+                </div>
+                <span className="text-xs text-gray-500 font-semibold">{cost === 7 ? '7+' : cost}</span>
               </div>
             ))}
           </div>
@@ -988,11 +1035,15 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
         )}
         <div className="relative">
           <input
+            ref={tagInputRef}
             type="text"
             value={tagInput}
             onChange={(e) => { setTagInput(e.target.value); setShowTagSuggestions(true); }}
-            onFocus={() => setShowTagSuggestions(true)}
-            onBlur={() => setTimeout(() => setShowTagSuggestions(false), 150)}
+            onFocus={() => { cancelTagBlur(); setShowTagSuggestions(true); }}
+            onBlur={() => {
+              cancelTagBlur();
+              tagBlurTimer.current = setTimeout(() => setShowTagSuggestions(false), 150);
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') { e.preventDefault(); if (tagInput.trim()) handleAddTag(tagInput); }
               if (e.key === 'Escape') setShowTagSuggestions(false);
@@ -1216,12 +1267,18 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
             </h4>
             <div className="flex items-end gap-2 h-48 px-4">
               {costCurve.map((count, cost) => (
-                <div key={cost} className="flex-1 flex flex-col items-center gap-2 group">
+                <div key={cost} className="flex-1 h-full flex flex-col items-center gap-2 group">
+                  {/* Track: a definite height for the bar's percentage to resolve against. */}
                   <div
-                    className="w-full bg-yellow-500/80 rounded-t-lg transition-all group-hover:bg-yellow-500 relative"
-                    style={{ height: maxCostInCurve > 0 ? `${(count / maxCostInCurve) * 100}%` : '0%' }}
+                    className="relative w-full flex-1"
+                    title={`Cost ${cost === 7 ? '7+' : cost}: ${count} cards`}
                   >
-                    {count > 0 && <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-xs font-bold text-white">{count}</span>}
+                    <div
+                      className="absolute bottom-0 inset-x-0 bg-yellow-500/80 rounded-t-lg transition-all group-hover:bg-yellow-500"
+                      style={{ height: maxCostInCurve > 0 ? `${(count / maxCostInCurve) * 100}%` : '0%' }}
+                    >
+                      {count > 0 && <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-xs font-bold text-white">{count}</span>}
+                    </div>
                   </div>
                   <span className="text-xs font-bold text-gray-500">{cost === 7 ? '7+' : cost}</span>
                 </div>
@@ -1661,7 +1718,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
                                   <img
                                     src={CardService.getCardImage(leader.Set, leader.Number)}
                                     alt={leader.Name}
-                                    className="w-14 h-20 rounded object-cover border border-gray-600 group-hover:border-green-400 transition-colors"
+                                    className="w-20 h-14 rounded object-contain bg-gray-900 border border-gray-600 group-hover:border-green-400 transition-colors"
                                     onError={(e) => { e.target.style.display = 'none'; }}
                                   />
                                 )}
@@ -1669,7 +1726,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
                                   <img
                                     src={CardService.getCardImage(base.Set, base.Number)}
                                     alt={base.Name}
-                                    className="w-14 h-20 rounded object-cover border border-gray-600 group-hover:border-green-400 transition-colors"
+                                    className="w-20 h-14 rounded object-contain bg-gray-900 border border-gray-600 group-hover:border-green-400 transition-colors"
                                     onError={(e) => { e.target.style.display = 'none'; }}
                                   />
                                 )}
@@ -1965,6 +2022,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
                         deck={currentDeckSnapshot}
                         collectionData={collectionData}
                         cardDatabase={allCards}
+                        onUpdateQuantity={onUpdateQuantity}
                       />
                     </div>
                   )}
@@ -2090,6 +2148,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
                           deck={currentDeckSnapshot}
                           collectionData={collectionData}
                           cardDatabase={allCards}
+                          onUpdateQuantity={onUpdateQuantity}
                         />
                       </div>
                     )}

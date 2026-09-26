@@ -47,6 +47,8 @@ const W_SET_LEADER = 30;
 const W_SET_ADJACENT = 20;
 const W_TYPE_MATCH = 10;
 
+import { cardIdentity } from './cardIdentity.js';
+
 const WORD_CHARS = new Set('abcdefghijklmnopqrstuvwxyz0123456789'.split(''));
 const asArray = (v) => (Array.isArray(v) ? v : []);
 const lower = (v) => String(v ?? '').trim().toLowerCase();
@@ -244,20 +246,19 @@ export function rankCandidates({
     .map((card, index) => ({ card, index, score: scoreCard(card, ctx) }))
     .sort((a, b) => (b.score - a.score) || (a.index - b.index));
 
-  // One slot per distinct card. swu-db carries foil printings (a trailing F on
-  // the number) and reprints across sets, so the same card can occupy several
-  // slots -- against the live database the top of the ranking was
-  // SOR_229 / SOR_229F / SOR_490 / SOR_490F, one card wearing four. Because the
-  // list is already sorted, the first occurrence is the best-scoring printing,
-  // which is also the owned one when the user has it.
+  // One slot per distinct card, and that slot goes to the BASE printing.
+  // swu-db carries foil printings and prestige variants, so the same card can
+  // occupy several slots. This previously de-duplicated by NAME ALONE, which
+  // both wasted slots and collapsed genuinely different cards that share a name
+  // and differ only by subtitle.
   const seen = new Set();
   const picked = [];
   for (const entry of ordered) {
     if (picked.length >= limit) break;
-    const name = lower(entry.card.name);
-    if (name) {
-      if (seen.has(name)) continue;
-      seen.add(name);
+    const identity = cardIdentity(entry.card);
+    if (identity !== '|') {
+      if (seen.has(identity)) continue;
+      seen.add(identity);
     }
     picked.push(entry.card);
   }
