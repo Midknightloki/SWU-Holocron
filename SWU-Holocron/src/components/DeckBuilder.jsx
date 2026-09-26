@@ -1293,7 +1293,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
             </h4>
             <p className="text-xs text-gray-500 mt-1">
               {selectedLeader && selectedBase
-                ? 'Powered by Claude Haiku — select up to 5 suggested cards.'
+                ? 'Powered by Gemini 2.5 Flash — select up to 5 suggested cards.'
                 : 'Select a Leader and Base first.'}
             </p>
           </div>

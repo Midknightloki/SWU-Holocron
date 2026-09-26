@@ -172,10 +172,21 @@ exception — it owns the collection `onSnapshot` listener).
 - `PricingService`, `GuidedModeService` (contributor invites), `MigrationService`
   (legacy sync-code → uid-scoped collection), `AiSuggestionsService`
 
-`AiSuggestionsService` calls the one Cloud Function, `getCardSuggestions` in
-`functions/index.js`, which proxies deck state to Claude via the
-`ANTHROPIC_API_KEY` secret. That key must never reach the client bundle — the
-function exists for exactly that reason.
+`AiSuggestionsService` calls `getCardSuggestions` in `functions/index.js`,
+which proxies deck state to **Gemini 2.5 Flash on Vertex AI**. There is no API
+key: the function authenticates with its own service account through ADC, so
+billing runs through the GCP project and there is no secret to rotate or leak.
+
+Two Gemini specifics are load-bearing. `thinkingConfig: { thinkingBudget: 0 }`
+is required — 2.5 Flash thinks by default and those tokens count against
+`maxOutputTokens`, so a small cap is consumed by reasoning and the response
+comes back empty with `finishReason: MAX_TOKENS`. And `responseSchema`
+constrains the output, replacing a regex that scraped a JSON array out of prose
+and broke on any commentary.
+
+The SDK is `@google/genai` (not the older `@google-cloud/vertexai` or
+`@google/generative-ai`), and Vertex init is `enterprise: true` — not the
+`vertexai: true` older examples show.
 
 ### Auth and roles
 

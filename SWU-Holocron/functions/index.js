@@ -1,6 +1,5 @@
 const { setGlobalOptions } = require("firebase-functions");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
-const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 
@@ -10,15 +9,21 @@ if (!admin.apps.length) {
 
 const APP_ID = "swu-holocron-v1";
 
-const anthropicKey = defineSecret("ANTHROPIC_API_KEY");
+// Vertex AI. No API key: the function authenticates with its own service
+// account through Application Default Credentials, so there is no secret to
+// store, rotate or leak. Billing goes through this GCP project.
+const VERTEX_LOCATION = process.env.GOOGLE_CLOUD_LOCATION || "us-central1";
+const GEMINI_MODEL = "gemini-2.5-flash";
 
 setGlobalOptions({ maxInstances: 10 });
 
 /**
- * getCardSuggestions — proxies deck state to Claude Haiku and returns
+ * getCardSuggestions — proxies deck state to Gemini 2.5 Flash on Vertex AI
+ * and returns
  * 5 card suggestions with a one-sentence rationale each.
  *
- * Setup: firebase functions:secrets:set ANTHROPIC_API_KEY
+ * No API key: authenticates with the function's own service account via
+ * Application Default Credentials. Billing goes through this GCP project.
  *
  * Request data:
  *   leaderName   string
@@ -31,7 +36,7 @@ setGlobalOptions({ maxInstances: 10 });
  *   { suggestions: [{id, name, reason}] }
  */
 exports.getCardSuggestions = onCall(
-  { maxInstances: 5, secrets: [anthropicKey] },
+  { maxInstances: 5 },
   async (request) => {
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "Authentication required.");
@@ -46,15 +51,13 @@ exports.getCardSuggestions = onCall(
       throw new HttpsError("invalid-argument", "availableCards must be a non-empty array.");
     }
 
-    const apiKey = anthropicKey.value();
-    if (!apiKey) {
-      logger.error("ANTHROPIC_API_KEY secret is empty");
-      throw new HttpsError("internal", "AI service not configured.");
-    }
-
-    // Lazy-load to avoid cold-start overhead when secret isn't needed
-    const Anthropic = require("@anthropic-ai/sdk");
-    const client = new Anthropic({ apiKey });
+    // Lazy-load to keep cold starts cheap for callers that never reach here.
+    const { GoogleGenAI } = require("@google/genai");
+    const ai = new GoogleGenAI({
+      enterprise: true,
+      project: process.env.GOOGLE_CLOUD_PROJECT,
+      location: VERTEX_LOCATION,
+    });
 
     const cardListText = availableCards
       .map((c) => {
@@ -87,39 +90,52 @@ Rules:
 3. Consider synergy with the leader's playstyle and existing cards.
 4. Each reason must be exactly one concise sentence.
 
-Respond with ONLY a valid JSON array — no markdown, no explanation:
-[
-  {"id": "SET_NUM", "name": "Card Name", "reason": "One sentence why this fits."},
-  ...
-]`;
+Rules recap: use only IDs from the list above, respect the deck's aspects, and keep each reason to one concise sentence.`;
 
-    let responseText;
-    try {
-      const message = await client.messages.create({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 1024,
-        messages: [{ role: "user", content: prompt }],
-      });
-      responseText = message.content[0].text;
-    } catch (err) {
-      logger.error("Anthropic API error:", err);
-      throw new HttpsError("internal", "AI request failed: " + err.message);
-    }
-
-    // Extract JSON array from response
-    const jsonMatch = responseText.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) {
-      logger.error("Could not parse AI response:", responseText);
-      throw new HttpsError("internal", "Failed to parse AI suggestions.");
-    }
+    // The response schema constrains the model's output, so there is no JSON to
+    // scrape out of prose. The previous implementation matched a bracket regex
+    // against free text and broke whenever the model added any commentary.
+    const SUGGESTION_SCHEMA = {
+      type: "object",
+      properties: {
+        suggestions: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              name: { type: "string" },
+              reason: { type: "string" },
+            },
+            required: ["id", "name", "reason"],
+          },
+        },
+      },
+      required: ["suggestions"],
+    };
 
     let suggestions;
     try {
-      suggestions = JSON.parse(jsonMatch[0]);
+      const result = await ai.models.generateContent({
+        model: GEMINI_MODEL,
+        contents: prompt,
+        config: {
+          maxOutputTokens: 2048,
+          temperature: 0.7,
+          // Gemini 2.5 Flash thinks by default and those tokens count against
+          // maxOutputTokens. Left on with a small cap, reasoning consumes the
+          // budget and the response returns empty with finishReason MAX_TOKENS.
+          thinkingConfig: { thinkingBudget: 0 },
+          responseMimeType: "application/json",
+          responseSchema: SUGGESTION_SCHEMA,
+        },
+      });
+      suggestions = JSON.parse(result.text).suggestions;
     } catch (err) {
-      logger.error("JSON parse error:", responseText);
-      throw new HttpsError("internal", "Failed to parse AI suggestions.");
+      logger.error("Vertex AI error:", err);
+      throw new HttpsError("internal", "AI request failed: " + err.message);
     }
+
 
     // Validate each suggestion has required fields and matches a real card ID
     const validIds = new Set(availableCards.map((c) => c.id));
