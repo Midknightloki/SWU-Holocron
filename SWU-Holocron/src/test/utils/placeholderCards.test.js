@@ -9,6 +9,7 @@ import {
   classifySetCompleteness,
   isFailingStatus,
   applyPlaceholders,
+  hasDenseIntegerNumbering,
 } from '../../placeholderCards.js';
 
 /**
@@ -271,5 +272,87 @@ describe('applyPlaceholders', () => {
     const result = apply(SOROPJ, []);
     expect(result.real).toBe(0);
     expect(result.cards).toHaveLength(2);
+  });
+});
+
+/**
+ * Regression tests from the first real sync run, which wrote 22 placeholders
+ * into five sets that were not missing anything.
+ *
+ * Prize-pack and showcase sets do not number their cards 1, 2, 3. These numbers
+ * are verbatim from api.swu-db.com.
+ */
+describe('non-integer card numbering', () => {
+  const SHDPQ = { code: 'SHDPQ', releaseDate: '2024-07-12', cardCount: 6, parentSetId: 'SHD' };
+  const SS1 = { code: 'SS1', releaseDate: '2025-01-01', cardCount: 5, parentSetId: null };
+  const SHDPQ_CARDS = ['2-16', '2-4', '2-8', '2-C', '2-F', '1'].map((n) => ({ Number: n, Name: 'Real ' + n }));
+  const SS1_CARDS = ['2-4', '2-8', '2-C', '2-F', '1'].map((n) => ({ Number: n, Name: 'Real ' + n }));
+  const FULL_CATALOG = [...CATALOG, SHDPQ, SS1];
+
+  describe('hasDenseIntegerNumbering', () => {
+    it('accepts plain integers, padded or not', () => {
+      expect(hasDenseIntegerNumbering([{ Number: '001' }, { Number: '2' }, { Number: 3 }])).toBe(true);
+    });
+
+    it('rejects the prize-pack scheme', () => {
+      expect(hasDenseIntegerNumbering(SHDPQ_CARDS)).toBe(false);
+    });
+
+    it('rejects a single non-integer among integers', () => {
+      expect(hasDenseIntegerNumbering([{ Number: '001' }, { Number: '2-C' }])).toBe(false);
+    });
+
+    it('treats an empty list as dense, so an empty set can still be filled', () => {
+      expect(hasDenseIntegerNumbering([])).toBe(true);
+    });
+
+    it('rejects a blank number', () => {
+      expect(hasDenseIntegerNumbering([{ Number: '' }])).toBe(false);
+      expect(hasDenseIntegerNumbering([{ Number: null }])).toBe(false);
+    });
+  });
+
+  // The actual bug: 6 cards, catalogue says 6, nothing missing -- but walking
+  // 1..6 matched only "1" and invented 002 through 006.
+  it('creates nothing for a complete set with non-integer numbers', () => {
+    expect(missingCardNumbers(SHDPQ, SHDPQ_CARDS)).toEqual([]);
+    expect(
+      placeholdersForSet({ set: SHDPQ, cards: SHDPQ_CARDS, catalog: FULL_CATALOG, now: NOW })
+    ).toEqual([]);
+  });
+
+  it('calls such a set complete', () => {
+    expect(
+      classifySetCompleteness({ set: SHDPQ, cards: SHDPQ_CARDS, catalog: FULL_CATALOG, now: NOW })
+    ).toMatchObject({ status: 'complete', missing: 0, placeholders: 0 });
+  });
+
+  it('creates nothing for the showcase sets either', () => {
+    expect(placeholdersForSet({ set: SS1, cards: SS1_CARDS, catalog: FULL_CATALOG, now: NOW })).toEqual([]);
+  });
+
+  // A genuinely short set whose numbers cannot be reasoned about: report it,
+  // do not guess a number.
+  it('does not name missing numbers it cannot name', () => {
+    const short = SHDPQ_CARDS.slice(0, 5);
+    expect(missingCardNumbers(SHDPQ, short)).toEqual([]);
+
+    const result = classifySetCompleteness({ set: SHDPQ, cards: short, catalog: FULL_CATALOG, now: NOW });
+    expect(result).toMatchObject({ status: 'incomplete-unnumbered', missing: 1 });
+    expect(isFailingStatus(result.status)).toBe(false);
+  });
+
+  // The count guard on its own, independent of numbering.
+  it('never emits more placeholders than the shortfall', () => {
+    // Integer-numbered but sparse: 3 cards numbered 001, 050, 099 with a
+    // catalogue count of 4. Exactly one is missing, not 97.
+    const sparse = { code: 'SPARSE', releaseDate: '2024-01-01', cardCount: 4 };
+    const cards = [{ Number: '001' }, { Number: '050' }, { Number: '099' }];
+    expect(missingCardNumbers(sparse, cards)).toEqual(['002']);
+  });
+
+  it('still fills a set that returned nothing at all', () => {
+    // SOROPJ: no cards, so nothing contradicts plain numbering.
+    expect(missingCardNumbers(SOROPJ, [])).toEqual(['001', '002']);
   });
 });

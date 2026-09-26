@@ -46,6 +46,11 @@ on:
 permissions:
   contents: read
   id-token: write
+  # The failure notifier opens an issue. Without this it fails with
+  # "Resource not accessible by integration" (403, x-accepted-github-permissions:
+  # issues=write) -- so a failing run failed twice and filed nothing, which is
+  # how the first real run went red with no issue to show for it.
+  issues: write
 
 jobs:
   sync-cards:

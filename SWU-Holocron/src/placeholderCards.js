@@ -92,6 +92,24 @@ export function expectedCardCount(set) {
 }
 
 /**
+ * Does this set number its cards 1, 2, 3 ...?
+ *
+ * Most do. Prize-pack and showcase sets do not: SHDPQ's six cards are numbered
+ * `1`, `2-4`, `2-8`, `2-C`, `2-F`, `2-16`. There is no way to name the missing
+ * member of a sequence like that, and guessing produced placeholders for sets
+ * that were already complete.
+ *
+ * @param {Array} cards
+ * @returns {boolean} true when every present number is a plain integer
+ */
+export function hasDenseIntegerNumbering(cards = []) {
+  return (Array.isArray(cards) ? cards : []).every((c) => {
+    const raw = String(c?.Number ?? c?.number ?? '').trim();
+    return raw !== '' && /^\d+$/.test(raw);
+  });
+}
+
+/**
  * Which card numbers the catalog implies but the fetched cards do not cover.
  *
  * Only numbers inside the expected range are considered. A set whose real cards
@@ -106,14 +124,24 @@ export function missingCardNumbers(set, cards = []) {
   const expected = expectedCardCount(set);
   if (expected <= 0) return [];
 
+  const all = Array.isArray(cards) ? cards : [];
+
+  // Never emit more than the actual shortfall. A set holding as many cards as
+  // the catalogue claims is complete, whatever its numbers look like. This is
+  // the guard that matters: walking 1..N and reporting every unmatched number
+  // invented five placeholders for a complete set on the first real run.
+  const shortfall = expected - all.length;
+  if (shortfall <= 0) return [];
+
+  // And only name the missing ones when they can be named.
+  if (!hasDenseIntegerNumbering(all)) return [];
+
   const present = new Set(
-    (Array.isArray(cards) ? cards : [])
-      .map((c) => normalizeCardNumber(c?.Number ?? c?.number))
-      .filter(Boolean)
+    all.map((c) => normalizeCardNumber(c?.Number ?? c?.number)).filter(Boolean)
   );
 
   const missing = [];
-  for (let n = 1; n <= expected; n += 1) {
+  for (let n = 1; n <= expected && missing.length < shortfall; n += 1) {
     const number = normalizeCardNumber(n);
     if (!present.has(number)) missing.push(number);
   }
@@ -179,7 +207,12 @@ export function placeholdersForSet({ set, cards = [], catalog = [], now = Date.n
  * - `complete-with-placeholders` — the gap is filled by placeholders awaiting
  *   submission. Informational: the database knows what it does not know.
  * - `awaiting-release` — short, but the set is not out yet. Normal.
- * - `incomplete` — short, released, and not placeheld. This is a real problem.
+ * - `incomplete-unnumbered` — short and released, but the set does not number
+ *   its cards as plain integers, so the missing ones cannot be named. Reported,
+ *   not failed: the data is upstream and a guessed number is worse than none.
+ * - `incomplete` — short, released, numberable, and still not placeheld. Not
+ *   reachable once the placeholder step has run, so it means the pipeline itself
+ *   is wrong. The only status that fails a run.
  * - `unknown` — the catalog gives no count to check against.
  *
  * @returns {{status: string, expected: number, real: number, placeholders: number, missing: number}}
@@ -208,6 +241,10 @@ export function classifySetCompleteness({ set, cards = [], catalog = [], now = D
 
   if (!isSetReleased(set, catalog, now)) {
     return { status: 'awaiting-release', expected, real, placeholders, missing };
+  }
+
+  if (!hasDenseIntegerNumbering(all)) {
+    return { status: 'incomplete-unnumbered', expected, real, placeholders, missing };
   }
 
   return { status: 'incomplete', expected, real, placeholders, missing };
