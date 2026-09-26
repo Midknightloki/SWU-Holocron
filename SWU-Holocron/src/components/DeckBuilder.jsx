@@ -22,7 +22,7 @@ import {
   importFromMeleeText,
 } from '../utils/deckImportExport';
 import { getCardSuggestions } from '../services/AiSuggestionsService';
-import { rankCandidates, extractConceptTerms } from '../utils/suggestionRanking';
+import { rankCandidates, extractConceptTerms, extractConceptPhrases } from '../utils/suggestionRanking';
 import { checkDeckLegality, getBanStatus, getMinDeckSize, getRequiredLeaderCount } from '../services/LegalityService';
 
 const TAG_CATEGORIES = [
@@ -565,6 +565,9 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
         (card.Keywords || []).forEach(k => vocabulary.add(String(k).toLowerCase()));
       });
       const conceptTerms = extractConceptTerms(deckConcept, Array.from(vocabulary));
+      // Mechanics like "indirect damage" live in rules text, never in traits or
+      // keywords, so the vocabulary above cannot see them.
+      const conceptPhrases = extractConceptPhrases(deckConcept);
 
       const ownedIds = new Set();
       allCards.forEach(card => {
@@ -586,6 +589,9 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
           cost: card.Cost ?? null,
           aspects: card.Aspects || [],
           traits: (card.Traits || []).slice(0, 3),
+          // Used for concept matching only. The prompt line is built from id,
+          // name, type, cost, aspects and traits, so this adds no tokens.
+          text: `${card.FrontText || ''} ${card.BackText || ''}`.trim(),
         }));
 
       // Rank rather than truncate. `.slice(0, 300)` on a list loaded in set
@@ -599,11 +605,16 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
         deckTraits,
         deckTypes,
         conceptTerms,
+        conceptPhrases,
         ownedIds,
         leaderSetCode: String(selectedLeader || '').split('_')[0],
         setOrder,
         limit: 300,
-      });
+      })
+        // Rules text was only needed for concept matching. Strip it before the
+        // request: the prompt is built from the other fields, so shipping it
+        // would inflate the payload for nothing.
+        .map(({ text, ...card }) => card);
 
       const suggestions = await getCardSuggestions({
         leaderName: leader?.Name || selectedLeader,
