@@ -224,3 +224,79 @@ describe('CardModal - Set Code Usage', () => {
     expect(CardService.getCollectionId).toHaveBeenCalledWith('JTL', '017', false);
   });
 });
+
+describe('CardModal - placeholder cards', () => {
+  const placeholder = {
+    Set: 'SOROPJ',
+    Number: '001',
+    Name: 'Unknown Card',
+    Subtitle: 'SOROPJ 001',
+    Type: null,
+    Cost: null,
+    Aspects: [],
+    FrontText: 'This card is listed in the set catalogue, but no data source describes it. Submit it to complete the database.',
+    isPlaceholder: true,
+  };
+
+  const realCard = {
+    Set: 'SOR',
+    Number: '001',
+    Name: 'Director Krennic',
+    Subtitle: 'Aspiring to Authority',
+    Type: 'Leader',
+    FrontText: 'Some real rules text',
+  };
+
+  const renderModal = (card, extra = {}) =>
+    render(
+      <CardModal
+        initialCard={card}
+        allCards={[card]}
+        setCode={card.Set}
+        user={{ uid: 'u1' }}
+        collectionData={{}}
+        onClose={vi.fn()}
+        {...extra}
+      />
+    );
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should explain what a placeholder is', () => {
+    renderModal(placeholder);
+    expect(screen.getByText(/no data source describes it/i)).toBeInTheDocument();
+  });
+
+  // There is no art for a card nobody has catalogued, so do not ask the CDN
+  // for one and show a broken image.
+  it('should not request an image for a placeholder', () => {
+    renderModal(placeholder);
+    expect(CardService.getCardImage).not.toHaveBeenCalled();
+    expect(screen.getByText(/has not been catalogued/i)).toBeInTheDocument();
+  });
+
+  it('should offer a route to the submission form', () => {
+    const onSubmitCard = vi.fn();
+    renderModal(placeholder, { onSubmitCard });
+
+    const button = screen.getByRole('button', { name: /Submit this card/i });
+    button.click();
+    expect(onSubmitCard).toHaveBeenCalled();
+  });
+
+  it('should not offer submission when no handler is supplied', () => {
+    renderModal(placeholder);
+    expect(screen.queryByRole('button', { name: /Submit this card/i })).not.toBeInTheDocument();
+  });
+
+  it('should leave a real card completely alone', () => {
+    renderModal(realCard, { onSubmitCard: vi.fn() });
+
+    expect(screen.getByText('Some real rules text')).toBeInTheDocument();
+    expect(screen.queryByText(/no data source describes it/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Submit this card/i })).not.toBeInTheDocument();
+    expect(CardService.getCardImage).toHaveBeenCalledWith('SOR', '001');
+  });
+});

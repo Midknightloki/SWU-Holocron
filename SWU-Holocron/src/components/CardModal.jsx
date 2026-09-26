@@ -6,13 +6,14 @@ import { doc, setDoc, deleteDoc, collection } from 'firebase/firestore';
 
 const AspectIcon = ({ aspect }) => { /* ... icon logic ... */ return <span>{aspect}</span> }; // Simplification for brevity in this file block, copy from previous if needed
 
-export default function CardModal({ initialCard, allCards, setCode, user, collectionData, onClose }) {
+export default function CardModal({ initialCard, allCards, setCode, user, collectionData, onClose, onSubmitCard }) {
   const [currentCard, setCurrentCard] = useState(initialCard);
   const [isFlipped, setIsFlipped] = useState(false);
   const [isFoil, setIsFoil] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [imageLoading, setImageLoading] = useState(true);
 
+  const isPlaceholder = currentCard.isPlaceholder === true;
   const collectionKey = CardService.getCollectionId(currentCard.Set, currentCard.Number, isFoil);
   const ownedCount = collectionData[collectionKey]?.quantity || 0;
 
@@ -26,7 +27,13 @@ export default function CardModal({ initialCard, allCards, setCode, user, collec
   useEffect(() => { setCurrentCard(initialCard); setIsFlipped(false); setIsFoil(false); }, [initialCard]);
 
   const hasBack = currentCard.Type === 'Leader';
-  const imageUrl = isFlipped && hasBack ? CardService.getBackImage(currentCard.Set, currentCard.Number) : CardService.getCardImage(currentCard.Set, currentCard.Number);
+  // No URL is built for a placeholder: there is no art to fetch, and asking the
+  // CDN for one only produces a broken image.
+  const imageUrl = isPlaceholder
+    ? null
+    : (isFlipped && hasBack
+      ? CardService.getBackImage(currentCard.Set, currentCard.Number)
+      : CardService.getCardImage(currentCard.Set, currentCard.Number));
 
   useEffect(() => { setImageLoading(true); setImageError(false); }, [imageUrl]);
 
@@ -61,7 +68,14 @@ export default function CardModal({ initialCard, allCards, setCode, user, collec
           <div className="w-full md:w-3/5 bg-black/50 flex flex-col items-center justify-center p-4 md:p-8 relative overflow-hidden">
              {/* ... Image Logic ... */}
              <div className="relative flex items-center justify-center w-full h-full">
+                {isPlaceholder ? (
+                  <div className="flex flex-col items-center gap-3 text-center px-6">
+                    <ImageIcon size={48} className="text-gray-600" />
+                    <p className="text-gray-400 text-sm">No image: this card has not been catalogued.</p>
+                  </div>
+                ) : (
                 <img src={imageUrl} alt={currentCard.Name} className={`max-h-[65vh] object-contain drop-shadow-2xl rounded-lg ${imageLoading ? 'opacity-0' : 'opacity-100'} transition-opacity`} onLoad={() => setImageLoading(false)} />
+                )}
              </div>
 
              {/* Controls */}
@@ -90,9 +104,25 @@ export default function CardModal({ initialCard, allCards, setCode, user, collec
           <div className="w-full md:w-2/5 p-6 md:p-8 bg-gray-900 text-gray-100 border-l border-gray-800 overflow-y-auto">
              <h2 className="text-3xl font-bold">{currentCard.Name}</h2>
              <p className="text-yellow-500 italic mb-4">{currentCard.Subtitle}</p>
-             <div className="bg-gray-800/50 p-4 rounded-xl border border-gray-700">
-               <p className="whitespace-pre-wrap">{isFlipped && hasBack ? currentCard.BackText : currentCard.FrontText}</p>
-             </div>
+             {isPlaceholder ? (
+               /* Nothing is known about this card beyond that it should exist, so
+                  the only useful thing the modal can offer is the way to fix that. */
+               <div className="bg-amber-500/10 border border-amber-500/40 p-4 rounded-xl space-y-3">
+                 <p className="text-amber-200 text-sm">{currentCard.FrontText}</p>
+                 {onSubmitCard && (
+                   <button
+                     onClick={onSubmitCard}
+                     className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded-lg text-sm"
+                   >
+                     Submit this card
+                   </button>
+                 )}
+               </div>
+             ) : (
+               <div className="bg-gray-800/50 p-4 rounded-xl border border-gray-700">
+                 <p className="whitespace-pre-wrap">{isFlipped && hasBack ? currentCard.BackText : currentCard.FrontText}</p>
+               </div>
+             )}
           </div>
        </div>
     </div>

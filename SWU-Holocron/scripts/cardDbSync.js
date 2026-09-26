@@ -13,6 +13,7 @@ import { execSync } from 'child_process';
 import { mkdirSync, writeFileSync } from 'fs';
 import { initFirestore } from './firebaseAdmin.js';
 import { reconcileSet } from '../src/cardReconcile.js';
+import { applyPlaceholders, classifySetCompleteness } from '../src/placeholderCards.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -165,6 +166,112 @@ async function reconcile() {
   }
 }
 
+/**
+ * Fill catalog shortfalls with placeholder cards.
+ *
+ * Runs after reconcile, so it only ever fills a gap that neither swu-db nor the
+ * official site could cover. Idempotent: it rebuilds the placeholder set from the
+ * real cards each time, so one disappears by itself when the card it stood in for
+ * finally arrives.
+ *
+ * Never touches a set whose release date is still ahead of us -- see
+ * src/placeholderCards.js for why that guard is the whole design.
+ */
+async function fillPlaceholders() {
+  const start = Date.now();
+  console.log(`\n${'='.repeat(60)}`);
+  console.log('  Step: Placeholders (catalog says it exists, no source describes it)');
+  console.log(`${'='.repeat(60)}\n`);
+
+  const added = [];
+  const removed = [];
+  const statuses = {};
+  let setsProcessed = 0;
+
+  try {
+    const { SETS } = await import('../src/cardData.js');
+    const { APP_ID } = await import('../src/firebase.js');
+
+    const db = await initFirestore();
+
+    const registrySnap = await db.collection('artifacts')
+      .doc(APP_ID)
+      .collection('public')
+      .doc('data')
+      .collection('cardDatabase')
+      .doc('sets')
+      .get();
+
+    const registry = registrySnap.exists ? registrySnap.data()?.sets : null;
+    const catalog = Array.isArray(registry) && registry.length > 0 ? registry : SETS;
+    if (!Array.isArray(registry) || registry.length === 0) {
+      console.warn('  No set registry found; using the fallback list only.');
+    }
+
+    for (const set of catalog) {
+      try {
+        const dataDocRef = db.collection('artifacts')
+          .doc(APP_ID)
+          .collection('public')
+          .doc('data')
+          .collection('cardDatabase')
+          .doc('sets')
+          .collection(set.code)
+          .doc('data');
+
+        const snap = await dataDocRef.get();
+        if (!snap.exists) {
+          console.log(`  ${set.code}: no data doc, skipping`);
+          continue;
+        }
+
+        const cards = snap.data()?.cards || [];
+        const result = applyPlaceholders({ set, cards, catalog });
+
+        if (result.added.length > 0 || result.removed.length > 0) {
+          await dataDocRef.update({ cards: result.cards });
+          const parts = [];
+          if (result.added.length) parts.push(`+${result.added.length} placeholder(s): ${result.added.join(', ')}`);
+          if (result.removed.length) parts.push(`-${result.removed.length} stale: ${result.removed.join(', ')}`);
+          console.log(`  ${set.code}: ${parts.join('; ')}`);
+          added.push(...result.added.map((n) => `${set.code}_${n}`));
+          removed.push(...result.removed.map((n) => `${set.code}_${n}`));
+        }
+
+        const classification = classifySetCompleteness({ set, cards: result.cards, catalog });
+        statuses[set.code] = classification;
+
+        // `incomplete` is the only status that means something is actually wrong:
+        // released, short, and not placeheld. Everything else is a normal state.
+        if (classification.status === 'incomplete') {
+          console.warn(`  ${set.code}: INCOMPLETE - ${classification.missing} card(s) unaccounted for`);
+        } else if (classification.status === 'awaiting-release') {
+          console.log(`  ${set.code}: awaiting release, ${classification.real}/${classification.expected} revealed`);
+        }
+
+        setsProcessed++;
+      } catch (error) {
+        console.error(`  ${set.code}: ERROR - ${error.message}`);
+      }
+    }
+
+    const duration_ms = Date.now() - start;
+    const incomplete = Object.entries(statuses).filter(([, c]) => c.status === 'incomplete').map(([code]) => code);
+    const placeheld = Object.entries(statuses).filter(([, c]) => c.status === 'complete-with-placeholders').map(([code]) => code);
+
+    console.log(`\n  Placeholders completed in ${(duration_ms / 1000).toFixed(1)}s`);
+    console.log(`  Sets processed: ${setsProcessed}, placeholders added: ${added.length}, stale removed: ${removed.length}`);
+    if (placeheld.length) console.log(`  Complete with placeholders: ${placeheld.join(', ')}`);
+    if (incomplete.length) console.warn(`  Still incomplete: ${incomplete.join(', ')}`);
+
+    return { success: true, duration_ms, added, removed, statuses, setsProcessed, incomplete, placeheld };
+  } catch (error) {
+    const duration_ms = Date.now() - start;
+    console.error(`  Placeholders FAILED: ${error.message}`);
+    return { success: false, duration_ms, added, removed, statuses, setsProcessed, error: error.message };
+  }
+}
+
 async function main() {
   const pipelineStart = Date.now();
   const errors = [];
@@ -213,7 +320,13 @@ async function main() {
     steps.reconcile = { success: true, skipped: true, duration_ms: 0, overrides: [], addedCards: [], setsProcessed: 0 };
   }
 
-  // Step 4 - Verify
+  // Step 4 - Placeholders (after reconcile: only fills what neither source had)
+  steps.placeholders = await fillPlaceholders();
+  if (!steps.placeholders.success) {
+    errors.push('Placeholder step failed');
+  }
+
+  // Step 5 - Verify
   steps.verify = runStep('Verify database', 'node scripts/verifyCardDatabase.js');
   if (!steps.verify.success) {
     errors.push('Verify step failed');
@@ -235,6 +348,14 @@ async function main() {
         success: steps.scrape.success,
         duration_ms: steps.scrape.duration_ms,
         output: steps.scrape.output || ''
+      },
+      placeholders: {
+        success: steps.placeholders.success,
+        duration_ms: steps.placeholders.duration_ms,
+        added: steps.placeholders.added || [],
+        removed: steps.placeholders.removed || [],
+        incomplete: steps.placeholders.incomplete || [],
+        placeheld: steps.placeholders.placeheld || []
       },
       reconcile: {
         success: steps.reconcile.success,

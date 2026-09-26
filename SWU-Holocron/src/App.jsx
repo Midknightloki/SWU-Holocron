@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Layers, RefreshCw, Loader2, Cloud, LayoutGrid, BarChart3,
   Search, Plus, Minus, Info, AlertCircle, FileText,
-  User, Menu, X, Shield, Swords
+  User, Menu, X, Shield, Swords, HelpCircle
 } from 'lucide-react';
 import { SETS, ASPECTS } from './constants';
 import { db, APP_ID } from './firebase';
@@ -988,6 +988,10 @@ export default function App() {
                     const stdOwned = collectionData[stdKey]?.quantity || 0;
                     const foilOwned = collectionData[foilKey]?.quantity || 0;
                     const totalOwned = stdOwned + foilOwned;
+                    // A card the set catalogue lists that no data source
+                    // describes. It has no art and no real name, so say so
+                    // rather than letting it read as a broken card.
+                    const isPlaceholder = card.isPlaceholder === true;
 
                     return (
                       <div
@@ -1034,12 +1038,25 @@ export default function App() {
                           </div>
                         </div>
 
+                        {isPlaceholder && (
+                          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-gray-900/95 p-3 text-center">
+                            <HelpCircle size={22} className="text-amber-400" />
+                            <p className="text-[11px] font-bold uppercase tracking-wider text-amber-300">
+                              Not catalogued
+                            </p>
+                            <p className="text-[10px] text-gray-400 leading-snug">
+                              {card.Set} {card.Number} exists, but no source describes it.
+                            </p>
+                            <span className="text-[10px] text-yellow-500 underline">Help fill it in</span>
+                          </div>
+                        )}
+
                         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-4 pointer-events-none">
                           <div className="transform translate-y-4 group-hover:translate-y-0 transition-transform duration-300">
                             <h3 className="text-white font-bold leading-tight shadow-black drop-shadow-md">{card.Name}</h3>
                             {card.Subtitle && <p className="text-yellow-400 text-xs italic">{card.Subtitle}</p>}
                             <div className="flex items-center gap-2 mt-2">
-                              <span className="text-gray-300 text-xs px-2 py-0.5 bg-gray-700 rounded-full">{card.Type}</span>
+                              {card.Type && <span className="text-gray-300 text-xs px-2 py-0.5 bg-gray-700 rounded-full">{card.Type}</span>}
                             </div>
                           </div>
                         </div>
@@ -1074,6 +1091,10 @@ export default function App() {
           user={user}
           collectionData={collectionData}
           onClose={() => setSelectedCard(null)}
+          onSubmitCard={() => {
+            setSelectedCard(null);
+            setView('submit');
+          }}
         />
       )}
 
