@@ -117,16 +117,27 @@ harness for "render the real app with real routing". Building one is the
 prerequisite for un-skipping them, and it is a larger job than any individual
 skip suggests.
 
-## Git hooks do not run
+## Git hooks
 
-`.husky/pre-commit` (`lint-staged`) and `.husky/pre-push` (`npm run test:unit`)
-exist as files and **have never executed**. `npm install`'s `prepare` step runs
-`husky install` from `SWU-Holocron/`, which has no `.git` — that lives one level
-up at the git root — so the install fails, no `.husky/_` shim is written, and
-`core.hooksPath` is never set.
+They run, as of the fix described below. Before it they existed as files and had
+never once executed.
 
-So CI is the only gate. Run `npm run lint` and `npx vitest run` yourself before
-pushing.
+| Hook | Runs |
+|---|---|
+| `pre-commit` | `lint-staged`: `eslint --fix` and `vitest related --run` on staged `.js`/`.jsx` |
+| `pre-push` | `npm run test:unit` |
+
+`npm install`'s `prepare` step used to run `husky install` from `SWU-Holocron/`,
+which has no `.git` — that lives one level up at the git root — so it failed, no
+`.husky/_` shim was written, and `core.hooksPath` was never set. `prepare` is now
+`cd .. && husky install SWU-Holocron/.husky`.
+
+Git runs hooks from the top level of the working tree, so each hook `cd`s into
+`SWU-Holocron` before doing anything. Anything you add to them must too.
+
+A fresh clone needs one `npm install` before the hooks exist, and `HUSKY=0`
+skips the install (CI does this). So **CI is still the authoritative gate** — the
+hooks are a convenience that catches things earlier, not a guarantee.
 
 ## CI
 

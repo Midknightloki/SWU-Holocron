@@ -14,13 +14,17 @@ cd SWU-Holocron        # from git root
 npm install            # node_modules is NOT checked in / may be absent
 ```
 
-`npm install` exits non-zero on the `prepare` step: it runs `husky install`,
-which looks for `.git` in the package directory and fails, because `.git` is one
-level up at the git root. Dependencies do install (prepare runs last) — the
-failure is cosmetic locally, but it means **the git hooks have never actually
-been active** (no `.husky/_` shim, `core.hooksPath` unset). `pre-commit` and
-`pre-push` exist as files but do not run. Set `HUSKY=0` to silence it; CI does
-exactly that on `npm ci`.
+`npm install` used to exit non-zero on the `prepare` step, because `husky install`
+looks for `.git` in the directory it runs from and `.git` is one level up at the
+git root. That is fixed: `prepare` is now `cd .. && husky install
+SWU-Holocron/.husky`, which installs from the root and points `core.hooksPath` at
+the nested hooks directory. CI still sets `HUSKY=0` on `npm ci`, since hooks have
+no job there.
+
+Because the hooks now run from the git root (git runs them at the top level of the
+working tree), each one `cd`s into `SWU-Holocron` first. Anything added to them
+must do the same, or `npx`, `node_modules` and the eslint config will not
+resolve.
 
 The git root holds only ops/docs material: this file, `README.md`, `deploy.js`,
 `homelab-tools/swu-deploy-dashboard/` (static dashboard that polls
@@ -69,10 +73,15 @@ npm run admin:scrape-dry-run   # scrape official card site without writing
 npm run admin:merge-dry-run    # preview merge of swu-db + official sources
 ```
 
-Git hooks are configured but **inactive** — `.husky/pre-commit` (`lint-staged`) and
-`.husky/pre-push` (`npm run test:unit`) exist as files that never execute, for the
-reason given above. Treat CI as the only gate, and run `npm run lint` and
-`npx vitest run` yourself before pushing.
+Git hooks work now: `.husky/pre-commit` runs `lint-staged` (eslint --fix plus
+`vitest related` on staged `.js`/`.jsx`), `.husky/pre-push` runs
+`npm run test:unit`. They had never executed before — see the install note above.
+They only apply to files under `SWU-Holocron/`, because lint-staged runs from
+there; root-level JavaScript such as `deploy.js` is not linted by them, which is
+intentional since it has no eslint config of its own.
+
+A clone needs one `npm install` for the hooks to exist. CI remains the
+authoritative gate.
 
 ## Architecture
 
