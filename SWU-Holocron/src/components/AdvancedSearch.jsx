@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Search, X, Filter, Loader2, Tag, Plus, Minus, ChevronDown } from 'lucide-react';
 import { SETS, ASPECTS } from '../constants';
 import { rankSearchResults } from '../utils/cardSearchRanking';
@@ -33,6 +33,28 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
       .catch(err => console.warn('Could not read set registry:', err));
     return () => { cancelled = true; };
   }, []);
+
+  // The page header is `sticky top-0` too. With the search bar also at top 0 the
+  // two stick to the same line, and the bar -- z-20 against the header's z-10 --
+  // covers it completely once you scroll. Measured at 84px of overlap in Chrome.
+  // The header's height moves with the filter-count badge and the responsive
+  // text, so it is measured rather than assumed.
+  const headerRef = useRef(null);
+  const [headerHeight, setHeaderHeight] = useState(0);
+
+  useEffect(() => {
+    const el = headerRef.current;
+    if (embedded || !el) return undefined;
+
+    const update = () => setHeaderHeight(el.offsetHeight);
+    update();
+
+    // @environment:web — absent in the test environment, where layout is a no-op.
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [embedded]);
 
   // Load ALL sets on mount for comprehensive search
   useEffect(() => {
@@ -222,7 +244,7 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
       <div className={embedded ? '' : 'min-h-screen'}>
         {/* Header — hidden when embedded (DeckBuilder provides its own header) */}
         {!embedded && (
-          <div className="sticky top-0 z-10 bg-gray-900/95 backdrop-blur-md border-b border-gray-800">
+          <div ref={headerRef} className="sticky top-0 z-10 bg-gray-900/95 backdrop-blur-md border-b border-gray-800">
             <div className="max-w-7xl mx-auto px-4 py-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -253,8 +275,18 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
           {/* Sticky search. This sits OUTSIDE the grid on purpose: a sticky
               element only sticks within its parent box, and inside the filters
               column -- which is short once filters are collapsed -- it had almost
-              no room to travel and scrolled away with the results. */}
-          <div className="sticky top-0 z-20 -mx-1 px-1 pt-1 pb-3 bg-gray-800/95 backdrop-blur-sm space-y-3">
+              no room to travel and scrolled away with the results.
+
+              Opaque, and with no backdrop-filter. The sticky offset itself is
+              stable -- measured at 0 variation across fractional scroll
+              positions -- but a backdrop-filter re-snapshots and re-rounds what
+              is behind it every frame, which shimmers by a device pixel on a
+              display whose devicePixelRatio is not a whole number. Stacking it
+              over the header's own backdrop-blur-md made that worse. */}
+          <div
+            className="sticky z-20 -mx-1 px-1 pt-1 pb-3 bg-gray-800 space-y-3"
+            style={{ top: embedded ? 0 : headerHeight }}
+          >
           <div>
             <label className="block text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">
               Search Text
