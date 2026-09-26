@@ -125,26 +125,42 @@ export default defineConfig({
         '**/vite.config.js',
         '**/tailwind.config.js'
       ],
+      // A ratchet, not an aspiration. These keys are matched as GLOBS -- the
+      // previous values were written as bare directories ('src/services/'),
+      // which match no files, so nothing was enforced and `test:ci` passed at
+      // any coverage at all while appearing to demand 80%.
+      //
+      // Each floor sits a few points under what the suite actually achieves, so
+      // it catches a regression without failing today. Raise a floor when you
+      // raise the coverage; do not lower one to make a run go green.
       thresholds: {
-        // Critical paths require 80% coverage
-        'src/services/': {
-          lines: 80,
-          functions: 80,
-          branches: 80,
-          statements: 80
+        // measured: 89 lines / 88 branches / 88 functions
+        'src/utils/**': {
+          lines: 85,
+          statements: 85,
+          functions: 83,
+          branches: 85
         },
-        'src/utils/': {
-          lines: 80,
-          functions: 80,
-          branches: 80,
-          statements: 80
+        // measured: 70 lines / 74 branches / 44 functions
+        'src/services/**': {
+          lines: 66,
+          statements: 66,
+          functions: 40,
+          branches: 70
         },
-        // Components require 70% coverage
-        'src/components/': {
+        // measured: 75 lines / 47 branches / 100 functions
+        'src/contexts/**': {
           lines: 70,
-          functions: 70,
-          branches: 70,
-          statements: 70
+          statements: 70,
+          functions: 90,
+          branches: 44
+        },
+        // measured: 49 lines / 62 branches / 28 functions
+        'src/components/**': {
+          lines: 45,
+          statements: 45,
+          functions: 25,
+          branches: 58
         }
       }
     },
