@@ -1,11 +1,13 @@
 # Functions runtime service account
 
-> **This is a two-part change and the parts must go together.** The code in
-> `functions/index.js` now names a dedicated runtime service account. Until the
-> commands in Step 1 have been run, `firebase deploy --only functions` will fail
-> because that account does not exist. A failed deploy leaves the currently
-> running functions untouched, so the failure mode is loud and safe — but do
-> Step 1 first.
+> **Status: Step 1 is done, Step 2 is not.** The service account exists and holds
+> its three roles as of 2026-09-26. `functions/index.js` already names it. What
+> has not happened is the deploy, so **both functions are still running as the
+> default compute account** with `roles/editor` until someone runs
+> `firebase deploy --only functions`.
+>
+> Nothing is broken in the meantime — the old identity still works. The narrowing
+> simply has not taken effect yet.
 
 ## The problem
 
@@ -54,49 +56,94 @@ else uses it, so nothing else can be affected.
 
 ## Step 1 — create the account and grant it what it needs
 
+**Already done**, on 2026-09-26. Kept here as the record of what was run and how
+to redo it. Every command is idempotent apart from the create, which errors with
+`ALREADY_EXISTS` if the account is there — harmless.
+
+Note the shell. This project is developed on Windows, and the commands below are
+given for **PowerShell** first because that is what you are most likely sitting
+in. `PROJECT=...` and `${SA}` are bash syntax and fail in PowerShell with no
+useful error, which is how the first attempt at this went wrong.
+
+### PowerShell
+
+```powershell
+$PROJECT = "swu-holocron-93a18"
+$SA = "swu-functions@$PROJECT.iam.gserviceaccount.com"
+
+gcloud iam service-accounts create swu-functions `
+  --project=$PROJECT `
+  --display-name="SWU Holocron Cloud Functions runtime" `
+  --description="Runtime identity for getCardSuggestions and redeemInviteCode"
+
+# Firestore read/write for redeemInviteCode (Admin SDK).
+gcloud projects add-iam-policy-binding $PROJECT `
+  --member="serviceAccount:$SA" --role="roles/datastore.user" --condition=None
+
+# Vertex AI predictions for getCardSuggestions.
+gcloud projects add-iam-policy-binding $PROJECT `
+  --member="serviceAccount:$SA" --role="roles/aiplatform.user" --condition=None
+
+# So the functions can write their own logs.
+gcloud projects add-iam-policy-binding $PROJECT `
+  --member="serviceAccount:$SA" --role="roles/logging.logWriter" --condition=None
+
+# Let the deployer act as the account. `firebase deploy` runs as you, and
+# setting a runtime service account on a Cloud Run service requires
+# iam.serviceAccounts.actAs on it.
+gcloud iam service-accounts add-iam-policy-binding $SA `
+  --project=$PROJECT `
+  --member="user:midknightloki@gmail.com" `
+  --role="roles/iam.serviceAccountUser"
+```
+
+Two things that bite here regardless of shell:
+
+- **`--project` is required on the create and on the service-account binding.**
+  The active gcloud project on this machine is `loki-net`, not this one, so a
+  command without `--project` silently targets the wrong project.
+- **`--condition=None`** on the project bindings. Without it, gcloud prompts
+  interactively for a condition, and a prompt in a non-interactive shell either
+  hangs or fails.
+
+### bash / Git Bash
+
 ```bash
 PROJECT=swu-holocron-93a18
 SA=swu-functions@${PROJECT}.iam.gserviceaccount.com
 
 gcloud iam service-accounts create swu-functions \
   --project="$PROJECT" \
-  --display-name="SWU Holocron Cloud Functions runtime"
+  --display-name="SWU Holocron Cloud Functions runtime" \
+  --description="Runtime identity for getCardSuggestions and redeemInviteCode"
 
-# Firestore read/write for redeemInviteCode (Admin SDK).
-gcloud projects add-iam-policy-binding "$PROJECT" \
-  --member="serviceAccount:${SA}" \
-  --role="roles/datastore.user"
+for role in roles/datastore.user roles/aiplatform.user roles/logging.logWriter; do
+  gcloud projects add-iam-policy-binding "$PROJECT" \
+    --member="serviceAccount:${SA}" --role="$role" --condition=None
+done
 
-# Vertex AI predictions for getCardSuggestions.
-gcloud projects add-iam-policy-binding "$PROJECT" \
-  --member="serviceAccount:${SA}" \
-  --role="roles/aiplatform.user"
-
-# So the functions can write their own logs.
-gcloud projects add-iam-policy-binding "$PROJECT" \
-  --member="serviceAccount:${SA}" \
-  --role="roles/logging.logWriter"
-```
-
-Then let the deployer act as that account. `firebase deploy` runs as you, and
-setting a runtime service account on a Cloud Run service requires
-`iam.serviceAccounts.actAs` on it:
-
-```bash
 gcloud iam service-accounts add-iam-policy-binding "$SA" \
   --project="$PROJECT" \
   --member="user:midknightloki@gmail.com" \
   --role="roles/iam.serviceAccountUser"
 ```
 
-Confirm the three roles landed:
+### Confirm it landed
 
-```bash
-gcloud projects get-iam-policy "$PROJECT" \
-  --flatten="bindings[].members" \
-  --filter="bindings.members:${SA}" \
-  --format="value(bindings.role)"
 ```
+gcloud projects get-iam-policy swu-holocron-93a18 --flatten="bindings[].members" --filter="bindings.members:swu-functions@swu-holocron-93a18.iam.gserviceaccount.com" --format="value(bindings.role)"
+```
+
+Expected, and what it returned on 2026-09-26:
+
+```
+roles/aiplatform.user
+roles/datastore.user
+roles/logging.logWriter
+```
+
+The four APIs this depends on were already enabled: `aiplatform`,
+`cloudfunctions`, `firestore`, `run`.
 
 ## Step 2 — deploy
 
