@@ -724,7 +724,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
               <img
                 src={CardService.getCardImage(card.Set, card.Number)}
                 alt={card.Name}
-                className="w-20 h-28 rounded object-cover border border-gray-600 hover:border-yellow-400 transition-colors"
+                className="w-28 h-20 rounded object-contain bg-gray-900 border border-gray-600 hover:border-yellow-400 transition-colors"
                 onError={(e) => { e.target.style.display = 'none'; }}
               />
             </button>
@@ -781,7 +781,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
               <img
                 src={CardService.getCardImage(baseCard.Set, baseCard.Number)}
                 alt={baseCard.Name}
-                className="w-20 h-28 rounded object-cover border border-gray-600 hover:border-yellow-400 transition-colors"
+                className="w-28 h-20 rounded object-contain bg-gray-900 border border-gray-600 hover:border-yellow-400 transition-colors"
                 onError={(e) => { e.target.style.display = 'none'; }}
               />
             </button>
@@ -1661,7 +1661,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
                                   <img
                                     src={CardService.getCardImage(leader.Set, leader.Number)}
                                     alt={leader.Name}
-                                    className="w-14 h-20 rounded object-cover border border-gray-600 group-hover:border-green-400 transition-colors"
+                                    className="w-20 h-14 rounded object-contain bg-gray-900 border border-gray-600 group-hover:border-green-400 transition-colors"
                                     onError={(e) => { e.target.style.display = 'none'; }}
                                   />
                                 )}
@@ -1669,7 +1669,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
                                   <img
                                     src={CardService.getCardImage(base.Set, base.Number)}
                                     alt={base.Name}
-                                    className="w-14 h-20 rounded object-cover border border-gray-600 group-hover:border-green-400 transition-colors"
+                                    className="w-20 h-14 rounded object-contain bg-gray-900 border border-gray-600 group-hover:border-green-400 transition-colors"
                                     onError={(e) => { e.target.style.display = 'none'; }}
                                   />
                                 )}
