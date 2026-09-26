@@ -148,3 +148,135 @@ After the first build post-runbook, `https://swu.holocronlabs.net/version.json` 
 ```
 
 If this endpoint returns 404, no deploy has run since the version.json change was introduced.
+
+---
+
+## Watchtower is not involved
+
+Earlier documentation described deploys as: push to Gitea, Watchtower notices
+within five minutes, the host rebuilds the Docker image. None of that is true and
+none of it ever was in this repository's workflows. There is no Watchtower
+container, and no reference to one in any compose file, workflow or Dockerfile.
+
+What actually happens is the diagram at the top: GitHub Actions builds the image
+on a hosted runner and pushes it to GHCR, then a **second job on the self-hosted
+runner** pulls that image and restarts the container. The host never builds, and
+nothing polls on a timer — the deploy is part of the same workflow run, so it
+starts seconds after the build finishes, not minutes.
+
+This matters when a deploy does not land: the thing to check is the build job and
+the runner service, not a poller.
+
+---
+
+## Rollback
+
+```bash
+git log --oneline | head -5           # find the bad commit
+git revert <sha>
+git push origin main                  # this rebuilds and redeploys
+```
+
+A revert only rebuilds if it touches a path in the trigger filter above. If it
+does not, force one with `workflow_dispatch`.
+
+To go back faster without waiting for a build, redeploy the previous image by
+digest on the host:
+
+```bash
+docker image ls ghcr.io/midknightloki/swu-holocron --digests
+cd /opt/swu-holocron
+# Pin the digest in docker-compose.yml, then:
+docker compose up -d web
+```
+
+---
+
+## Post-deploy verification
+
+```bash
+curl -s https://swu.holocronlabs.net/version.json      # sha should match main
+```
+
+Then in the browser console (F12), a healthy load shows:
+
+```
+Setting up collection listener - uid: <uid> mode: user
+✓ Loaded <n> cards from Firestore (SOR)
+Collection updated: <n> items
+```
+
+And should show none of:
+
+```
+Invalid collection reference ... 6 segments        # Firestore path arity
+Missing or insufficient permissions               # rules not deployed
+```
+
+Functionally: sign in, pick a set, add a card, reload, confirm the count
+persisted.
+
+---
+
+## Cloudflare Tunnel
+
+The tunnel runs as its own container beside the app and is the only public route
+in. It is independent of the app deploy, so a tunnel fault looks like a site
+outage even though the deploy succeeded.
+
+### 502s, or the connection dropping every few minutes
+
+QUIC over UDP is unstable on this network. The tunnel must run over HTTP/2.
+
+```bash
+docker logs swu-holocron-tunnel | grep -E 'timeout.*no recent network activity|QUIC'   # the bad sign
+docker logs swu-holocron-tunnel | grep 'protocol=http2'                                 # the good sign
+```
+
+`docker-compose.yml` needs:
+
+```yaml
+tunnel:
+  command: tunnel run --protocol http2
+```
+
+Then `docker compose up -d tunnel`.
+
+### Tunnel not connecting at all
+
+`Failed to dial a quic connection` in the logs. Check `TUNNEL_TOKEN` is set in
+`.env`, confirm the HTTP/2 setting above, then
+`docker compose restart tunnel`.
+
+```bash
+docker logs swu-holocron-tunnel | grep -E 'ERR|WRN|Failed|Registered'
+```
+
+---
+
+## Vestigial configuration
+
+`vite.config.js` sets `server.allowedHosts` and `preview.allowedHosts` to include
+`swu.holocronlabs.net`. That was load-bearing when the container ran
+`vite preview` against a git checkout on the host. It is not any more: the image
+is a multi-stage build whose final stage is **nginx serving static `dist/`**
+(`Dockerfile`, `nginx.conf`), and nginx has no host allowlist. The Vite settings
+now only affect local `npm run dev` and `npm run preview`.
+
+So a `Blocked request. This host is not allowed.` error in production would mean
+something is serving the app through Vite, which is itself the bug.
+
+---
+
+## Firestore rules
+
+Rules are no longer deployed by hand. `deploy-firestore-rules.yml` publishes them
+on a push to `main` that changes `SWU-Holocron/firestore.rules`, and only after
+the emulator rules tests pass. See that workflow, and `src/test/rules/`.
+
+To publish out of band:
+
+```bash
+cd SWU-Holocron
+firebase deploy --only firestore:rules
+```

@@ -1,354 +1,216 @@
 # 🌌 SWU Holocron
 
-> A comprehensive collection management and deck building application for **Star Wars™: Unlimited**, the trading card game by Fantasy Flight Games.
+> A collection manager and deck builder for **Star Wars™: Unlimited**, the trading card game by Fantasy Flight Games.
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![PWA](https://img.shields.io/badge/PWA-enabled-brightgreen.svg)](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps)
 [![Firebase](https://img.shields.io/badge/Firebase-powered-orange.svg)](https://firebase.google.com/)
 
-## 📖 Overview
+## Overview
 
-SWU Holocron is an **offline-first Progressive Web App (PWA)** designed to help Star Wars: Unlimited players manage their card collections, track statistics, and build competitive decks. Built with modern web technologies, it offers a seamless experience across desktop and mobile devices with full offline support.
+SWU Holocron is an offline-first Progressive Web App for tracking a Star Wars:
+Unlimited collection and building decks from it. Card data is stored locally and
+in Firestore, so the app keeps working without a connection and never depends on
+a live third-party API at runtime.
 
-### ✨ Key Features
+Live at **[swu.holocronlabs.net](https://swu.holocronlabs.net)**.
 
-- **📊 Collection Management**
-  - Track your complete card collection across all sets
-  - View collection statistics (completion %, playsets, missing cards)
-  - Import/Export collections via CSV (Moxfield & Archidekt compatible)
-  - Visual card grid with binder and stats views
+## Features
 
-- **🔍 Advanced Search & Filtering**
-  - Search by card name, text, or traits
-  - Filter by aspect (Aggression, Cunning, Vigilance, Villainy, Heroism, Command)
-  - Filter by card type (Unit, Event, Upgrade, Leader, Base)
-  - Filter by rarity and set
+**Collection**
+- Track owned quantities per card across every set, standard and foil separately
+- Completion stats: percentage, playsets, missing cards
+- CSV import and export, round-trip compatible with Moxfield and Archidekt
+- Quantity controls are inline everywhere cards appear — the grid, the card
+  modal, the missing-cards table and the deck builder's shopping list. There is
+  deliberately no separate "manage collection" screen.
 
-- **☁️ Cloud Sync & Offline Support**
-  - Firebase-powered real-time synchronization across devices
-  - Full offline functionality with local caching
-  - Optional sync codes for collection sharing
-  - Guest mode for local-only usage
+**Search**
+- Relevance-ranked search over name, subtitle, rules text, traits and keywords
+- Filter by aspect, card type, set and cost range
 
-- **🗄️ Reliable Card Database**
-  - Automated daily card database updates via GitHub Actions
-  - Zero dependency on live external APIs during usage
-  - Comprehensive admin panel for database management
-  - Version tracking and sync monitoring
+**Deck building**
+- Format validation for Premier, Eternal, Twin Suns and Trilogy: deck size,
+  leader count, copy limits, singleton rules, rotation and the banned list
+- Cost curve and aspect breakdown
+- Version snapshots, game logs and win/loss records per deck
+- Deck list import and export (SWUDB, Forcetable, Melee, swu.com text)
+- Publicly shareable deck links
+- A shopping list of what a deck needs that you do not own, with optional
+  TCGplayer pricing
+- AI card suggestions, ranked by what you own, aspect fit, traits, set proximity
+  and a deck concept you describe in your own words
 
-- **📱 Progressive Web App**
-  - Install on any device (mobile, tablet, desktop)
-  - Works offline after initial load
-  - Native-like experience with app icons
-  - Responsive design optimized for all screen sizes
+**Sync and offline**
+- Firestore-backed, live across devices
+- Google sign-in, or guest mode for local-only use
+- Installable as a PWA; works offline after first load
 
-- **🎯 Deck Building Tools** *(Coming Soon)*
-  - Format validation (Premier, Twin Suns, Trilogy)
-  - Deck statistics and mana curve analysis
-  - Export to popular deck-sharing platforms
+**Administration**
+- Card database seeding, verification and sync logs
+- Community card submissions with duplicate detection
+- Contributor invites by one-time code
 
-## 🚀 Quick Start
+## Quick start
 
-### For Users
+### Users
 
-**Web App:** Visit the deployed application (URL TBD)
+Open [swu.holocronlabs.net](https://swu.holocronlabs.net), then install it from
+your browser's menu to use it offline.
 
-**Install as PWA:**
-1. Open the web app in your browser
-2. Click the "Install" prompt or browser menu
-3. Use as a native app with offline support
+To bring an existing collection across, export it from Moxfield or Archidekt as
+CSV and import that file from the collection view.
 
-**Import Your Collection:**
-1. Export your collection from Moxfield or Archidekt as CSV
-2. Click the import button in SWU Holocron
-3. Select your CSV file
-4. Your collection is now tracked!
+### Developers
 
-### For Developers
+Requires **Node 20+**.
 
-#### Prerequisites
-
-- **Node.js 20+** - [Download](https://nodejs.org/)
-- **npm** (comes with Node.js)
-- **Git**
-- **Firebase Account** (for deployment)
-
-#### Installation
+Note the repository layout: the git root holds ops and documentation, and the
+application lives one level down in `SWU-Holocron/`. All npm commands run from
+there.
 
 ```bash
-# Clone the repository
 git clone https://github.com/Midknightloki/SWU-Holocron.git
-cd SWU-Holocron
-cd SWU-Holocron  # Navigate to the project directory
-
-# Install dependencies
+cd SWU-Holocron/SWU-Holocron
 npm install
-
-# Initialize Git hooks
-npm run prepare
-
-# Start development server
-npm run dev
+npm run dev            # http://localhost:5173
 ```
 
-Visit `http://localhost:5173` to see the app running locally.
+`npm install` exits non-zero on its `prepare` step, which runs `husky install`
+and cannot find `.git` from the nested directory. Dependencies still install.
+Set `HUSKY=0` to silence it. The consequence is that the git hooks have never
+been active, so **run `npm run lint` and `npx vitest run` yourself before
+pushing** — CI is the only gate.
 
-#### Firebase Setup
+Firebase configuration lives in `src/firebase.js`. See
+[FIREBASE-SETUP-GUIDE.md](./SWU-Holocron/docs/FIREBASE-SETUP-GUIDE.md) to point
+it at your own project.
 
-1. Create a Firebase project at [Firebase Console](https://console.firebase.google.com/)
-2. Enable Authentication, Firestore Database, and Hosting
-3. Copy your Firebase config to `src/firebase.js`
-4. Update Firestore security rules (see `firestore.rules`)
+## Technology
 
-For detailed setup instructions, see [README-SETUP.md](./SWU-Holocron/README-SETUP.md).
+| Layer | Choice |
+|---|---|
+| UI | React 18, Vite, Tailwind CSS, Lucide icons |
+| Data | Cloud Firestore, Firebase Authentication |
+| Server code | One Cloud Function (`getCardSuggestions`, Gemini via Vertex AI) and one for redeeming invites |
+| Offline | vite-plugin-pwa, Workbox, localStorage |
+| Testing | Vitest, Testing Library, happy-dom |
+| Hosting | Docker image on GHCR → container on a self-hosted host → Cloudflare Tunnel |
 
-## 🛠️ Technology Stack
+There is no router: `App.jsx` holds a view string and switch-renders. There is
+no state store; state is prop-drilled from `App.jsx`.
 
-### Frontend
-- **React 18** - Modern UI library with hooks
-- **Vite** - Lightning-fast build tool
-- **Tailwind CSS** - Utility-first CSS framework
-- **Lucide React** - Beautiful icon library
+A `dataconnect/` directory and generated Data Connect SDKs exist in the tree but
+no application code imports them.
 
-### Backend & Services
-- **Firebase Authentication** - Anonymous and user auth
-- **Cloud Firestore** - Real-time NoSQL database
-- **Firebase Hosting** - Fast, secure web hosting
-- **Firebase Data Connect** - Type-safe database queries
+## Scripts
 
-### Development & Testing
-- **Vitest** - Fast unit testing framework
-- **Testing Library** - Component testing utilities
-- **ESLint** - Code quality and consistency
-- **Husky** - Git hooks for quality gates
-- **Happy DOM** - Lightweight DOM for testing
-
-### PWA & Offline
-- **Vite Plugin PWA** - Service worker and manifest generation
-- **Workbox** - Runtime caching strategies
-- **LocalStorage** - Client-side data persistence
-
-### CI/CD
-- **GitHub Actions** - Automated testing and deployment
-- **Codecov** - Test coverage reporting
-- **Automated Card Sync** - Daily card database updates
-
-## 📂 Project Structure
-
-```
-SWU-Holocron/
-├── src/
-│   ├── components/         # React components
-│   │   ├── AdminPanel.jsx
-│   │   ├── AdvancedSearch.jsx
-│   │   ├── CardModal.jsx
-│   │   ├── Dashboard.jsx
-│   │   └── ...
-│   ├── services/          # API and data services
-│   │   └── CardService.js
-│   ├── utils/             # Pure utility functions
-│   │   ├── csvParser.js
-│   │   ├── statsCalculator.js
-│   │   └── collectionHelpers.js
-│   ├── test/              # Test suite
-│   │   ├── components/
-│   │   ├── services/
-│   │   └── utils/
-│   ├── constants.js       # App constants (sets, aspects)
-│   ├── firebase.js        # Firebase configuration
-│   └── main.jsx           # Application entry point
-├── docs/                  # Documentation
-│   ├── CARD-DATABASE-ARCHITECTURE.md
-│   ├── IMPLEMENTATION-SUMMARY.md
-│   ├── PLATFORM-ARCHITECTURE-DECISION.md
-│   └── ...
-├── scripts/               # Admin and utility scripts
-│   └── seedCardDatabase.js
-├── .github/
-│   └── workflows/         # CI/CD pipelines
-│       ├── ci.yml
-│       └── sync-cards.yml
-├── package.json
-├── vite.config.js
-├── tailwind.config.js
-└── README-SETUP.md        # Detailed setup guide
-```
-
-## 📚 Documentation
-
-- **[README-SETUP.md](./SWU-Holocron/README-SETUP.md)** - Comprehensive setup and testing guide
-- **[TESTING.md](./SWU-Holocron/TESTING.md)** - Testing infrastructure and best practices
-- **[CARD-DATABASE-ARCHITECTURE.md](./SWU-Holocron/docs/CARD-DATABASE-ARCHITECTURE.md)** - Database design and sync system
-- **[PLATFORM-ARCHITECTURE-DECISION.md](./SWU-Holocron/docs/PLATFORM-ARCHITECTURE-DECISION.md)** - Multi-platform strategy
-- **[IMPLEMENTATION-SUMMARY.md](./SWU-Holocron/docs/IMPLEMENTATION-SUMMARY.md)** - Card database implementation details
-- **[SWU-RULES-AND-FORMATS.md](./SWU-Holocron/docs/SWU-RULES-AND-FORMATS.md)** - Game rules reference
-
-## 🧪 Testing
-
-The project maintains **80%+ test coverage** with comprehensive unit, component, and integration tests.
-
-```bash
-# Run all tests
-npm test
-
-# Run tests in watch mode
-npm run test:watch
-
-# Run unit tests only
-npm run test:unit
-
-# Run with coverage report
-npm run test:ci
-
-# Run linter
-npm run lint
-```
-
-See [TESTING.md](./SWU-Holocron/TESTING.md) for detailed testing documentation.
-
-## 🔧 Available Scripts
+All from `SWU-Holocron/`:
 
 | Script | Description |
-|--------|-------------|
-| `npm run dev` | Start development server (localhost:5173) |
-| `npm run build` | Build for production |
-| `npm run preview` | Preview production build |
-| `npm test` | Run tests in watch mode |
-| `npm run test:unit` | Run unit tests only |
-| `npm run test:ci` | Run full test suite with coverage |
-| `npm run lint` | Check code style |
-| `npm run admin:seed-cards` | Seed card database (admin) |
-| `npm run admin:verify-db` | Verify database integrity (admin) |
+|---|---|
+| `npm run dev` | Dev server on :5173 |
+| `npm run build` | Production build to `dist/` |
+| `npm run preview` | Serve `dist/` on :5173 |
+| `npm test` | Vitest in watch mode |
+| `npm run test:unit` | Single run |
+| `npm run test:ci` | Single run with coverage |
+| `npm run test:changed` | Only tests for changed files |
+| `npm run lint` | ESLint |
+| `npm run admin:seed-cards` | Write the card database to Firestore |
+| `npm run admin:verify-db` | Integrity check |
 
-## 🌟 Features in Detail
+Admin scripts need `firebase-admin-key.json` or `FIREBASE_SERVICE_ACCOUNT`.
 
-### Collection Management
-Track every card you own with detailed quantity management:
-- **Regular cards**: 0-3 copies (Premier format)
-- **Foil variants**: Separate tracking
-- **Playsets**: Automatic completion indicators
-- **Statistics**: Real-time collection metrics
+## Testing
 
-### CSV Import/Export
-Seamlessly integrate with popular deck-building platforms:
-- **Moxfield format** - Full compatibility
-- **Archidekt format** - Full compatibility
-- **Round-trip guarantee** - Export and re-import without data loss
+Run from `SWU-Holocron/`:
 
-### Offline-First Architecture
-Designed to work without internet connectivity:
-- **Initial sync** - Downloads card database on first visit
-- **Local caching** - All data stored in browser
-- **Background sync** - Updates when connection available
-- **Conflict resolution** - Intelligent merge strategies
+```bash
+npx vitest run          # whole suite, once
+npm test                # watch mode
+npm run test:ci         # with coverage
+```
 
-### Admin Dashboard
-For administrators and power users:
-- **Sync monitoring** - View database sync status
-- **Manual triggers** - Force card database updates
-- **Sync history** - Audit logs of all updates
-- **Statistics** - Database health metrics
+Coverage as measured, rather than as aspired to:
 
-## 🚦 Development Workflow
+| Area | Line coverage |
+|---|---|
+| `src/utils/` | ~89% |
+| `src/contexts/` | ~75% |
+| `src/services/` | ~70% |
+| `src/components/` | ~49% |
+| Whole repo, including scripts and functions | ~45% |
 
-### Local Development
-1. Make changes to source files
-2. Tests run automatically on save (watch mode)
-3. Pre-commit hook validates code quality
-4. Pre-push hook runs full unit test suite
+The thresholds configured in `vite.config.js` do not currently enforce anything
+— see [TESTING.md](./SWU-Holocron/TESTING.md), which also lists the suites that
+are skipped and why.
 
-### CI/CD Pipeline
-1. **Lint Stage** - ESLint checks all files
-2. **Unit Tests** - Fast component and utility tests
-3. **Build Stage** - Verify production build succeeds
-4. **Integration Tests** - Firebase and CSV integration
-5. **Coverage Report** - Upload to Codecov
+## CI/CD
 
-### Automated Card Sync
-- Runs daily at 6 AM UTC via GitHub Actions
-- Fetches latest card data from SWU-DB API
-- Updates Firestore database with change detection
-- Creates GitHub issues on failures
-- Stores sync logs for audit trail
+Workflows live in `.github/workflows/` at the **git root**. GitHub Actions does
+not read the nested `SWU-Holocron/.github/workflows/`, so anything placed there
+never runs.
 
-## 🤝 Contributing
+| Workflow | What it does |
+|---|---|
+| `ci.yml` | Lint, unit tests, build, Firestore rules tests against the emulator |
+| `build-and-push-docker.yml` | Builds the image, pushes to GHCR, then a self-hosted runner pulls and restarts the container |
+| `deploy-firestore-rules.yml` | Publishes `firestore.rules`, gated on the emulator tests passing |
+| `sync-cards.yml` | Refreshes the card database from swu-db and the official card site. Manual only: its weekly schedule stays commented out until one manual run has been watched end to end. |
 
-Contributions are welcome! Please follow these guidelines:
+Deployment details, manual procedures and past incidents are in the
+[deployment runbook](./SWU-Holocron/docs/DEPLOYMENT_RUNBOOK.md).
 
-1. **Fork the repository**
-2. **Create a feature branch** (`git checkout -b feature/amazing-feature`)
-3. **Write tests** for your changes (maintain 80%+ coverage)
-4. **Run the test suite** (`npm run test:ci`)
-5. **Commit your changes** (`git commit -m 'Add amazing feature'`)
-6. **Push to the branch** (`git push origin feature/amazing-feature`)
-7. **Open a Pull Request**
+## Documentation
 
-### Code Standards
-- Follow existing code style (enforced by ESLint)
-- Write descriptive commit messages
-- Add tests for new features
-- Update documentation as needed
-- Keep changes focused and minimal
+- **[CLAUDE.md](./CLAUDE.md)** — architecture reference: data model, services,
+  conventions, house rules, known gaps. Start here to work on the code.
+- **[DEPLOYMENT_RUNBOOK.md](./SWU-Holocron/docs/DEPLOYMENT_RUNBOOK.md)** — how
+  deploys work, how to force one, how to diagnose a failed one
+- **[TESTING.md](./SWU-Holocron/TESTING.md)** — test layout, conventions, skips
+- **[CARD-DATABASE-ARCHITECTURE.md](./SWU-Holocron/docs/CARD-DATABASE-ARCHITECTURE.md)** — card data sources and sync
+- **[SWU-RULES-AND-FORMATS.md](./SWU-Holocron/docs/SWU-RULES-AND-FORMATS.md)** — game rules reference
+- **[CI-KEYLESS-AUTH.md](./SWU-Holocron/docs/CI-KEYLESS-AUTH.md)** — Workload Identity Federation setup for CI
+- **[PLATFORM-ARCHITECTURE-DECISION.md](./SWU-Holocron/docs/PLATFORM-ARCHITECTURE-DECISION.md)** — multi-platform strategy
 
-## 📝 Roadmap
+## Contributing
 
-### Current Version (v1.0)
-- ✅ Collection management
-- ✅ CSV import/export
-- ✅ Cloud sync
-- ✅ Offline support
-- ✅ PWA installation
-- ✅ Admin panel
-- ✅ Automated card sync
+1. Branch from `main`
+2. Write a failing test first — this is the project's stated workflow
+3. `npm run lint` and `npx vitest run` must pass; keep ESLint **errors** at zero
+   (there is a warning backlog, and CI gates on errors only)
+4. Open a pull request
 
-### Upcoming Features
-- 🔄 Deck builder with format validation
-- 🔄 Advanced statistics and insights
-- 🔄 Multi-language support
-- 🔄 Card image caching
-- 🔄 Community deck sharing
-- 🔄 Mobile-optimized UI improvements
+## Known limitations
 
-### Future Considerations
-- 📋 Native mobile apps (React Native/Capacitor)
-- 📋 Desktop applications (Electron)
-- 📋 Tournament organizer tools
-- 📋 Trade management system
-
-## 🐛 Known Issues & Limitations
-
-- **Image loading** - Card images load from external CDN (SWU-DB)
-- **iOS Safari** - Limited PWA features (no push notifications)
-- **Sync delay** - Card database updates propagate within 24 hours
-- **Storage limits** - Browser storage quotas apply (typically 50MB+)
+- Card images load from an external CDN, so they need a connection even though
+  card data does not
+- The card database updates only when someone runs the sync; there is no
+  schedule yet
+- `localStorage` card caches have no expiry, so a re-seed may not be visible
+  until a forced reload
+- Guest mode is local to one browser; nothing syncs until you sign in
+- iOS Safari supports a reduced set of PWA features
+- No error boundaries: a render error in any component blanks the app
 
 Report bugs via [GitHub Issues](https://github.com/Midknightloki/SWU-Holocron/issues).
 
-## 📄 License
+## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+MIT — see the LICENSE file.
 
-## ⚠️ Disclaimer
+## Disclaimer
 
-This is an unofficial fan-made application. Star Wars™ and Star Wars: Unlimited™ are trademarks of Lucasfilm Ltd. and Fantasy Flight Games. This project is not affiliated with, endorsed by, or sponsored by Lucasfilm Ltd. or Fantasy Flight Games.
+An unofficial, fan-made application. Star Wars™ and Star Wars: Unlimited™ are
+trademarks of Lucasfilm Ltd. and Fantasy Flight Games. This project is not
+affiliated with, endorsed by or sponsored by either.
 
-Card data is sourced from community-maintained databases and may not always reflect the most current official information.
+Card data comes from community-maintained sources and the official card site,
+and may lag the most current official information.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
-- **Fantasy Flight Games** - For creating Star Wars: Unlimited
-- **SWU-DB Community** - For maintaining the card database API
-- **Karabast.net** - For additional card data and inspiration
-- **Open Source Community** - For the amazing tools and libraries
-
-## 📞 Support & Community
-
-- **Issues**: [GitHub Issues](https://github.com/Midknightloki/SWU-Holocron/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/Midknightloki/SWU-Holocron/discussions)
-- **Discord**: (Coming soon)
-
----
-
-**Made with ❤️ for the Star Wars: Unlimited community**
-
-*May the Force be with you!*
+- **Fantasy Flight Games** — for Star Wars: Unlimited
+- **SWU-DB** — for the community card API
+- **Karabast.net** — for additional card data
