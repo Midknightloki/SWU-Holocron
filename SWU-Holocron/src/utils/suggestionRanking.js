@@ -23,7 +23,13 @@
  */
 
 const W_OWNED = 10000;
+// Aspect tiers, best first. Aspect requirements are a balancing cost in SWU: a
+// card demanding two aspects the deck has is usually stronger for its cost,
+// while an aspect-neutral card is playable anywhere and pays for that in cost
+// or power. A partial match still incurs +2 for each aspect the deck lacks.
+const W_ASPECT_DOUBLE = 1200;
 const W_ASPECT_FIT = 1000;
+const W_ASPECT_NEUTRAL = 700;
 const W_ASPECT_PARTIAL = 400;
 const W_TRAIT_EACH = 60;
 const W_TRAIT_CAP = 3;
@@ -43,13 +49,13 @@ function scoreCard(card, ctx) {
 
   if (ownedIds.has(card.id)) score += W_OWNED;
 
-  // Aspect fit. An aspect-neutral card fits every deck, so it counts as a full
-  // match rather than "no overlap".
+  // Aspect fit. Counted with multiplicity, so a card costing the same aspect
+  // twice registers as two requirements.
   const aspects = asArray(card.aspects).map(lower).filter(Boolean);
   if (aspects.length === 0) {
-    score += W_ASPECT_FIT;
+    score += W_ASPECT_NEUTRAL;
   } else if (aspects.every((a) => deckAspectSet.has(a))) {
-    score += W_ASPECT_FIT;
+    score += aspects.length >= 2 ? W_ASPECT_DOUBLE : W_ASPECT_FIT;
   } else if (aspects.some((a) => deckAspectSet.has(a))) {
     score += W_ASPECT_PARTIAL;
   }

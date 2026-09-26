@@ -66,13 +66,60 @@ describe('rankCandidates: priority order', () => {
     expect(result[0].id).toBe('LOF_010');
   });
 
-  it('treats an aspect-neutral card as fitting any deck', () => {
+  it('ranks an aspect-neutral card above an off-aspect one', () => {
     const neutral = card({ id: 'LOF_020', aspects: [] });
     const offAspect = card({ id: 'LOF_021', aspects: ['Heroism'] });
 
     const result = rankCandidates({ ...base, cards: [offAspect, neutral] });
 
     expect(result[0].id).toBe('LOF_020');
+  });
+
+  it('ranks an in-aspect card above an aspect-neutral one', () => {
+    // Neutral cards are playable in any deck and pay for it: they are generally
+    // costlier or weaker than a card that matches the deck's aspects. Matching
+    // aspects should win.
+    const inAspect = card({ id: 'LOF_022', aspects: ['Villainy'] });
+    const neutral = card({ id: 'LOF_023', aspects: [] });
+
+    const result = rankCandidates({ ...base, cards: [neutral, inAspect] });
+
+    expect(result[0].id).toBe('LOF_022');
+  });
+
+  it('ranks a double aspect match above a single one', () => {
+    // Aspect requirements are a balancing cost in SWU, so a card demanding two
+    // aspects the deck actually has is usually stronger for its cost.
+    const double = card({ id: 'LOF_040', aspects: ['Villainy', 'Vigilance'] });
+    const single = card({ id: 'LOF_041', aspects: ['Villainy'] });
+
+    const result = rankCandidates({ ...base, cards: [single, double] });
+
+    expect(result[0].id).toBe('LOF_040');
+  });
+
+  it('counts a repeated aspect as a double requirement', () => {
+    // A card costing the same aspect twice carries two requirements.
+    const doubled = card({ id: 'LOF_050', aspects: ['Villainy', 'Villainy'] });
+    const single = card({ id: 'LOF_051', aspects: ['Villainy'] });
+
+    const result = rankCandidates({ ...base, cards: [single, doubled] });
+
+    expect(result[0].id).toBe('LOF_050');
+  });
+
+  it('orders aspect tiers: double, single, neutral, partial, off', () => {
+    const cards = [
+      card({ id: 'LOF_1', aspects: ['Heroism'] }),                  // off
+      card({ id: 'LOF_2', aspects: ['Villainy', 'Heroism'] }),      // partial
+      card({ id: 'LOF_3', aspects: [] }),                           // neutral
+      card({ id: 'LOF_4', aspects: ['Villainy'] }),                 // single
+      card({ id: 'LOF_5', aspects: ['Villainy', 'Vigilance'] }),    // double
+    ];
+
+    const order = rankCandidates({ ...base, cards }).map((c) => c.id);
+
+    expect(order).toEqual(['LOF_5', 'LOF_4', 'LOF_3', 'LOF_2', 'LOF_1']);
   });
 
   it('prefers trait overlap once ownership and aspect are equal', () => {
