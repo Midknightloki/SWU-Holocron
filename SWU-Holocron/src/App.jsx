@@ -695,7 +695,7 @@ export default function App() {
                       <span className="font-semibold">{user.displayName || 'Guest user'}</span>
                       <span className="text-[10px] text-gray-400">{user.email || 'Anonymous session'}</span>
                     </div>
-                    {!isAdmin && !isContributor && (
+                    {!isContributor && (
                       <button
                         onClick={() => setIsRedeemOpen(true)}
                         className="text-gray-400 hover:text-yellow-500 text-[11px] font-semibold"

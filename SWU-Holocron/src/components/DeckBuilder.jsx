@@ -22,6 +22,7 @@ import {
   importFromMeleeText,
 } from '../utils/deckImportExport';
 import { getCardSuggestions } from '../services/AiSuggestionsService';
+import { rankCandidates, extractConceptTerms } from '../utils/suggestionRanking';
 import { checkDeckLegality, getBanStatus, getMinDeckSize, getRequiredLeaderCount } from '../services/LegalityService';
 
 const TAG_CATEGORIES = [
@@ -41,6 +42,12 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
   // Wizard state
   const [step, setStep] = useState(deck?.id ? 4 : 0); // 0: Start, 1: Format, 2: Leader, 3: Base, 4: Deck, 5: Analysis
   const [selectedFormat, setSelectedFormat] = useState(deck?.format || 'Premier');
+  // Set codes in release order, used to score candidates by proximity to the
+  // leader's set. getAvailableSets returns registry order, which is by release date.
+  const [setOrder, setSetOrder] = useState([]);
+  // Free-text deck plan. Sent to the model verbatim for the final pick, and
+  // keyword-matched against the card pool to shape the shortlist.
+  const [deckConcept, setDeckConcept] = useState(deck?.concept || '');
 
   // Deck state
   const [deckName, setDeckName] = useState(deck?.name || '');
@@ -105,6 +112,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
         const sets = await CardService.getAvailableSets();
         // If discovery returns nothing, fallback to mainline sets
         const setsToLoad = sets.length > 0 ? sets : SETS.map((s) => s.code);
+        setSetOrder(setsToLoad);
 
         const cardMap = {};
         const allCardsList = [];
@@ -540,7 +548,31 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
         type: card.Type,
       }));
 
-      const available = allCards
+      // What the deck already contains, so candidates can be ranked against it.
+      const deckTraits = [];
+      const deckTypes = [];
+      mainDeckCards.forEach(({ card }) => {
+        (card.Traits || []).forEach(t => deckTraits.push(t));
+        if (card.Type) deckTypes.push(card.Type);
+      });
+
+      // Vocabulary from the pool itself, so only real traits and types can
+      // become ranking signals.
+      const vocabulary = new Set();
+      allCards.forEach(card => {
+        (card.Traits || []).forEach(t => vocabulary.add(String(t).toLowerCase()));
+        if (card.Type) vocabulary.add(String(card.Type).toLowerCase());
+        (card.Keywords || []).forEach(k => vocabulary.add(String(k).toLowerCase()));
+      });
+      const conceptTerms = extractConceptTerms(deckConcept, Array.from(vocabulary));
+
+      const ownedIds = new Set();
+      allCards.forEach(card => {
+        const id = `${card.Set}_${card.Number}`;
+        if (getCardOwnership(id).total > 0) ownedIds.add(id);
+      });
+
+      const candidates = allCards
         .filter(card => card.Type !== 'Leader' && card.Type !== 'Base')
         .filter(card => {
           const cardId = `${card.Set}_${card.Number}`;
@@ -554,8 +586,24 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
           cost: card.Cost ?? null,
           aspects: card.Aspects || [],
           traits: (card.Traits || []).slice(0, 3),
-        }))
-        .slice(0, 300);
+        }));
+
+      // Rank rather than truncate. `.slice(0, 300)` on a list loaded in set
+      // release order sent 300 SOR cards and nothing else -- 3.2% of the pool,
+      // all from the oldest set -- so a JTL deck could never be offered a JTL
+      // card. Priority: owned, then aspect fit, then tribal, then sets near
+      // the leader's.
+      const available = rankCandidates({
+        cards: candidates,
+        deckAspects: Array.from(aspects),
+        deckTraits,
+        deckTypes,
+        conceptTerms,
+        ownedIds,
+        leaderSetCode: String(selectedLeader || '').split('_')[0],
+        setOrder,
+        limit: 300,
+      });
 
       const suggestions = await getCardSuggestions({
         leaderName: leader?.Name || selectedLeader,
@@ -563,6 +611,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
         aspects: Array.from(aspects),
         deckCards: deckCardsSummary,
         availableCards: available,
+        deckConcept: deckConcept.trim(),
       });
 
       setAiSuggestions(suggestions);
@@ -572,7 +621,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
     } finally {
       setIsLoadingSuggestions(false);
     }
-  }, [selectedLeader, selectedBase, cardDataMap, mainDeckCards, deckCards, allCards]);
+  }, [selectedLeader, selectedBase, cardDataMap, mainDeckCards, deckCards, allCards, getCardOwnership, setOrder, deckConcept]);
 
   const leaderCard = selectedLeader ? cardDataMap[selectedLeader] : null;
   const baseCard = selectedBase ? cardDataMap[selectedBase] : null;
@@ -1293,7 +1342,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
             </h4>
             <p className="text-xs text-gray-500 mt-1">
               {selectedLeader && selectedBase
-                ? 'Powered by Claude Haiku — select up to 5 suggested cards.'
+                ? 'Powered by Gemini 2.5 Flash — select up to 5 suggested cards.'
                 : 'Select a Leader and Base first.'}
             </p>
           </div>
@@ -1313,6 +1362,26 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved }) 
             {isLoadingSuggestions ? 'Analyzing…' : 'Suggest'}
           </button>
         </div>
+
+        {selectedLeader && selectedBase && (
+          <div className="mt-3">
+            <label htmlFor="deck-concept" className="block text-[11px] font-medium text-gray-400 mb-1.5">
+              Deck concept <span className="text-gray-600">(optional)</span>
+            </label>
+            <input
+              id="deck-concept"
+              value={deckConcept}
+              onChange={(e) => setDeckConcept(e.target.value)}
+              maxLength={200}
+              placeholder="e.g. Imperial trooper swarm, go wide with cheap units"
+              className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:border-purple-500/50 focus:outline-none"
+            />
+            <p className="text-[10px] text-gray-600 mt-1">
+              Name traits or card types you are building around — they are weighted
+              ahead of aspect and set when choosing what to consider.
+            </p>
+          </div>
+        )}
 
         {suggestionsError && (
           <div className="mt-3 p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-400 text-xs flex items-start gap-2">
