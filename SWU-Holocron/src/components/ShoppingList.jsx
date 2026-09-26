@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
-  ShoppingCart, ExternalLink, DollarSign, Loader2, AlertCircle
+  ShoppingCart, ExternalLink, DollarSign, Loader2, Plus, Minus, Sparkles
 } from 'lucide-react';
 import { PricingService } from '../services/PricingService';
 
@@ -11,11 +11,23 @@ import { PricingService } from '../services/PricingService';
  * - deck: { cards: {cardId: count}, leaderId, baseId }
  * - collectionData: { 'SOR_008_std': { quantity: N } }
  * - cardDatabase: array of card objects with { Set, Number, Name }
+ * - onUpdateQuantity: (card, delta, { isFoil }) => void — optional. Supplying it
+ *   puts collection controls in each row, so a card bought at a store is added
+ *   here rather than by navigating to the binder (CLAUDE.md, House rules).
+ *   Without it the list is read-only.
+ *
+ * @environment:react
  */
-export default function ShoppingList({ deck, collectionData, cardDatabase }) {
+export default function ShoppingList({ deck, collectionData, cardDatabase, onUpdateQuantity }) {
   const [prices, setPrices] = useState({});
   const [loading, setLoading] = useState(false);
-  const [apiKeyMissing, setApiKeyMissing] = useState(false);
+  // cardId -> true when that row's controls are pointed at the foil printing.
+  const [foilRows, setFoilRows] = useState({});
+
+  // Pricing is an optional integration. With no key there is nothing to show,
+  // and "add VITE_TCGAPI_KEY to .env" is not something an end user can act on,
+  // so the whole pricing surface stays hidden rather than warning about itself.
+  const pricingEnabled = Boolean(import.meta.env.VITE_TCGAPI_KEY);
 
   // Compute cards needed to acquire
   const gapCards = useMemo(() => {
@@ -29,9 +41,9 @@ export default function ShoppingList({ deck, collectionData, cardDatabase }) {
       if (!card) return;
 
       // Check collection (both std and foil variants)
-      const owned =
-        (collectionData?.[`${cardId}_std`]?.quantity || 0) +
-        (collectionData?.[`${cardId}_foil`]?.quantity || 0);
+      const standard = collectionData?.[`${cardId}_std`]?.quantity || 0;
+      const foil = collectionData?.[`${cardId}_foil`]?.quantity || 0;
+      const owned = standard + foil;
 
       const gap = needed - owned;
       if (gap > 0) {
@@ -40,6 +52,8 @@ export default function ShoppingList({ deck, collectionData, cardDatabase }) {
           cardName: card.Name,
           needed,
           owned,
+          standard,
+          foil,
           gap,
           card
         });
@@ -51,22 +65,13 @@ export default function ShoppingList({ deck, collectionData, cardDatabase }) {
 
   // Fetch prices for gap cards
   useEffect(() => {
-    if (gapCards.length === 0) {
+    if (!pricingEnabled || gapCards.length === 0) {
       setLoading(false);
       return;
     }
 
     const fetchPrices = async () => {
       setLoading(true);
-      setApiKeyMissing(false);
-
-      // Check if API key is configured
-      const apiKey = import.meta.env.VITE_TCGAPI_KEY;
-      if (!apiKey) {
-        setApiKeyMissing(true);
-        setLoading(false);
-        return;
-      }
 
       try {
         const cardsToPrice = gapCards.map(g => ({
@@ -84,7 +89,7 @@ export default function ShoppingList({ deck, collectionData, cardDatabase }) {
     };
 
     fetchPrices();
-  }, [gapCards]);
+  }, [gapCards, pricingEnabled]);
 
   // Compute total acquisition cost
   const totalCost = useMemo(() => {
@@ -97,6 +102,10 @@ export default function ShoppingList({ deck, collectionData, cardDatabase }) {
     });
     return total;
   }, [gapCards, prices]);
+
+  const toggleFoilRow = useCallback((cardId) => {
+    setFoilRows(prev => ({ ...prev, [cardId]: !prev[cardId] }));
+  }, []);
 
   // Empty state: deck complete
   if (gapCards.length === 0 && !loading) {
@@ -122,21 +131,8 @@ export default function ShoppingList({ deck, collectionData, cardDatabase }) {
         <span className="ml-auto text-sm text-zinc-400">{gapCards.length} cards needed</span>
       </div>
 
-      {/* API Key Missing Message */}
-      {apiKeyMissing && (
-        <div className="p-3 bg-amber-900/20 border border-amber-700/50 rounded flex gap-3 items-start">
-          <AlertCircle size={16} className="text-amber-400 mt-0.5 flex-shrink-0" />
-          <div className="text-sm text-amber-200">
-            <p className="font-semibold">Pricing not available</p>
-            <p className="text-amber-200/70 text-xs mt-1">
-              Add <code className="bg-zinc-800 px-1 rounded text-amber-300">VITE_TCGAPI_KEY</code> to <code className="bg-zinc-800 px-1 rounded text-amber-300">.env</code> to see prices
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* Loading State */}
-      {loading && (
+      {pricingEnabled && loading && (
         <div className="flex items-center justify-center gap-2 py-6 text-zinc-400">
           <Loader2 size={16} className="animate-spin" />
           <span className="text-sm">Fetching prices...</span>
@@ -149,17 +145,25 @@ export default function ShoppingList({ deck, collectionData, cardDatabase }) {
           {gapCards.map(gap => {
             const priceData = prices[gap.cardId];
             const subtotal = gap.gap * (priceData?.marketPrice || 0);
+            const buyingFoil = Boolean(foilRows[gap.cardId]);
+            const variantCount = buyingFoil ? gap.foil : gap.standard;
 
             return (
               <div
                 key={gap.cardId}
+                data-card-id={gap.cardId}
                 className="p-3 bg-zinc-800/50 border border-zinc-700 rounded-md hover:border-zinc-600 transition"
               >
                 <div className="flex items-start justify-between gap-2 mb-2">
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-zinc-100 truncate">{gap.cardName}</p>
                     <p className="text-xs text-zinc-400">
-                      <span className="text-green-400">Own: {gap.owned}</span>
+                      <span className="text-green-400">
+                        Own: {gap.standard}
+                        {gap.foil > 0 && (
+                          <span className="ml-1 text-[10px] text-yellow-400">+{gap.foil}F</span>
+                        )}
+                      </span>
                       {' '}
                       <span className="text-amber-400">Need: {gap.needed}</span>
                       {' '}
@@ -179,8 +183,54 @@ export default function ShoppingList({ deck, collectionData, cardDatabase }) {
                   </a>
                 </div>
 
+                {/* Collection controls — bought it, own it, without leaving the list */}
+                {onUpdateQuantity && (
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <div className="flex items-center gap-1 bg-zinc-900 border border-zinc-700 rounded-full px-1 py-0.5">
+                      <button
+                        type="button"
+                        aria-label={`Remove ${gap.cardName}`}
+                        disabled={variantCount === 0}
+                        onClick={() => onUpdateQuantity(gap.card, -1, { isFoil: buyingFoil })}
+                        className="p-1 rounded-full text-zinc-300 hover:bg-red-500/20 hover:text-red-300 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-zinc-300 transition"
+                      >
+                        <Minus size={13} />
+                      </button>
+                      <span
+                        data-variant-count
+                        className={`w-5 text-center text-xs font-bold ${buyingFoil ? 'text-yellow-300' : 'text-zinc-100'}`}
+                      >
+                        {variantCount}
+                      </span>
+                      <button
+                        type="button"
+                        aria-label={`Add ${gap.cardName}`}
+                        onClick={() => onUpdateQuantity(gap.card, 1, { isFoil: buyingFoil })}
+                        className="p-1 rounded-full text-zinc-300 hover:bg-green-500/20 hover:text-green-300 transition"
+                      >
+                        <Plus size={13} />
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      aria-label={`Buy foil copies of ${gap.cardName}`}
+                      aria-pressed={buyingFoil}
+                      title={buyingFoil ? 'Adding foil copies' : 'Adding standard copies'}
+                      onClick={() => toggleFoilRow(gap.cardId)}
+                      className={`flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-semibold border transition ${
+                        buyingFoil
+                          ? 'bg-yellow-500 text-black border-yellow-400'
+                          : 'bg-zinc-900 text-zinc-400 border-zinc-700 hover:text-zinc-200'
+                      }`}
+                    >
+                      <Sparkles size={11} /> Foil
+                    </button>
+                  </div>
+                )}
+
                 {/* Price Row */}
-                {priceData ? (
+                {pricingEnabled && (priceData ? (
                   <div className="flex items-center justify-between text-sm">
                     <div className="flex items-center gap-2">
                       <DollarSign size={13} className="text-yellow-400" />
@@ -206,7 +256,7 @@ export default function ShoppingList({ deck, collectionData, cardDatabase }) {
                   </div>
                 ) : (
                   <div className="text-xs text-zinc-500 italic">Price not available</div>
-                )}
+                ))}
               </div>
             );
           })}
@@ -214,7 +264,7 @@ export default function ShoppingList({ deck, collectionData, cardDatabase }) {
       )}
 
       {/* Total Cost Footer */}
-      {!loading && gapCards.length > 0 && (
+      {pricingEnabled && !loading && gapCards.length > 0 && (
         <div className="pt-3 border-t border-zinc-700 flex items-center justify-between">
           <span className="text-sm font-medium text-zinc-300">Total Acquisition Cost</span>
           <div className="text-right">
