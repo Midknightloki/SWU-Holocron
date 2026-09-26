@@ -14,7 +14,7 @@
     "test:watch": "vitest",
     "test:changed": "vitest run --changed",
     "lint": "eslint src --ext js,jsx --report-unused-disable-directives --max-warnings 0",
-    "prepare": "husky install",
+    "prepare": "cd .. && husky install SWU-Holocron/.husky",
     "admin:seed-cards": "node scripts/seedCardDatabase.js",
     "admin:verify-db": "node scripts/verifyCardDatabase.js",
     "test:rules": "firebase emulators:exec --only firestore --project swu-holocron-rules-test \"vitest run --config vitest.rules.config.js\"",

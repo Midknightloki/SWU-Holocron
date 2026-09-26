@@ -1,5 +1,7 @@
 #!/usr/bin/env sh
 . "$(dirname -- "$0")/_/husky.sh"
 
-# Run unit tests before push
+# See pre-commit: hooks start at the git root, the app is one level down.
+cd "$(dirname -- "$0")/.." || exit 1
+
 npm run test:unit

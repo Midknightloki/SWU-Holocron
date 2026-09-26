@@ -1,5 +1,9 @@
 #!/usr/bin/env sh
 . "$(dirname -- "$0")/_/husky.sh"
 
-# Run lint-staged
+# Git runs hooks from the top level of the working tree, which is the git root.
+# The application -- and its eslint config, its package.json, its node_modules --
+# is one level down, so go there first or nothing resolves.
+cd "$(dirname -- "$0")/.." || exit 1
+
 npx lint-staged
