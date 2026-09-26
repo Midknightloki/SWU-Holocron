@@ -13,7 +13,7 @@ import { execSync } from 'child_process';
 import { mkdirSync, writeFileSync } from 'fs';
 import { initFirestore } from './firebaseAdmin.js';
 import { reconcileSet } from '../src/cardReconcile.js';
-import { applyPlaceholders, classifySetCompleteness } from '../src/placeholderCards.js';
+import { applyPlaceholders, classifySetCompleteness, isFailingStatus } from '../src/placeholderCards.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -220,13 +220,40 @@ async function fillPlaceholders() {
           .doc('data');
 
         const snap = await dataDocRef.get();
+
+        // A set whose cards endpoint returns nothing never gets a data doc from
+        // the seeder, so the set the placeholder step exists for is precisely the
+        // one with no document to update. SOROPJ is that set: the catalogue says
+        // two cards, both sources return zero, and verify then reports the whole
+        // set missing. Create the document from placeholders alone.
+        const cards = snap.exists ? (snap.data()?.cards || []) : [];
+        const result = applyPlaceholders({ set, cards, catalog });
+
         if (!snap.exists) {
-          console.log(`  ${set.code}: no data doc, skipping`);
+          if (result.cards.length === 0) {
+            console.log(`  ${set.code}: no data doc and nothing to placehold, skipping`);
+            continue;
+          }
+
+          await dataDocRef.set({
+            code: set.code,
+            name: set.name || set.code,
+            totalCards: result.cards.length,
+            lastSync: Date.now(),
+            syncVersion: '1.0',
+            // Deliberately not a real content hash: it can never equal one, so
+            // the seeder always overwrites this document once actual cards
+            // appear upstream. Non-empty because verify flags a missing hash.
+            dataHash: 'placeholders-only',
+            syncSource: 'placeholder',
+            cards: result.cards,
+          });
+          console.log(`  ${set.code}: created from ${result.cards.length} placeholder(s): ${result.added.join(', ')}`);
+          added.push(...result.added.map((n) => `${set.code}_${n}`));
+          statuses[set.code] = classifySetCompleteness({ set, cards: result.cards, catalog });
+          setsProcessed++;
           continue;
         }
-
-        const cards = snap.data()?.cards || [];
-        const result = applyPlaceholders({ set, cards, catalog });
 
         if (result.added.length > 0 || result.removed.length > 0) {
           await dataDocRef.update({ cards: result.cards });
@@ -245,6 +272,8 @@ async function fillPlaceholders() {
         // released, short, and not placeheld. Everything else is a normal state.
         if (classification.status === 'incomplete') {
           console.warn(`  ${set.code}: INCOMPLETE - ${classification.missing} card(s) unaccounted for`);
+        } else if (classification.status === 'incomplete-unnumbered') {
+          console.log(`  ${set.code}: ${classification.missing} card(s) short, but its numbering cannot be reasoned about -- not placeheld`);
         } else if (classification.status === 'awaiting-release') {
           console.log(`  ${set.code}: awaiting release, ${classification.real}/${classification.expected} revealed`);
         }
@@ -256,7 +285,7 @@ async function fillPlaceholders() {
     }
 
     const duration_ms = Date.now() - start;
-    const incomplete = Object.entries(statuses).filter(([, c]) => c.status === 'incomplete').map(([code]) => code);
+    const incomplete = Object.entries(statuses).filter(([, c]) => isFailingStatus(c.status)).map(([code]) => code);
     const placeheld = Object.entries(statuses).filter(([, c]) => c.status === 'complete-with-placeholders').map(([code]) => code);
 
     console.log(`\n  Placeholders completed in ${(duration_ms / 1000).toFixed(1)}s`);
@@ -396,6 +425,7 @@ async function main() {
   console.log(`  Seed: ${steps.seed.success ? 'OK' : 'FAILED'}`);
   console.log(`  Scrape: ${steps.scrape.success ? 'OK' : 'FAILED'}`);
   console.log(`  Reconcile: ${steps.reconcile.success ? 'OK' : 'FAILED'} (${(steps.reconcile.overrides || []).length} overrides, ${(steps.reconcile.addedCards || []).length} added)`);
+  console.log(`  Placeholders: ${steps.placeholders.success ? 'OK' : 'FAILED'} (+${(steps.placeholders.added || []).length}, -${(steps.placeholders.removed || []).length} stale)`);
   console.log(`  Verify: ${steps.verify.success ? 'OK' : 'FAILED'}`);
   console.log(`  Errors: ${errors.length}`);
   console.log('='.repeat(60) + '\n');
