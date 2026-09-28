@@ -14,6 +14,13 @@ import { mkdirSync, writeFileSync } from 'fs';
 import { initFirestore } from './firebaseAdmin.js';
 import { reconcileSet } from '../src/cardReconcile.js';
 import { applyPlaceholders, classifySetCompleteness, isFailingStatus } from '../src/placeholderCards.js';
+import {
+  buildGroupsUrl,
+  buildPricesUrl,
+  buildProductsUrl,
+  buildPriceMap,
+  matchGroupsToSets,
+} from '../src/tcgPrices.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -301,6 +308,184 @@ async function fillPlaceholders() {
   }
 }
 
+/**
+ * Sets whose TCGplayer abbreviation differs from our internal code.
+ *
+ * 14 sets match by code with no help, covering 87% of catalogued cards. These are
+ * the promo, judge and showcase sets, which TCGplayer names differently. Adding a
+ * line here is all it takes to start pricing one; leaving it out means that set
+ * has no prices, which the UI already handles.
+ */
+const PRICE_SET_ALIASES = {
+  SOROP: 'SOR-WPP',
+  SHDOP: 'SHD-WPP',
+  TWIOP: 'TWI-WPP',
+  JTLOP: 'JTL-WPP',
+  LOFOP: 'LOFWPP',
+  SECOP: 'SECWPP',
+  LAWP: 'LAW-WPP',
+  ASHOP: 'ASHWPP',
+  C24: 'CE2024',
+  C25: 'CE2025',
+  // GFT is the "2025 Gift Box", which is our G25 -- not GG, which is Gamegenic
+  // (accessories). Pairing them by eye would have attached Gift Box prices to
+  // Gamegenic products.
+  G25: 'GFT',
+};
+
+/**
+ * Sets left unpriced on purpose, so nobody wastes time "finishing" the table.
+ *
+ * Several of ours map to a single TCGplayer group: PSOR, PSHD and PTWI are all
+ * prerelease promos and TCGplayer files them together under PRE, as it does with
+ * JDG for judge promos, EEP for event exclusives, OPP for organized play and SN1
+ * for season-one regionals.
+ *
+ * Because a price document is keyed by card number within one of our sets, two of
+ * our sets sharing a group would read each other's numbers -- PSOR 001 and
+ * PSHD 001 both resolving to PRE's card 001, at most one of which is right. That
+ * needs the group's card list inspected per set, not an alias guessed here.
+ */
+const PRICE_GROUPS_NEEDING_INVESTIGATION = ['PRE', 'JDG', 'EEP', 'OPP', 'SN1'];
+
+/**
+ * Fetch card prices from TCGCSV and store one document per set.
+ *
+ * Why here and not in the browser: the app is offline-first and the live external
+ * API should almost never be hit at runtime (see CLAUDE.md). One request per set
+ * refreshes everything, where the previous client-side design made one request
+ * per card -- fifty sequential requests to render one shopping list.
+ *
+ * Prices land beside the card data at
+ * `cardDatabase/sets/{SET}/prices`, which the existing rule covers: readable by
+ * any signed-in user, writable by nobody but the Admin SDK.
+ *
+ * A failure here does not fail the sync. Prices are a convenience; card data is
+ * not, and a pricing mirror going down should not turn the weekly run red.
+ */
+async function syncPrices() {
+  const start = Date.now();
+  console.log(`\n${'='.repeat(60)}`);
+  console.log('  Step: Prices (TCGCSV mirror of TCGplayer)');
+  console.log(`${'='.repeat(60)}\n`);
+
+  const priced = [];
+  const failed = [];
+  let unpriceable = [];
+  let totalCards = 0;
+
+  try {
+    const { SETS } = await import('../src/cardData.js');
+    const { APP_ID } = await import('../src/firebase.js');
+
+    const db = await initFirestore();
+
+    const registrySnap = await db.collection('artifacts')
+      .doc(APP_ID)
+      .collection('public')
+      .doc('data')
+      .collection('cardDatabase')
+      .doc('sets')
+      .get();
+
+    const registry = registrySnap.exists ? registrySnap.data()?.sets : null;
+    const catalog = Array.isArray(registry) && registry.length > 0 ? registry : SETS;
+
+    const groupsRes = await fetch(buildGroupsUrl());
+    if (!groupsRes.ok) throw new Error(`groups HTTP ${groupsRes.status}`);
+    const groups = await groupsRes.json();
+
+    const { matched, unmatched } = matchGroupsToSets(
+      groups,
+      catalog.map((s) => s.code),
+      PRICE_SET_ALIASES
+    );
+    unpriceable = unmatched;
+
+    console.log(`  ${matched.length} of ${catalog.length} sets have a TCGplayer group`);
+
+    for (const { setCode, groupId, name } of matched) {
+      try {
+        const [productsRes, pricesRes] = await Promise.all([
+          fetch(buildProductsUrl(groupId)),
+          fetch(buildPricesUrl(groupId)),
+        ]);
+        if (!productsRes.ok) throw new Error(`products HTTP ${productsRes.status}`);
+        if (!pricesRes.ok) throw new Error(`prices HTTP ${pricesRes.status}`);
+
+        const { cards, skipped } = buildPriceMap(await productsRes.json(), await pricesRes.json());
+        const count = Object.keys(cards).length;
+
+        if (count === 0) {
+          // Two innocent causes, both seen in the live data. An unreleased set has
+          // products but almost no market prices yet (HMW, IC27), and a few promo
+          // sets carry no card Number upstream at all, so their prices cannot be
+          // attributed to a card without name matching (SECOP). Neither is an
+          // error, and an unreleased set fills itself in once it is out.
+          console.log(`  ${setCode}: no priced singles (unreleased, or no card numbers upstream), skipping`);
+          continue;
+        }
+
+        await db.collection('artifacts')
+          .doc(APP_ID)
+          .collection('public')
+          .doc('data')
+          .collection('cardDatabase')
+          .doc('sets')
+          .collection(setCode)
+          .doc('prices')
+          .set({
+            setCode,
+            groupId,
+            groupName: name,
+            currency: 'USD',
+            source: 'tcgcsv',
+            fetchedAt: Date.now(),
+            cardCount: count,
+            cards,
+          });
+
+        totalCards += count;
+        priced.push(setCode);
+        console.log(`  ${setCode}: ${count} card(s) priced (${skipped} non-single product(s) skipped)`);
+
+        // TCGCSV publishes no rate limit, so be a considerate client anyway.
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      } catch (error) {
+        console.warn(`  ${setCode}: price fetch failed - ${error.message}`);
+        failed.push(setCode);
+      }
+    }
+
+    // Recorded only when nothing failed, so a partial run is retried rather than
+    // being remembered as complete.
+    if (upstreamStamp && failed.length === 0) {
+      await metaRef.set({
+        upstreamStamp,
+        source: 'tcgcsv',
+        syncedAt: Date.now(),
+        setsPriced: priced.length,
+        cardsPriced: totalCards,
+      });
+    }
+
+    const duration_ms = Date.now() - start;
+    console.log(`\n  Prices completed in ${(duration_ms / 1000).toFixed(1)}s`);
+    console.log(`  Sets priced: ${priced.length}, cards priced: ${totalCards}, failed: ${failed.length}`);
+    if (unpriceable.length) {
+      console.log(`  No TCGplayer group (unpriced): ${unpriceable.join(', ')}`);
+      console.log(`  Some of those share a group (${PRICE_GROUPS_NEEDING_INVESTIGATION.join(', ')}) and need checking per set, not an alias.`);
+    }
+
+    return { success: true, duration_ms, priced, failed, unpriceable, totalCards };
+  } catch (error) {
+    const duration_ms = Date.now() - start;
+    // Deliberately not an error: see the note above on why prices cannot fail the run.
+    console.warn(`  Prices step could not run: ${error.message}`);
+    return { success: true, degraded: true, duration_ms, priced, failed, unpriceable, totalCards, error: error.message };
+  }
+}
+
 async function main() {
   const pipelineStart = Date.now();
   const errors = [];
@@ -355,7 +540,10 @@ async function main() {
     errors.push('Placeholder step failed');
   }
 
-  // Step 5 - Verify
+  // Step 5 - Prices. Never fails the run; see syncPrices.
+  steps.prices = await syncPrices();
+
+  // Step 6 - Verify
   steps.verify = runStep('Verify database', 'node scripts/verifyCardDatabase.js');
   if (!steps.verify.success) {
     errors.push('Verify step failed');
@@ -377,6 +565,15 @@ async function main() {
         success: steps.scrape.success,
         duration_ms: steps.scrape.duration_ms,
         output: steps.scrape.output || ''
+      },
+      prices: {
+        success: steps.prices.success,
+        degraded: steps.prices.degraded || false,
+        duration_ms: steps.prices.duration_ms,
+        setsPriced: (steps.prices.priced || []).length,
+        cardsPriced: steps.prices.totalCards || 0,
+        failed: steps.prices.failed || [],
+        unpriceable: steps.prices.unpriceable || []
       },
       placeholders: {
         success: steps.placeholders.success,
@@ -426,6 +623,8 @@ async function main() {
   console.log(`  Scrape: ${steps.scrape.success ? 'OK' : 'FAILED'}`);
   console.log(`  Reconcile: ${steps.reconcile.success ? 'OK' : 'FAILED'} (${(steps.reconcile.overrides || []).length} overrides, ${(steps.reconcile.addedCards || []).length} added)`);
   console.log(`  Placeholders: ${steps.placeholders.success ? 'OK' : 'FAILED'} (+${(steps.placeholders.added || []).length}, -${(steps.placeholders.removed || []).length} stale)`);
+  const priceState = steps.prices.degraded ? 'DEGRADED' : (steps.prices.skipped ? 'SKIPPED (unchanged)' : 'OK');
+  console.log(`  Prices: ${priceState} (${(steps.prices.priced || []).length} sets, ${steps.prices.totalCards || 0} cards)`);
   console.log(`  Verify: ${steps.verify.success ? 'OK' : 'FAILED'}`);
   console.log(`  Errors: ${errors.length}`);
   console.log('='.repeat(60) + '\n');

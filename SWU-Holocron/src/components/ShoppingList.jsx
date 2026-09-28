@@ -24,10 +24,13 @@ export default function ShoppingList({ deck, collectionData, cardDatabase, onUpd
   // cardId -> true when that row's controls are pointed at the foil printing.
   const [foilRows, setFoilRows] = useState({});
 
-  // Pricing is an optional integration. With no key there is nothing to show,
-  // and "add VITE_TCGAPI_KEY to .env" is not something an end user can act on,
-  // so the whole pricing surface stays hidden rather than warning about itself.
-  const pricingEnabled = Boolean(import.meta.env.VITE_TCGAPI_KEY);
+  // Pricing is optional and needs no configuration: prices arrive with the
+  // weekly card sync and are read from Firestore. What varies is whether the
+  // sync has prices for *these* cards -- not every set has a TCGplayer group --
+  // so the pricing surface appears when there is something to show and stays
+  // out of the way when there is not.
+  const [pricesLoaded, setPricesLoaded] = useState(false);
+  const pricingEnabled = pricesLoaded && Object.keys(prices).length > 0;
 
   // Compute cards needed to acquire
   const gapCards = useMemo(() => {
@@ -65,39 +68,52 @@ export default function ShoppingList({ deck, collectionData, cardDatabase, onUpd
 
   // Fetch prices for gap cards
   useEffect(() => {
-    if (!pricingEnabled || gapCards.length === 0) {
+    if (gapCards.length === 0) {
       setLoading(false);
-      return;
+      setPricesLoaded(true);
+      return undefined;
     }
+
+    let cancelled = false;
 
     const fetchPrices = async () => {
       setLoading(true);
 
       try {
-        const cardsToPrice = gapCards.map(g => ({
-          cardId: g.cardId,
-          cardName: g.cardName
-        }));
-
-        const priceMap = await PricingService.getBulkPrices(cardsToPrice);
-        setPrices(priceMap);
+        // Keyed by set and card number, so one Firestore read covers a whole
+        // set however many of its cards are in the list.
+        const priceMap = await PricingService.getBulkPrices(
+          gapCards.map(g => ({
+            cardId: g.cardId,
+            set: g.card?.Set,
+            number: g.card?.Number,
+            isFoil: false,
+          }))
+        );
+        if (cancelled) return;
+        // Drop the misses so the presence of any key means a real price.
+        setPrices(Object.fromEntries(Object.entries(priceMap).filter(([, v]) => v)));
       } catch (error) {
         console.error('ShoppingList: Error fetching prices:', error);
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setPricesLoaded(true);
+        }
       }
     };
 
     fetchPrices();
-  }, [gapCards, pricingEnabled]);
+    return () => { cancelled = true; };
+  }, [gapCards]);
 
   // Compute total acquisition cost
   const totalCost = useMemo(() => {
     let total = 0;
     gapCards.forEach(gap => {
       const priceData = prices[gap.cardId];
-      if (priceData?.marketPrice) {
-        total += gap.gap * priceData.marketPrice;
+      if (priceData?.market) {
+        total += gap.gap * priceData.market;
       }
     });
     return total;
@@ -132,7 +148,7 @@ export default function ShoppingList({ deck, collectionData, cardDatabase, onUpd
       </div>
 
       {/* Loading State */}
-      {pricingEnabled && loading && (
+      {loading && (
         <div className="flex items-center justify-center gap-2 py-6 text-zinc-400">
           <Loader2 size={16} className="animate-spin" />
           <span className="text-sm">Fetching prices...</span>
@@ -144,7 +160,7 @@ export default function ShoppingList({ deck, collectionData, cardDatabase, onUpd
         <div className="space-y-2 max-h-64 overflow-y-auto">
           {gapCards.map(gap => {
             const priceData = prices[gap.cardId];
-            const subtotal = gap.gap * (priceData?.marketPrice || 0);
+            const subtotal = gap.gap * (priceData?.market || 0);
             const buyingFoil = Boolean(foilRows[gap.cardId]);
             const variantCount = buyingFoil ? gap.foil : gap.standard;
 
@@ -173,7 +189,7 @@ export default function ShoppingList({ deck, collectionData, cardDatabase, onUpd
 
                   {/* TCGplayer Link */}
                   <a
-                    href={PricingService.getTCGPlayerUrl(gap.cardName)}
+                    href={PricingService.getTCGPlayerUrl(gap.cardName, priceData)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="p-1.5 hover:bg-blue-500/20 text-blue-400 hover:text-blue-300 rounded transition"
@@ -235,7 +251,7 @@ export default function ShoppingList({ deck, collectionData, cardDatabase, onUpd
                     <div className="flex items-center gap-2">
                       <DollarSign size={13} className="text-yellow-400" />
                       <span className="text-yellow-400 font-semibold">
-                        {PricingService.formatPrice(priceData.marketPrice)}
+                        {PricingService.formatPrice(priceData.market)}
                       </span>
                       <span className="text-zinc-500 text-xs">
                         × {gap.gap}
@@ -245,11 +261,11 @@ export default function ShoppingList({ deck, collectionData, cardDatabase, onUpd
                       <p className="text-yellow-300 font-semibold">
                         {PricingService.formatPrice(subtotal)}
                       </p>
-                      {priceData.lowPrice && priceData.highPrice && (
+                      {priceData.low !== null && priceData.high !== null && (
                         <p className="text-xs text-zinc-400">
-                          {PricingService.formatPrice(priceData.lowPrice)}
+                          {PricingService.formatPrice(priceData.low)}
                           {' '}–{' '}
-                          {PricingService.formatPrice(priceData.highPrice)}
+                          {PricingService.formatPrice(priceData.high)}
                         </p>
                       )}
                     </div>

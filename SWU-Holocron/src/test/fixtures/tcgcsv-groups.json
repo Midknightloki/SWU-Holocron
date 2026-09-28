@@ -1,0 +1,49 @@
+{
+ "results": [
+  {
+   "groupId": 23488,
+   "name": "Shadows of the Galaxy",
+   "abbreviation": "SHD",
+   "isSupplemental": false,
+   "publishedOn": "2024-07-12T00:00:00",
+   "modifiedOn": "2026-08-07T00:19:37.827",
+   "categoryId": 79
+  },
+  {
+   "groupId": 23453,
+   "name": "Judge Promos",
+   "abbreviation": "JDG",
+   "isSupplemental": false,
+   "publishedOn": "2024-03-08T00:00:00",
+   "modifiedOn": "2026-09-16T13:21:45.783",
+   "categoryId": 79
+  },
+  {
+   "groupId": 23405,
+   "name": "Spark of Rebellion",
+   "abbreviation": "SOR",
+   "isSupplemental": false,
+   "publishedOn": "2024-03-08T00:00:00",
+   "modifiedOn": "2025-08-04T13:57:10.057",
+   "categoryId": 79
+  },
+  {
+   "groupId": 23451,
+   "name": "Spark of Rebellion: Weekly Play Promos",
+   "abbreviation": "SOR-WPP",
+   "isSupplemental": false,
+   "publishedOn": "2024-03-08T00:00:00",
+   "modifiedOn": "2024-07-12T14:31:13.46",
+   "categoryId": 79
+  },
+  {
+   "groupId": 23406,
+   "name": "GenCon 2023 Promos",
+   "abbreviation": "",
+   "isSupplemental": false,
+   "publishedOn": "2023-08-03T00:00:00",
+   "modifiedOn": "2025-12-03T14:03:05.777",
+   "categoryId": 79
+  }
+ ]
+}

@@ -1,0 +1,205 @@
+{
+ "results": [
+  {
+   "productId": 540383,
+   "name": "Hera Syndulla - Spectre Two",
+   "cleanName": "Hera Syndulla Spectre Two",
+   "imageUrl": "https://tcgplayer-cdn.tcgplayer.com/product/540383_200w.jpg",
+   "categoryId": 79,
+   "groupId": 23405,
+   "url": "https://www.tcgplayer.com/product/540383/star-wars-unlimited-spark-of-rebellion-hera-syndulla-spectre-two",
+   "modifiedOn": "2024-10-11T16:33:33.147",
+   "imageCount": 2,
+   "presaleInfo": {
+    "isPresale": false,
+    "releasedOn": null,
+    "note": null
+   },
+   "extendedData": [
+    {
+     "name": "Rarity",
+     "displayName": "Rarity",
+     "value": "Rare"
+    },
+    {
+     "name": "Number",
+     "displayName": "Number",
+     "value": "008/252"
+    },
+    {
+     "name": "Description",
+     "displayName": "Description",
+     "value": "Ignore the aspect penalty on [Spectre] cards you play. \n<br>\n[Deployed Leader Unit]<br>\nIgnore the aspect penalty on [Spectre] cards you play.<br><strong>On Attack:</strong> You may give an Experience token to another unique unit."
+    },
+    {
+     "name": "Epic Action",
+     "displayName": "Epic Action",
+     "value": "<strong>Epic Action:</strong> If you control 6 or more resources, deploy this leader."
+    },
+    {
+     "name": "Aspect",
+     "displayName": "Aspect",
+     "value": "Command;Heroism"
+    },
+    {
+     "name": "CardType",
+     "displayName": "Card Type",
+     "value": "Leader"
+    },
+    {
+     "name": "Traits",
+     "displayName": "Traits",
+     "value": "Rebel;Spectre;Twi'lek"
+    },
+    {
+     "name": "Cost",
+     "displayName": "Cost",
+     "value": "6"
+    },
+    {
+     "name": "Power",
+     "displayName": "Power",
+     "value": "4"
+    },
+    {
+     "name": "HP",
+     "displayName": "HP",
+     "value": "6"
+    }
+   ]
+  },
+  {
+   "productId": 533897,
+   "name": "Spark of Rebellion - Booster Display",
+   "cleanName": "Spark of Rebellion Booster Display",
+   "imageUrl": "https://tcgplayer-cdn.tcgplayer.com/product/533897_200w.jpg",
+   "categoryId": 79,
+   "groupId": 23405,
+   "url": "https://www.tcgplayer.com/product/533897/star-wars-unlimited-spark-of-rebellion-spark-of-rebellion-booster-display",
+   "modifiedOn": "2024-03-08T05:03:37.01",
+   "imageCount": 1,
+   "presaleInfo": {
+    "isPresale": false,
+    "releasedOn": "2024-03-08T00:00:00",
+    "note": null
+   },
+   "extendedData": []
+  },
+  {
+   "productId": 542201,
+   "name": "Administrator's Tower // Shield",
+   "cleanName": "Administrators Tower Shield",
+   "imageUrl": "https://tcgplayer-cdn.tcgplayer.com/product/542201_200w.jpg",
+   "categoryId": 79,
+   "groupId": 23405,
+   "url": "https://www.tcgplayer.com/product/542201/star-wars-unlimited-spark-of-rebellion-administrators-tower-shield",
+   "modifiedOn": "2024-10-11T16:35:30.983",
+   "imageCount": 2,
+   "presaleInfo": {
+    "isPresale": false,
+    "releasedOn": null,
+    "note": null
+   },
+   "extendedData": [
+    {
+     "name": "Rarity",
+     "displayName": "Rarity",
+     "value": "Common"
+    },
+    {
+     "name": "Number",
+     "displayName": "Number",
+     "value": "29 // T02"
+    },
+    {
+     "name": "Description",
+     "displayName": "Description",
+     "value": "If damage would be dealt to attached unit, prevent that damage. If you do, defeat a Shield token on it."
+    },
+    {
+     "name": "Aspect",
+     "displayName": "Aspect",
+     "value": "Cunning"
+    },
+    {
+     "name": "CardType",
+     "displayName": "Card Type",
+     "value": "Base"
+    },
+    {
+     "name": "Traits",
+     "displayName": "Traits",
+     "value": "Armor;Cloud City"
+    },
+    {
+     "name": "Cost",
+     "displayName": "Cost",
+     "value": "0"
+    },
+    {
+     "name": "Power",
+     "displayName": "Power",
+     "value": "0"
+    },
+    {
+     "name": "HP",
+     "displayName": "HP",
+     "value": "30 // 0"
+    }
+   ]
+  },
+  {
+   "productId": 540407,
+   "name": "Security Complex (Hyperspace)",
+   "cleanName": "Security Complex Hyperspace",
+   "imageUrl": "https://tcgplayer-cdn.tcgplayer.com/product/540407_200w.jpg",
+   "categoryId": 79,
+   "groupId": 23405,
+   "url": "https://www.tcgplayer.com/product/540407/star-wars-unlimited-spark-of-rebellion-security-complex-hyperspace",
+   "modifiedOn": "2024-10-11T16:33:37.073",
+   "imageCount": 1,
+   "presaleInfo": {
+    "isPresale": false,
+    "releasedOn": null,
+    "note": null
+   },
+   "extendedData": [
+    {
+     "name": "Rarity",
+     "displayName": "Rarity",
+     "value": "Rare"
+    },
+    {
+     "name": "Number",
+     "displayName": "Number",
+     "value": "285"
+    },
+    {
+     "name": "Description",
+     "displayName": "Description",
+     "value": "<strong>Epic Action:</strong> Give a Shield token to a non-leader unit."
+    },
+    {
+     "name": "Aspect",
+     "displayName": "Aspect",
+     "value": "Vigilance"
+    },
+    {
+     "name": "CardType",
+     "displayName": "Card Type",
+     "value": "Base"
+    },
+    {
+     "name": "Traits",
+     "displayName": "Traits",
+     "value": "Scarif"
+    },
+    {
+     "name": "HP",
+     "displayName": "HP",
+     "value": "25"
+    }
+   ]
+  }
+ ]
+}
