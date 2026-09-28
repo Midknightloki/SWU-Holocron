@@ -1,242 +1,154 @@
 import { db, APP_ID } from '../firebase';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-
-const TCGAPI_BASE = 'https://api.tcgapi.dev/v1';
-const CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
-const RATE_LIMIT_DELAY = 100; // Delay between API calls to respect rate limits
+import { doc, getDoc } from 'firebase/firestore';
+import { lookupCardPrice } from '../tcgPrices';
 
 /**
- * PricingService — Fetch and cache card prices from tcgapi.dev
+ * PricingService — card prices, read from Firestore.
  *
- * Strategy:
- * 1. Check Firestore cache first (fast, reduces API calls)
- * 2. If cache miss or stale (>7 days), call tcgapi.dev API
- * 3. Write fresh data to Firestore cache
- * 4. Return priceData object with marketPrice, lowPrice, highPrice
+ * WHAT THIS REPLACED, AND WHY
  *
- * API Key: Read from import.meta.env.VITE_TCGAPI_KEY
- * Cache Path: /artifacts/{APP_ID}/public/data/priceCache/{cardId}
+ * The previous version called `api.tcgapi.dev` once per card from the browser,
+ * with an `X-API-Key` from `VITE_TCGAPI_KEY`, and cached each result as its own
+ * Firestore document. Three things were wrong with that, and the missing key was
+ * the least of them:
+ *
+ *  - That provider does not carry Star Wars Unlimited. Its public game list has
+ *    50 entries and none of them is this game, so `?game=swu` could never have
+ *    returned anything, key or no key.
+ *  - No Firestore rule covers `public/data/priceCache/**`, and Firestore denies by
+ *    default, so every cache write failed into a console warning. Prices would
+ *    have been re-fetched on every render.
+ *  - One request per card meant a fifty-card shopping list made fifty sequential
+ *    requests from the browser.
+ *
+ * Prices now arrive with the weekly card sync, from TCGCSV, stored one document
+ * per set beside that set's cards (`src/tcgPrices.js`, `scripts/cardDbSync.js`).
+ * Nothing here talks to a pricing API, so there is no key, no CORS dependency, and
+ * no per-card round trip: one read serves a whole set and is then memoised.
+ *
+ * Prices are always optional. Every method degrades to null or an empty result
+ * rather than throwing, because a deck is still buildable without them.
+ *
+ * @environment:firebase
  */
+
+/** setCode -> Promise<priceDoc|null>. Held for the page's lifetime. */
+const setPriceCache = new Map();
+
 export const PricingService = {
   /**
-   * Get price for a single card
-   * @param {string} cardId - Card ID in format 'SOR_008'
-   * @param {string} cardName - Card name for API lookup 'Hera Syndulla'
-   * @returns {Promise<{marketPrice, lowPrice, highPrice, currency, source, tcgplayerUrl, fromCache} | null>}
+   * Prices for one set, or null when that set has none.
+   *
+   * Memoised per set, including the misses, so a set without prices is asked for
+   * once rather than on every render.
+   *
+   * @param {string} setCode e.g. 'SOR'
+   * @returns {Promise<object|null>}
    */
-  getCardPrice: async (cardId, cardName) => {
-    if (!cardId || !cardName) {
-      console.warn('PricingService: Missing cardId or cardName');
-      return null;
-    }
+  getSetPrices: async (setCode) => {
+    if (!setCode || !db || !APP_ID) return null;
 
-    try {
-      // Step 1: Check Firestore cache
-      const cached = await PricingService._getCachedPrice(cardId);
-      if (cached) {
-        console.log(`✓ Price cache hit for ${cardId}`);
-        return { ...cached, fromCache: true };
-      }
+    const code = String(setCode).toUpperCase();
+    if (setPriceCache.has(code)) return setPriceCache.get(code);
 
-      // Step 2: Fetch from API
-      const apiKey = import.meta.env.VITE_TCGAPI_KEY;
-      if (!apiKey) {
-        console.warn('PricingService: VITE_TCGAPI_KEY not set, skipping API call');
+    const pending = (async () => {
+      try {
+        const ref = doc(
+          db,
+          'artifacts', APP_ID,
+          'public', 'data',
+          'cardDatabase', 'sets',
+          code, 'prices'
+        );
+        const snap = await getDoc(ref);
+        return snap.exists() ? snap.data() : null;
+      } catch (error) {
+        console.warn(`PricingService: could not read prices for ${code}:`, error.message);
         return null;
       }
+    })();
 
-      const priceData = await PricingService._fetchPriceFromApi(cardName, apiKey);
-      if (!priceData) {
-        console.warn(`PricingService: No price data found for ${cardName}`);
-        return null;
-      }
-
-      // Step 3: Cache the result
-      await PricingService._cachePrice(cardId, priceData);
-
-      return { ...priceData, fromCache: false };
-    } catch (error) {
-      console.error(`PricingService: Error fetching price for ${cardId}:`, error);
-      return null;
-    }
+    setPriceCache.set(code, pending);
+    return pending;
   },
 
   /**
-   * Get prices for multiple cards
-   * @param {Array<{cardId, cardName}>} cards - Array of cards to price
-   * @returns {Promise<{[cardId]: priceData | null}>}
+   * Price for one card.
+   *
+   * @param {string} setCode
+   * @param {string|number} cardNumber
+   * @param {boolean} [isFoil]
+   * @returns {Promise<{market, low, mid, high, productId, url, isFoil}|null>}
+   */
+  getCardPrice: async (setCode, cardNumber, isFoil = false) => {
+    const priceDoc = await PricingService.getSetPrices(setCode);
+    if (!priceDoc) return null;
+    return lookupCardPrice(priceDoc, cardNumber, isFoil);
+  },
+
+  /**
+   * Prices for many cards at once, keyed by the caller's own card id.
+   *
+   * Reads each distinct set once, not each card once.
+   *
+   * @param {Array<{cardId: string, set: string, number: string|number, isFoil?: boolean}>} cards
+   * @returns {Promise<{[cardId]: priceData|null}>}
    */
   getBulkPrices: async (cards) => {
-    if (!Array.isArray(cards) || cards.length === 0) {
-      return {};
-    }
+    if (!Array.isArray(cards) || cards.length === 0) return {};
+
+    const setCodes = [...new Set(cards.map((c) => String(c?.set || '').toUpperCase()).filter(Boolean))];
+    const docs = new Map();
+    await Promise.all(
+      setCodes.map(async (code) => {
+        docs.set(code, await PricingService.getSetPrices(code));
+      })
+    );
 
     const results = {};
-
-    // Fetch prices sequentially with delay to respect rate limits
-    for (const { cardId, cardName } of cards) {
-      const priceData = await PricingService.getCardPrice(cardId, cardName);
-      results[cardId] = priceData;
-
-      // Rate limiting: wait before next API call (only if we actually hit the API)
-      if (priceData && !priceData.fromCache) {
-        await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_DELAY));
-      }
+    for (const card of cards) {
+      if (!card?.cardId) continue;
+      const priceDoc = docs.get(String(card.set || '').toUpperCase());
+      results[card.cardId] = priceDoc
+        ? lookupCardPrice(priceDoc, card.number, card.isFoil === true)
+        : null;
     }
-
     return results;
   },
 
   /**
-   * Format price as USD string
-   * @param {number} price - Price to format
-   * @returns {string} Formatted price like '$4.25' or 'N/A'
+   * Format a price as USD.
+   *
+   * @param {number|null} price
+   * @returns {string} '$4.25', or 'N/A' when there is no number
    */
   formatPrice: (price) => {
-    if (price === null || price === undefined) {
+    if (price === null || price === undefined || Number.isNaN(Number(price))) {
       return 'N/A';
     }
     return `$${parseFloat(price).toFixed(2)}`;
   },
 
   /**
-   * Build TCGplayer search URL for a card
-   * @param {string} cardName - Card name to search
-   * @returns {string} TCGplayer search URL
+   * Where to send someone who wants to buy the card.
+   *
+   * Prefers the exact product page, which comes from the price data, and falls
+   * back to a search by name when the card has no price entry. This is also the
+   * single place an affiliate parameter would go once that application clears.
+   *
+   * @param {string} cardName
+   * @param {object|null} [priceData] the result of getCardPrice
+   * @returns {string}
    */
-  getTCGPlayerUrl: (cardName) => {
-    const encoded = encodeURIComponent(cardName);
+  getTCGPlayerUrl: (cardName, priceData = null) => {
+    if (priceData?.url) return priceData.url;
+
+    const encoded = encodeURIComponent(cardName || '');
     return `https://www.tcgplayer.com/search/star-wars-unlimited/product?productLineName=star-wars-unlimited&q=${encoded}`;
   },
 
-  /**
-   * Internal: Get cached price from Firestore
-   * @private
-   */
-  _getCachedPrice: async (cardId) => {
-    if (!db || !APP_ID) {
-      return null;
-    }
-
-    try {
-      const cacheRef = doc(
-        db,
-        'artifacts',
-        APP_ID,
-        'public',
-        'data',
-        'priceCache',
-        cardId
-      );
-      const snapshot = await getDoc(cacheRef);
-
-      if (!snapshot.exists()) {
-        return null;
-      }
-
-      const data = snapshot.data();
-      const age = Date.now() - data.cachedAt?.toMillis?.();
-
-      // Check if cache is still valid (< 7 days)
-      if (age < CACHE_TTL) {
-        return {
-          marketPrice: data.marketPrice,
-          lowPrice: data.lowPrice,
-          highPrice: data.highPrice,
-          currency: data.currency || 'USD',
-          source: 'priceCache',
-          tcgplayerUrl: data.tcgplayerUrl
-        };
-      }
-    } catch (error) {
-      console.warn(`PricingService: Cache read failed for ${cardId}:`, error.message);
-    }
-
-    return null;
+  /** Drop the memoised set documents. Only needed by tests. */
+  _resetCache: () => {
+    setPriceCache.clear();
   },
-
-  /**
-   * Internal: Fetch price from tcgapi.dev API
-   * @private
-   */
-  _fetchPriceFromApi: async (cardName, apiKey) => {
-    try {
-      const url = `${TCGAPI_BASE}/cards?game=swu&name=${encodeURIComponent(cardName)}`;
-
-      const response = await fetch(url, {
-        headers: {
-          'X-API-Key': apiKey,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        console.warn(`PricingService: API returned ${response.status} for ${cardName}`);
-        return null;
-      }
-
-      const data = await response.json();
-
-      // Handle array response or object response with data property
-      const cards = Array.isArray(data) ? data : (data.data || []);
-
-      if (!Array.isArray(cards) || cards.length === 0) {
-        return null;
-      }
-
-      // Use first matching card
-      const card = cards[0];
-
-      // Extract pricing (API response structure: marketPrice, lowPrice, highPrice)
-      const priceData = {
-        marketPrice: card.marketPrice || null,
-        lowPrice: card.lowPrice || null,
-        highPrice: card.highPrice || null,
-        currency: 'USD',
-        source: 'tcgapi.dev',
-        tcgplayerUrl: PricingService.getTCGPlayerUrl(cardName)
-      };
-
-      return priceData;
-    } catch (error) {
-      console.error(`PricingService: API fetch failed for ${cardName}:`, error.message);
-      return null;
-    }
-  },
-
-  /**
-   * Internal: Cache price in Firestore
-   * @private
-   */
-  _cachePrice: async (cardId, priceData) => {
-    if (!db || !APP_ID) {
-      return;
-    }
-
-    try {
-      const cacheRef = doc(
-        db,
-        'artifacts',
-        APP_ID,
-        'public',
-        'data',
-        'priceCache',
-        cardId
-      );
-
-      await setDoc(cacheRef, {
-        marketPrice: priceData.marketPrice,
-        lowPrice: priceData.lowPrice,
-        highPrice: priceData.highPrice,
-        currency: priceData.currency,
-        source: priceData.source,
-        tcgplayerUrl: priceData.tcgplayerUrl,
-        cachedAt: serverTimestamp()
-      });
-
-      console.log(`✓ Cached price for ${cardId}`);
-    } catch (error) {
-      console.warn(`PricingService: Cache write failed for ${cardId}:`, error.message);
-    }
-  }
 };

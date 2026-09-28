@@ -12,8 +12,8 @@ import ShoppingList from '../ShoppingList';
 vi.mock('../../services/PricingService', () => ({
   PricingService: {
     getBulkPrices: vi.fn().mockResolvedValue({}),
-    formatPrice: vi.fn().mockReturnValue('N/A'),
-    getTCGPlayerUrl: vi.fn().mockReturnValue('https://tcgplayer.com'),
+    formatPrice: vi.fn((v) => (v === null || v === undefined ? 'N/A' : `$${Number(v).toFixed(2)}`)),
+    getTCGPlayerUrl: vi.fn((name, priceData) => priceData?.url || 'https://tcgplayer.com/search'),
   }
 }));
 
@@ -105,32 +105,35 @@ describe('ShoppingList Component', () => {
     }, { timeout: 3000 });
   });
 
-  // Pricing is an optional integration. With no key there is nothing to show,
-  // and a note about a missing dev-environment variable is not something an end
-  // user can act on.
-  describe('without VITE_TCGAPI_KEY', () => {
-    it('should not mention the missing key', async () => {
+  // Pricing needs no configuration now: prices arrive with the weekly card sync
+  // and are read from Firestore. What varies is whether the sync has prices for
+  // these particular cards -- not every set has a TCGplayer group.
+  describe('when no prices are available', () => {
+    beforeEach(() => {
+      PricingService.getBulkPrices.mockResolvedValue({});
+    });
+
+    it('should hide every trace of pricing rather than showing empty prices', async () => {
+      render(<ShoppingList {...defaultProps} deck={deckWithGaps} />);
+
+      await screen.findByText('Chewbacca');
+      await waitFor(() => {
+        expect(screen.queryByText(/Fetching prices/i)).not.toBeInTheDocument();
+      });
+      expect(screen.queryByText(/Price not available/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Total Acquisition Cost/i)).not.toBeInTheDocument();
+    });
+
+    // The old implementation announced a missing build-time variable to end
+    // users. There is no such variable any more, and there never should have
+    // been a message about one.
+    it('should never mention configuration', async () => {
       render(<ShoppingList {...defaultProps} deck={deckWithGaps} />);
 
       await screen.findByText('Chewbacca');
       expect(screen.queryByText(/Pricing not available/i)).not.toBeInTheDocument();
       expect(screen.queryByText(/VITE_TCGAPI_KEY/)).not.toBeInTheDocument();
-    });
-
-    it('should hide every trace of pricing', async () => {
-      render(<ShoppingList {...defaultProps} deck={deckWithGaps} />);
-
-      await screen.findByText('Chewbacca');
-      expect(screen.queryByText(/Price not available/i)).not.toBeInTheDocument();
-      expect(screen.queryByText(/Total Acquisition Cost/i)).not.toBeInTheDocument();
-      expect(screen.queryByText(/Fetching prices/i)).not.toBeInTheDocument();
-    });
-
-    it('should not call the pricing service at all', async () => {
-      render(<ShoppingList {...defaultProps} deck={deckWithGaps} />);
-
-      await screen.findByText('Chewbacca');
-      expect(PricingService.getBulkPrices).not.toHaveBeenCalled();
+      expect(screen.queryByText(/\.env/)).not.toBeInTheDocument();
     });
 
     it('should still link out to TCGplayer', async () => {
@@ -141,22 +144,53 @@ describe('ShoppingList Component', () => {
     });
   });
 
-  describe('with VITE_TCGAPI_KEY', () => {
+  describe('when prices are available', () => {
+    const priced = {
+      SOR_001: { market: 2.5, low: 1, mid: 2, high: 9, productId: 111, url: 'https://tcgplayer.com/product/111/krennic' },
+      SOR_003: { market: 0.5, low: 0.1, mid: 0.4, high: 3, productId: 222, url: 'https://tcgplayer.com/product/222/chewie' },
+    };
+
     beforeEach(() => {
-      vi.stubEnv('VITE_TCGAPI_KEY', 'test-key');
+      PricingService.getBulkPrices.mockResolvedValue(priced);
     });
 
-    afterEach(() => {
-      vi.unstubAllEnvs();
-    });
-
-    it('should fetch prices and show the total', async () => {
+    it('should ask for prices by set and card number, not by name', async () => {
       render(<ShoppingList {...defaultProps} deck={deckWithGaps} />);
 
       await waitFor(() => {
         expect(PricingService.getBulkPrices).toHaveBeenCalled();
       });
+      const arg = PricingService.getBulkPrices.mock.calls[0][0];
+      expect(arg[0]).toMatchObject({ cardId: expect.any(String), set: 'SOR', number: expect.any(String) });
+      expect(arg[0]).not.toHaveProperty('cardName');
+    });
+
+    it('should show the market price and the total', async () => {
+      render(<ShoppingList {...defaultProps} deck={deckWithGaps} />);
+
       expect(await screen.findByText(/Total Acquisition Cost/i)).toBeInTheDocument();
+      expect(screen.getByText('$2.50')).toBeInTheDocument();
+    });
+
+    it('should show the low-to-high range on the card it belongs to', async () => {
+      render(<ShoppingList {...defaultProps} deck={deckWithGaps} />);
+
+      await screen.findByText(/Total Acquisition Cost/i);
+      // Scoped to the row: $1.00 is also SOR_003's subtotal elsewhere on screen.
+      const row = screen.getByText('Director Krennic').closest('[data-card-id]');
+      expect(row.textContent).toContain('$1.00');
+      expect(row.textContent).toContain('$9.00');
+    });
+
+    // A search page makes the shopper find the card again; the product page is
+    // the thing they actually want, and is where an affiliate tag would go.
+    it('should link to the exact product page when one is known', async () => {
+      render(<ShoppingList {...defaultProps} deck={deckWithGaps} />);
+
+      await screen.findByText(/Total Acquisition Cost/i);
+      const links = screen.getAllByTitle('Search on TCGplayer');
+      const hrefs = links.map((a) => a.getAttribute('href'));
+      expect(hrefs).toContain('https://tcgplayer.com/product/111/krennic');
     });
   });
 
