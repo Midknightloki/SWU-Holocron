@@ -67,7 +67,7 @@ npx vitest related --run src/utils/csvParser.js   # what lint-staged does
 Admin/data scripts (need `firebase-admin-key.json` or `FIREBASE_SERVICE_ACCOUNT`):
 
 ```bash
-npm run admin:seed-cards       # write card DB to Firestore -- currently the ONLY way it updates
+npm run admin:seed-cards       # write card DB to Firestore by hand (sync-cards.yml does it weekly)
 npm run admin:verify-db        # integrity check
 npm run admin:scrape-dry-run   # scrape official card site without writing
 npm run admin:merge-dry-run    # preview merge of swu-db + official sources
@@ -160,8 +160,10 @@ The app is offline-first by design: the live external API should almost never be
 hit at runtime. Workbox caches swu-db responses CacheFirst for 7 days. Card images
 are URLs built by `CardService.getCardImage()` — never stored.
 
-The Firestore `cardDatabase` is **not** currently updated automatically — see
-Deployment below.
+The Firestore `cardDatabase` is refreshed weekly by `sync-cards.yml` — see
+Deployment below. Note that the weekly refresh does nothing for a user whose
+`localStorage` already holds the set: that cache has no TTL, so new data waits for
+`loadSetData(force = true)`.
 
 ### Identity of a card, and set codes
 
@@ -296,12 +298,24 @@ The build only fires on pushes to `main` touching `SWU-Holocron/**`, `Dockerfile
 or that workflow, so a docs-only or workflow-only commit does not deploy. Use
 `workflow_dispatch` for those.
 
+**The card sync runs weekly.** `sync-cards.yml` fires Mondays 06:00 UTC,
+authenticating keylessly through Workload Identity Federation as `card-sync@`
+(`docs/CI-KEYLESS-AUTH.md`) — no secret. It needs `issues: write` as well as
+`id-token: write`, because the failure notifier opens an issue and silently 403'd
+without it. The cron was enabled 2026-09-26 after a manual run was watched end to
+end and came back clean at 51/51 sets and 0 verify issues; the run before that
+was not clean, which is what the gate was for.
+
+Pipeline order is seed → scrape → reconcile → **placeholders** → verify. The
+placeholder step is what keeps a red run from being permanent: where the catalogue
+claims cards no source can describe, it records placeholders instead of failing,
+and verify treats that as informational (`src/placeholderCards.js`).
+
 **Not running, and why** — only `DISCORD_WEBHOOK_URL` is configured as a repo
 secret:
 
 | Workflow | Blocked on |
 |---|---|
-| `sync-cards.yml` (at root, `workflow_dispatch` only) | Nothing, now — it authenticates keylessly through Workload Identity Federation as `card-sync@`, no secret required (`docs/CI-KEYLESS-AUTH.md`). Its weekly cron stays commented out until one manual run has been watched end to end, because a failing run auto-files a GitHub issue. Until then the card database changes only via a manual run or `npm run admin:seed-cards`. |
 | `firebase-hosting-{merge,pull-request}.yml` (still nested, dormant) | `FIREBASE_SERVICE_ACCOUNT_SWU_HOLOCRON_93A18`, plus they'd add a second deploy target alongside the Docker pipeline. |
 | Codecov upload in `ci.yml` | `CODECOV_TOKEN` absent; the repo is public so tokenless upload works, and `fail_ci_if_error` is off so it can't fail a build. |
 

@@ -17,8 +17,13 @@ on:
   # Weekly, Mondays 06:00 UTC. The seeder hash-checks for changes, so a run with
   # nothing new is nearly free; new sets appear within 7 days of release without
   # a release calendar to keep current by hand.
-  # schedule:
-  #   - cron: '0 6 * * 1'
+  #
+  # Enabled 2026-09-26, after a manual run was watched end to end and came back
+  # clean: 51/51 sets, 0 verify issues. The first watched run was not clean --
+  # it wrote 22 placeholder cards into sets that were complete -- which is
+  # exactly what the gate existed to catch. Do not re-enable this from a red run.
+  schedule:
+    - cron: '0 6 * * 1'
 
   # Allow manual triggering from GitHub UI
   workflow_dispatch:
