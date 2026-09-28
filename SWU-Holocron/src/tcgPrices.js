@@ -267,27 +267,45 @@ export function matchGroupsToSets(groups, setCodes = [], aliases = {}) {
 /**
  * Look one card's prices up in a stored set price document.
  *
+ * Not every card has both printings. Across Spark of Rebellion, 436 of 510 have
+ * both, 58 are standard-only and 16 are foil-only. So a request can be answered
+ * with the printing that was not asked for, and the result has to say so --
+ * foils are not priced the same as standards (one SOR card sits at 0.27 standard
+ * against 0.45 foil), and a foil row quietly showing a standard price would
+ * mislead someone about to spend money.
+ *
+ * `printing` is therefore what the numbers actually are, and `isFallback` says
+ * the other printing was asked for and not available. `isFoil` describes the
+ * numbers, not the request.
+ *
  * @param {object} priceDoc the document written by the sync step
  * @param {string|number} cardNumber
- * @param {boolean} [isFoil]
- * @returns {{market, low, mid, high, productId, url, isFoil}|null}
+ * @param {boolean} [wantFoil]
+ * @returns {{market, low, mid, high, productId, url, printing, isFoil, isFallback}|null}
  */
-export function lookupCardPrice(priceDoc, cardNumber, isFoil = false) {
-  const key = priceKeyForCard(cardNumber, isFoil);
+export function lookupCardPrice(priceDoc, cardNumber, wantFoil = false) {
+  const key = priceKeyForCard(cardNumber, wantFoil);
   if (!key) return null;
 
   const entry = priceDoc?.cards?.[key.number];
   if (!entry) return null;
 
-  // Fall back to the other printing rather than showing nothing: a foil-only
-  // listing still tells you roughly what the card costs.
-  const prices = (key.foil ? entry.foil : entry.std) || entry.std || entry.foil;
+  const wanted = key.foil ? entry.foil : entry.std;
+  const other = key.foil ? entry.std : entry.foil;
+
+  // Showing the other printing beats showing nothing -- it is still roughly what
+  // the card costs -- but only when the caller can tell that is what happened.
+  const prices = wanted || other;
   if (!prices) return null;
+
+  const printing = wanted ? (key.foil ? 'foil' : 'std') : (key.foil ? 'std' : 'foil');
 
   return {
     ...prices,
     productId: entry.productId,
     url: entry.url || null,
-    isFoil: key.foil,
+    printing,
+    isFoil: printing === 'foil',
+    isFallback: !wanted,
   };
 }

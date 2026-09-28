@@ -263,15 +263,19 @@ describe('lookupCardPrice', () => {
   };
 
   it('returns the standard price for a plain number', () => {
-    expect(lookupCardPrice(doc, '008')).toMatchObject({ market: 0.16, isFoil: false });
+    expect(lookupCardPrice(doc, '008')).toMatchObject({
+      market: 0.16, printing: 'std', isFoil: false, isFallback: false,
+    });
   });
 
   it('returns the foil price when asked for foil', () => {
-    expect(lookupCardPrice(doc, '008', true)).toMatchObject({ market: 0.2, isFoil: true });
+    expect(lookupCardPrice(doc, '008', true)).toMatchObject({
+      market: 0.2, printing: 'foil', isFoil: true, isFallback: false,
+    });
   });
 
   it("returns the foil price for swu-db's F-suffixed number", () => {
-    expect(lookupCardPrice(doc, '008F')).toMatchObject({ market: 0.2, isFoil: true });
+    expect(lookupCardPrice(doc, '008F')).toMatchObject({ market: 0.2, printing: 'foil' });
   });
 
   it('carries the product link through for the shopping list', () => {
@@ -279,10 +283,27 @@ describe('lookupCardPrice', () => {
     expect(lookupCardPrice(doc, '008').productId).toBe(540383);
   });
 
-  // Better a rough number than a blank: a foil-only listing still says what the
-  // card is worth.
-  it('falls back to the other printing when the one asked for is missing', () => {
-    expect(lookupCardPrice(doc, '100')).toMatchObject({ market: 9 });
+  // Better a rough number than a blank -- but the caller has to be able to tell.
+  // A foil row quietly showing a standard price would mislead a buyer, and the
+  // two differ materially: one SOR card is 0.27 standard against 0.45 foil.
+  it('falls back to the other printing, and says that it did', () => {
+    // '100' is foil-only, so a standard request is answered with the foil price.
+    expect(lookupCardPrice(doc, '100')).toMatchObject({
+      market: 9, printing: 'foil', isFoil: true, isFallback: true,
+    });
+  });
+
+  it('falls back the other way too', () => {
+    // '200' is standard-only, so a foil request is answered with the standard.
+    const stdOnly = { cards: { '200': { productId: 5, std: { market: 1, low: 1, mid: 1, high: 1 } } } };
+    expect(lookupCardPrice(stdOnly, '200', true)).toMatchObject({
+      market: 1, printing: 'std', isFoil: false, isFallback: true,
+    });
+  });
+
+  it('reports isFoil for what the numbers are, not for what was asked', () => {
+    const stdOnly = { cards: { '200': { productId: 5, std: { market: 1 } } } };
+    expect(lookupCardPrice(stdOnly, '200F').isFoil).toBe(false);
   });
 
   it('returns null for a card with no entry', () => {

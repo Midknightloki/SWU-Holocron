@@ -256,6 +256,14 @@ export default function ShoppingList({ deck, collectionData, cardDatabase, onUpd
                       <span className="text-zinc-500 text-xs">
                         × {gap.gap}
                       </span>
+                      {/* Say which printing the number is when it is not the one
+                          asked for: foils and standards differ enough that an
+                          unlabelled substitute would mislead a buyer. */}
+                      {priceData.isFallback && (
+                        <span className="text-[10px] text-zinc-500 italic">
+                          {priceData.printing === 'foil' ? 'foil price' : 'standard price'}
+                        </span>
+                      )}
                     </div>
                     <div className="text-right">
                       <p className="text-yellow-300 font-semibold">
