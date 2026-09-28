@@ -16,9 +16,11 @@ import { reconcileSet } from '../src/cardReconcile.js';
 import { applyPlaceholders, classifySetCompleteness, isFailingStatus } from '../src/placeholderCards.js';
 import {
   buildGroupsUrl,
+  buildLastUpdatedUrl,
   buildPricesUrl,
   buildProductsUrl,
   buildPriceMap,
+  buildRequestHeaders,
   matchGroupsToSets,
 } from '../src/tcgPrices.js';
 import { fileURLToPath } from 'url';
@@ -363,6 +365,27 @@ const PRICE_GROUPS_NEEDING_INVESTIGATION = ['PRE', 'JDG', 'EEP', 'OPP', 'SN1'];
  * A failure here does not fail the sync. Prices are a convenience; card data is
  * not, and a pricing mirror going down should not turn the weekly run red.
  */
+/**
+ * Fetch from TCGCSV and fail with the body, not just the status.
+ *
+ * The first run of this step reported `groups HTTP 401` and nothing else, which
+ * could equally have meant a blocked address or a blocked User-Agent. TCGCSV
+ * answers a blocked User-Agent with 401 and a plain-text explanation, so the body
+ * is the part that tells you which. Include it.
+ */
+async function fetchTcgcsv(url, headers, label) {
+  const res = await fetch(url, { headers });
+  if (res.ok) return res;
+
+  let hint = '(no body)';
+  try {
+    hint = (await res.text()).slice(0, 300).replace(/\s+/g, ' ').trim();
+  } catch {
+    // Body already consumed or unreadable; the status alone will have to do.
+  }
+  throw new Error(`${label} HTTP ${res.status} - ${hint}`);
+}
+
 async function syncPrices() {
   const start = Date.now();
   console.log(`\n${'='.repeat(60)}`);
@@ -391,8 +414,38 @@ async function syncPrices() {
     const registry = registrySnap.exists ? registrySnap.data()?.sets : null;
     const catalog = Array.isArray(registry) && registry.length > 0 ? registry : SETS;
 
-    const groupsRes = await fetch(buildGroupsUrl());
-    if (!groupsRes.ok) throw new Error(`groups HTTP ${groupsRes.status}`);
+    // TCGCSV requires a descriptive User-Agent and answers 401 without one.
+    const headers = buildRequestHeaders();
+    console.log(`  Identifying as User-Agent: ${headers['User-Agent']}`);
+
+    // The mirror rebuilds once a day, and their guidelines ask callers to check
+    // this first so an unchanged day costs one request rather than fifty.
+    const stampRes = await fetch(buildLastUpdatedUrl(), { headers });
+    const upstreamStamp = stampRes.ok ? (await stampRes.text()).trim() : null;
+    if (upstreamStamp) {
+      console.log(`  Upstream data built ${upstreamStamp}`);
+    } else {
+      console.warn(`  Could not read last-updated.txt (HTTP ${stampRes.status}); continuing without the unchanged check`);
+    }
+
+    const metaRef = db.collection('artifacts')
+      .doc(APP_ID)
+      .collection('public')
+      .doc('data')
+      .collection('cardDatabase')
+      .doc('priceMetadata');
+    const metaSnap = await metaRef.get();
+    const lastStamp = metaSnap.exists ? metaSnap.data()?.upstreamStamp : null;
+
+    if (upstreamStamp && lastStamp === upstreamStamp) {
+      console.log('  Unchanged since the last sync, skipping (as the guidelines ask)');
+      return {
+        success: true, skipped: true, duration_ms: Date.now() - start,
+        priced: [], failed: [], unpriceable: [], totalCards: 0,
+      };
+    }
+
+    const groupsRes = await fetchTcgcsv(buildGroupsUrl(), headers, 'groups');
     const groups = await groupsRes.json();
 
     const { matched, unmatched } = matchGroupsToSets(
@@ -407,11 +460,9 @@ async function syncPrices() {
     for (const { setCode, groupId, name } of matched) {
       try {
         const [productsRes, pricesRes] = await Promise.all([
-          fetch(buildProductsUrl(groupId)),
-          fetch(buildPricesUrl(groupId)),
+          fetchTcgcsv(buildProductsUrl(groupId), headers, 'products'),
+          fetchTcgcsv(buildPricesUrl(groupId), headers, 'prices'),
         ]);
-        if (!productsRes.ok) throw new Error(`products HTTP ${productsRes.status}`);
-        if (!pricesRes.ok) throw new Error(`prices HTTP ${pricesRes.status}`);
 
         const { cards, skipped } = buildPriceMap(await productsRes.json(), await pricesRes.json());
         const count = Object.keys(cards).length;
