@@ -44,8 +44,14 @@ jobs:
       # that accumulated while this workflow was sitting in the wrong directory
       # and never ran. Errors must stay at zero; warnings are reported below
       # without blocking so the backlog can be burned down incrementally.
+      # `scripts` is linted as well as `src`, and that is not cosmetic: the sync
+      # pipeline shipped a ReferenceError -- two variables used and never declared
+      # -- because only `src` was checked. ESLint catches it as no-undef in a
+      # second, and `scripts` is where the code that writes to the live card
+      # database lives. Errors only, as for src; its console.log warnings do not
+      # gate.
       - name: Run ESLint (errors block the build)
-        run: npx eslint src --ext js,jsx --quiet
+        run: npx eslint src scripts --ext js,jsx --quiet
 
       - name: Report ESLint warnings (non-blocking)
         continue-on-error: true
