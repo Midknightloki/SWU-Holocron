@@ -138,6 +138,22 @@ describe('ScanService.commitDraft', () => {
     expect(onProgress.mock.calls[0][0].rows.map((r) => r.id)).toEqual(['r401']);
   });
 
+  it('refuses a second commit while one is still pending', async () => {
+    let release;
+    mocks.commit.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    const first = ScanService.commitDraft(draftOf(1), { id: 'ref' });
+    await expect(ScanService.commitDraft(draftOf(1), { id: 'ref' })).rejects.toMatchObject({ code: 'commit-in-progress' });
+    release();
+    await first;
+    await expect(ScanService.commitDraft(draftOf(1), { id: 'ref' })).resolves.toEqual({ rows: [] });
+  });
+
+  it('allows a new commit after a failed one', async () => {
+    mocks.commit.mockRejectedValueOnce(new Error('offline'));
+    await expect(ScanService.commitDraft(draftOf(1), { id: 'ref' })).rejects.toThrow('offline');
+    await expect(ScanService.commitDraft(draftOf(1), { id: 'ref' })).resolves.toEqual({ rows: [] });
+  });
+
   it('keeps unidentified rows in the draft', async () => {
     let d = draftOf(1);
     d = addCapture(d, { id: 'u', isFoil: false, photo: null });

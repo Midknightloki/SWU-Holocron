@@ -34,6 +34,7 @@ const pressSpace = (target = window, init = {}) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.getItem.mockReset();
   localStorage.getItem.mockReturnValue(null);
   mocks.captureFrame.mockReturnValue('IMG');
   mocks.scan.mockResolvedValue(LUKE);
@@ -146,6 +147,27 @@ describe('CardScanner', () => {
     expect(mocks.commitDraft).toHaveBeenCalledWith(expect.any(Object), { id: 'ref' }, expect.any(Object));
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(localStorage.removeItem).toHaveBeenCalledWith('swu-scan-draft-uid-1');
+  });
+
+  it('says a previous save is still running when a commit is refused', async () => {
+    const user = userEvent.setup();
+    mocks.commitDraft.mockRejectedValue(Object.assign(new Error('busy'), { code: 'commit-in-progress' }));
+    renderScanner();
+    pressSpace();
+    await user.click(await screen.findByRole('button', { name: 'Review (1)' }));
+    await user.click(await screen.findByRole('button', { name: 'Add 1 card to collection' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/previous save is still in progress/i);
+  });
+
+  it("drops the previous account's batch when the signed-in user changes", async () => {
+    const saved = JSON.stringify({ rows: [{ id: 'x', status: 'matched', set: 'SOR', number: '012', name: 'Luke Skywalker', isFoil: false, qty: 1 }] });
+    localStorage.getItem.mockImplementation((key) => (key === 'swu-scan-draft-uid-1' ? saved : null));
+    const { rerender } = renderScanner();
+    expect(screen.getByRole('button', { name: 'Review (1)' })).toBeInTheDocument();
+    rerender(<CardScanner uid="uid-2" collectionRef={{ id: 'ref-2' }} setCodes={['SOR']} onClose={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Review (0)' })).toBeInTheDocument();
+    const leaked = localStorage.setItem.mock.calls.filter(([key, value]) => key === 'swu-scan-draft-uid-2' && JSON.parse(value).rows.length > 0);
+    expect(leaked).toEqual([]);
   });
 
   it('keeps the batch and explains when a commit fails', async () => {

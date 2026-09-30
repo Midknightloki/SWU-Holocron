@@ -2,10 +2,10 @@
  * @vitest-environment happy-dom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@testing-library/react';
 import React from 'react';
 
-const state = vi.hoisted(() => ({ user: null, profile: null }));
+const state = vi.hoisted(() => ({ user: null, profile: null, authCallback: null, getDoc: null }));
 
 vi.mock('firebase/auth', () => ({
   GoogleAuthProvider: vi.fn(() => ({ setCustomParameters: vi.fn() })),
@@ -13,6 +13,7 @@ vi.mock('firebase/auth', () => ({
   signInAnonymously: vi.fn(),
   signOut: vi.fn(),
   onAuthStateChanged: (auth, cb) => {
+    state.authCallback = cb;
     cb(state.user);
     return () => {};
   },
@@ -20,7 +21,7 @@ vi.mock('firebase/auth', () => ({
 
 vi.mock('firebase/firestore', () => ({
   doc: vi.fn(() => ({})),
-  getDoc: vi.fn(async () => ({
+  getDoc: vi.fn(async () => (state.getDoc ? state.getDoc() : {
     exists: () => state.profile !== null,
     data: () => state.profile,
   })),
@@ -55,6 +56,19 @@ describe('AuthContext entitlements', () => {
   beforeEach(() => {
     state.user = null;
     state.profile = null;
+    state.getDoc = null;
+  });
+
+  it("drops the previous account's entitlement the moment the user changes", async () => {
+    await renderWith({ uid: 'pro-a', isAnonymous: false }, { isPro: true });
+    await waitFor(() => expect(screen.getByTestId('can-scan').textContent).toBe('true'));
+
+    // Account B signs in; its profile read has not resolved yet.
+    state.getDoc = () => new Promise(() => {});
+    act(() => { state.authCallback({ uid: 'plain-b', isAnonymous: false }); });
+
+    expect(screen.getByTestId('can-scan').textContent).toBe('false');
+    expect(screen.getByTestId('pro').textContent).toBe('false');
   });
 
   it('marks a Pro user as able to scan', async () => {

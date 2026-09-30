@@ -22,6 +22,12 @@ export const AuthProvider = ({ children }) => {
 
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
       setUser(u);
+      // Clear the previous account's roles before the new profile read. Left
+      // in place, an A-to-B switch keeps A's isPro/isAdmin for the length of
+      // that read -- long enough for the scanner to act for the wrong user.
+      setIsAdmin(false);
+      setIsContributor(false);
+      setIsPro(false);
 
       // Check admin/contributor status
       if (u && !u.isAnonymous) {

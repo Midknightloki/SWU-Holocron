@@ -46,6 +46,25 @@ describe('CardPickerModal', () => {
     expect(mocks.fetchSetData).toHaveBeenCalledWith('SOROP');
   });
 
+  it('requests every set at once rather than one after another', async () => {
+    // 51 registered sets fetched sequentially made the DeckBuilder leader
+    // picker several times slower than the old 14-set fallback.
+    const pending = [];
+    mocks.fetchSetData.mockImplementation(() => new Promise((resolve) => { pending.push(resolve); }));
+    render(<CardPickerModal type="Leader" collectionData={{}} onSelect={vi.fn()} onClose={vi.fn()} />);
+    await waitFor(() => expect(mocks.fetchSetData).toHaveBeenCalledTimes(2));
+    pending.forEach((resolve) => resolve({ data: [] }));
+  });
+
+  it('still lists the sets that loaded when one fails', async () => {
+    mocks.fetchSetData.mockImplementation(async (code) => {
+      if (code === 'SOR') throw new Error('offline');
+      return { data: CARDS[code] ?? [] };
+    });
+    render(<CardPickerModal type="Upgrade" collectionData={{}} onSelect={vi.fn()} onClose={vi.fn()} />);
+    expect(await screen.findByText('Death Star Plans')).toBeInTheDocument();
+  });
+
   it('without a type, asks for a search before listing anything', async () => {
     render(<CardPickerModal collectionData={{}} onSelect={vi.fn()} onClose={vi.fn()} />);
     expect(await screen.findByText(/type at least 2 letters/i)).toBeInTheDocument();

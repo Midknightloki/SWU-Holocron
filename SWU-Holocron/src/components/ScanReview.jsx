@@ -60,6 +60,7 @@ export default function ScanReview({ draft, onChange, onRetry, onBack, onCommit,
       <div className="flex items-center gap-3 px-4 py-3 bg-gray-900 border-b border-gray-800">
         <button
           type="button"
+          disabled={committing}
           onClick={onBack}
           aria-label="Back to camera"
           className="p-2 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white"
@@ -97,6 +98,7 @@ export default function ScanReview({ draft, onChange, onRetry, onBack, onCommit,
                 </div>
                 <button
                   type="button"
+                  disabled={committing}
                   aria-pressed={group.isFoil}
                   onClick={() => onChange(setFoil(draft, ids, !group.isFoil))}
                   className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-bold border ${
@@ -110,6 +112,7 @@ export default function ScanReview({ draft, onChange, onRetry, onBack, onCommit,
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
+                    disabled={committing}
                     aria-label={`Decrease ${group.name}`}
                     onClick={() => onChange(setGroupQuantity(draft, group.key, group.qty - 1))}
                     className="p-1 rounded bg-gray-800 hover:bg-gray-700"
@@ -119,6 +122,7 @@ export default function ScanReview({ draft, onChange, onRetry, onBack, onCommit,
                   <span className="w-8 text-center font-bold">×{group.qty}</span>
                   <button
                     type="button"
+                    disabled={committing}
                     aria-label={`Increase ${group.name}`}
                     onClick={() => onChange(setGroupQuantity(draft, group.key, group.qty + 1))}
                     className="p-1 rounded bg-gray-800 hover:bg-gray-700"
@@ -157,6 +161,7 @@ export default function ScanReview({ draft, onChange, onRetry, onBack, onCommit,
               {group.status === 'failed' && group.photo && (
                 <button
                   type="button"
+                  disabled={committing}
                   onClick={() => onRetry(group.rows[0].id)}
                   className="flex items-center gap-1 px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 text-xs"
                 >
@@ -165,6 +170,7 @@ export default function ScanReview({ draft, onChange, onRetry, onBack, onCommit,
               )}
               <button
                 type="button"
+                disabled={committing}
                 onClick={() => setPickingFor(group.rows[0].id)}
                 className="flex items-center gap-1 px-2 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold"
               >
@@ -172,6 +178,7 @@ export default function ScanReview({ draft, onChange, onRetry, onBack, onCommit,
               </button>
               <button
                 type="button"
+                disabled={committing}
                 onClick={() => onChange(removeRows(draft, ids))}
                 className="flex items-center gap-1 px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 text-xs"
               >
@@ -195,6 +202,7 @@ export default function ScanReview({ draft, onChange, onRetry, onBack, onCommit,
           <div className="flex gap-2">
             <button
               type="button"
+              disabled={committing}
               onClick={onDiscard}
               className="flex-1 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold"
             >
@@ -202,6 +210,7 @@ export default function ScanReview({ draft, onChange, onRetry, onBack, onCommit,
             </button>
             <button
               type="button"
+              disabled={committing}
               onClick={() => setConfirmingDiscard(false)}
               className="flex-1 py-2 rounded-lg bg-gray-800 hover:bg-gray-700"
             >

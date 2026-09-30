@@ -111,6 +111,19 @@ describe('ScanReview', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Some cards were not saved.');
   });
 
+  it('locks every control while a commit is in flight', () => {
+    renderReview(
+      build([['a', LUKE], ['u', { status: 'unidentified', reason: 'unreadable', read: null }], ['f', { status: 'failed', error: 'network' }]]),
+      { committing: true },
+    );
+    for (const name of ['Back to camera', 'Foil', 'Increase Luke Skywalker', 'Decrease Luke Skywalker', 'Retry', 'Discard batch']) {
+      expect(screen.getByRole('button', { name })).toBeDisabled();
+    }
+    for (const button of screen.getAllByRole('button', { name: /Pick card|Remove/ })) {
+      expect(button).toBeDisabled();
+    }
+  });
+
   it('confirms before discarding the batch', async () => {
     const user = userEvent.setup();
     const { onDiscard } = renderReview(build([['a', LUKE]]));

@@ -51,6 +51,13 @@ function cardsForSet(setCode) {
   return setCache.get(setCode);
 }
 
+// One commit at a time per page. Firestore's web SDK queues writes while
+// offline, so a commit can stay pending indefinitely; if the user closed the
+// scanner and reopened it, the saved draft would still hold every row and a
+// second Add would queue the same increments again. Refusing here is what
+// stops that double count.
+let commitInFlight = false;
+
 export const ScanService = {
   async scan(imageBase64, setCodes) {
     if (!isConfigured) return { status: 'failed', error: 'unknown' };
@@ -77,31 +84,43 @@ export const ScanService = {
   },
 
   async commitDraft(draft, collectionRef, { onProgress = () => {} } = {}) {
-    const writes = toWrites(draft);
-    let current = draft;
-
-    for (let i = 0; i < writes.length; i += COMMIT_CHUNK_SIZE) {
-      const chunk = writes.slice(i, i + COMMIT_CHUNK_SIZE);
-      const batch = writeBatch(db);
-      for (const write of chunk) {
-        batch.set(doc(collectionRef, write.collectionId), {
-          quantity: increment(write.qty),
-          set: write.set,
-          number: write.number,
-          name: write.name,
-          isFoil: write.isFoil,
-          timestamp: Date.now(),
-        }, { merge: true });
-      }
-      await batch.commit();
-
-      // Drop what just landed before touching the next chunk: an increment
-      // applied twice counts the card twice, so a retry after a failure here
-      // must only ever see the rows that did not make it.
-      current = removeRows(current, chunk.flatMap((write) => write.rowIds));
-      onProgress(current);
+    if (commitInFlight) {
+      throw Object.assign(new Error('A previous save is still in progress.'), { code: 'commit-in-progress' });
     }
-
-    return current;
+    commitInFlight = true;
+    try {
+      return await commitChunks(draft, collectionRef, onProgress);
+    } finally {
+      commitInFlight = false;
+    }
   },
 };
+
+async function commitChunks(draft, collectionRef, onProgress) {
+  const writes = toWrites(draft);
+  let current = draft;
+
+  for (let i = 0; i < writes.length; i += COMMIT_CHUNK_SIZE) {
+    const chunk = writes.slice(i, i + COMMIT_CHUNK_SIZE);
+    const batch = writeBatch(db);
+    for (const write of chunk) {
+      batch.set(doc(collectionRef, write.collectionId), {
+        quantity: increment(write.qty),
+        set: write.set,
+        number: write.number,
+        name: write.name,
+        isFoil: write.isFoil,
+        timestamp: Date.now(),
+      }, { merge: true });
+    }
+    await batch.commit();
+
+    // Drop what just landed before touching the next chunk: an increment
+    // applied twice counts the card twice, so a retry after a failure here
+    // must only ever see the rows that did not make it.
+    current = removeRows(current, chunk.flatMap((write) => write.rowIds));
+    onProgress(current);
+  }
+
+  return current;
+}

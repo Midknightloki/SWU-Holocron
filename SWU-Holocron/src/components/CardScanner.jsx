@@ -47,6 +47,18 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
   const [cameraError, setCameraError] = useState(null);
   const [committing, setCommitting] = useState(false);
   const [commitError, setCommitError] = useState(null);
+  const [owner, setOwner] = useState(uid);
+
+  // A different account signed in while the overlay was open. Swap to that
+  // account's own batch during render, before any effect can save the old
+  // account's rows under the new uid (or commit them to its collection).
+  if (owner !== uid) {
+    setOwner(uid);
+    setDraft(loadDraft(getStorage(), uid));
+    setMode('camera');
+    setQuota(null);
+    setCommitError(null);
+  }
 
   const videoRef = useRef(null);
   const mountedRef = useRef(false);
@@ -180,7 +192,9 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
     } catch (err) {
       console.error('Scan commit failed:', err);
       if (mountedRef.current) {
-        setCommitError("Some cards weren't saved. Try again — cards already added won't be added twice.");
+        setCommitError(err?.code === 'commit-in-progress'
+          ? 'A previous save is still in progress. Wait for it to finish, then try again.'
+          : "Some cards weren't saved. Try again — cards already added won't be added twice.");
       }
     } finally {
       if (mountedRef.current) setCommitting(false);

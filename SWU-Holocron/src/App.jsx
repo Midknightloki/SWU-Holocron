@@ -109,6 +109,12 @@ export default function App() {
   const [selectedCard, setSelectedCard] = useState(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+
+  // The scanner belongs to whoever opened it: close it on any account change,
+  // so it never reopens by itself for the next user who signs in.
+  useEffect(() => {
+    setIsScannerOpen(false);
+  }, [user?.uid]);
   const [importing, setImporting] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [activeDeck, setActiveDeck] = useState(null);
@@ -1172,6 +1178,7 @@ export default function App() {
           fallback={<OverlayError what="scanner" onDismiss={() => setIsScannerOpen(false)} />}
         >
           <CardScanner
+            key={user.uid}
             uid={user.uid}
             collectionRef={getCollectionRef(user, legacySyncCode, useLegacyPath)}
             setCodes={setRegistry.length > 0 ? setRegistry.map((s) => s.code) : availableSets}

@@ -31,16 +31,16 @@ export default function CardPickerModal({ type, collectionData, onSelect, onClos
     let cancelled = false;
     const load = async () => {
       setLoading(true);
-      const loaded = [];
       const registry = await CardService.getSetRegistry();
-      for (const { code } of registry) {
-        try {
-          const { data } = await CardService.fetchSetData(code);
-          loaded.push(...data.filter((c) => !type || c.Type === type));
-        } catch {
-          // Skip sets that fail to load
-        }
-      }
+      // In parallel: the registry lists ~50 sets, and fetching them one after
+      // another made this picker several times slower than it used to be.
+      const results = await Promise.allSettled(
+        registry.map(({ code }) => CardService.fetchSetData(code)),
+      );
+      const loaded = results
+        // Skip sets that fail to load
+        .filter((r) => r.status === 'fulfilled')
+        .flatMap((r) => (r.value?.data ?? []).filter((c) => !type || c.Type === type));
       if (!cancelled) {
         setCards(loaded);
         setLoading(false);
