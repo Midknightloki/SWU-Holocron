@@ -107,6 +107,8 @@ artifacts/{APP_ID}/users/{uid}/collection/{SET_NNN_std|foil}  owned-card quantit
 artifacts/{APP_ID}/users/{uid}/decks/{deckId}                 + /versions, /gamelogs subcollections
 artifacts/{APP_ID}/submissions, /shells, /packets, /contributorInvites
 artifacts/{APP_ID}/admin/sync/logs
+artifacts/{APP_ID}/config/scanner                             { dailyLimit } for the card scanner (function-only)
+artifacts/{APP_ID}/scanUsage/{uid}                            per-user daily scan counter (function-only)
 ```
 
 Firestore requires alternating collection/document segments, so path arity is
@@ -225,12 +227,44 @@ Signing in with Google afterwards does not rescue it. `loginWithGoogle` calls
 `linkWithPopup`, and nothing migrates the guest collection. So a guest who builds
 a collection and then signs in properly finds it empty.
 
+`isPro` is a third profile flag, protected in `firestore.rules` exactly like
+`isAdmin`/`isContributor` and granted by hand in the Firebase console for now
+(Patreon is the planned automatic source). `AuthContext` exposes it with a
+derived `canScan = isAdmin || isPro`; the `scanCard` function enforces the same
+rule server-side.
+
 Roles are never read for anonymous users (`if (u && !u.isAnonymous)`), and
 `redeemInviteCode` rejects them outright, so a guest cannot be a contributor or
 an admin.
 
 The fix, if this is picked up, is `linkWithPopup` when the current user is
 anonymous — which upgrades the account in place and keeps the uid.
+
+### Card scanner
+
+Pro users and admins can scan physical cards with a phone or webcam
+(`CardScanner.jsx` → `ScanReview.jsx`). Each capture goes to the `scanCard`
+Cloud Function, which checks entitlement and a per-user daily quota
+(`functions/scanCard.js`), then has Gemini read the set code, number **and
+name**. The client resolves the read against its own card data and rejects it
+unless the name matches the card at that number (`src/utils/scanResolve.js`) —
+that cross-check is what keeps a misread number from adding the wrong card.
+
+- The batch lives in `localStorage['swu-scan-draft-{uid}']` until the user
+  approves it (`src/utils/scanDraft.js`). The key is per uid on purpose: a
+  shared key would let one account's batch land in another's collection.
+- Commits are **additive** (`increment`), unlike CSV import, which overwrites.
+  Committed rows leave the draft after each 400-op chunk, so a retry after a
+  mid-commit failure never double-counts.
+- The daily limit defaults to 1000 (`DEFAULT_SCAN_DAILY_LIMIT`) and is tuned
+  without a redeploy at `config/scanner` → `{ dailyLimit }`. Admins are exempt
+  and uncounted.
+- `functions/scanCard.js` requires no packages — `HttpsError`, Firestore and
+  the Gemini reader are injected — because CI does not install
+  `functions/node_modules` and still has to test it
+  (`src/test/functions/scanCard.test.js`).
+- Functions are deployed by hand (`firebase deploy --only functions:scanCard`);
+  no workflow deploys them.
 
 ### Constants split
 
@@ -376,7 +410,8 @@ it is an ESLint *error*, so CI blocks on it.
   parse it. All 35 current test files follow this.
 - `ASPECTS` is an array of objects, not strings — render `aspect.name`.
 - `localStorage` keys are `swu-`-prefixed: `swu-cards-{SET}`, `swu-available-sets`,
-  `swu-active-set`, `swu-has-visited`, `swu-sync-code`, `swu-holocron`.
+  `swu-active-set`, `swu-has-visited`, `swu-sync-code`, `swu-holocron`,
+  `swu-scan-draft-{uid}`.
 - Leaders and Bases are horizontal: `aspect-[88/63] col-span-2`. Everything else
   is `aspect-[63/88] col-span-1` (`App.jsx:982`).
 - Owned counts render as a dual `3 +2F` — standard count prominent, foil count as

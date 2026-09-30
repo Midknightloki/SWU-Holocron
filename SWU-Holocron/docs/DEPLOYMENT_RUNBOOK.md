@@ -268,6 +268,28 @@ something is serving the app through Vite, which is itself the bug.
 
 ---
 
+## Card scanner
+
+The scanner's Cloud Function is **not** deployed by any workflow. After a
+change to `functions/index.js` or `functions/scanCard.js`:
+
+```bash
+cd SWU-Holocron
+firebase deploy --only functions:scanCard
+```
+
+The rules it depends on (`isPro` protection, `config/**` and `scanUsage/**`
+locked) ship through `deploy-firestore-rules.yml` like any other rules change.
+
+- **Grant Pro:** in the Firebase console, set `isPro: true` (a boolean, not a
+  string) on `artifacts/swu-holocron-v1/users/{uid}`. The user reloads the
+  app, since roles are read when auth state loads. Admins can already scan.
+- **Tune the daily limit:** create or edit `artifacts/swu-holocron-v1/config/scanner`
+  with `{ dailyLimit: <positive integer> }`. It applies from the next scan; a
+  missing or invalid value falls back to 1000.
+- **Check someone's usage:** `artifacts/swu-holocron-v1/scanUsage/{uid}` holds
+  `{ date, count }` for the current UTC day.
+
 ## Firestore rules
 
 Rules are no longer deployed by hand. `deploy-firestore-rules.yml` publishes them
