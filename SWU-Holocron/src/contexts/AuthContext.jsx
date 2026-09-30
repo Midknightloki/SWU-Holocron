@@ -11,6 +11,7 @@ export const AuthProvider = ({ children }) => {
   const [error, setError] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isContributor, setIsContributor] = useState(false);
+  const [isPro, setIsPro] = useState(false);
   const [adminLoading, setAdminLoading] = useState(false);
 
   useEffect(() => {
@@ -37,20 +38,24 @@ export const AuthProvider = ({ children }) => {
             const profileData = profileSnap.data();
             setIsAdmin(profileData.isAdmin === true);
             setIsContributor(profileData.isContributor === true);
+            setIsPro(profileData.isPro === true);
           } else {
             setIsAdmin(false);
             setIsContributor(false);
+            setIsPro(false);
           }
         } catch (error) {
           console.error('Error checking admin status:', error);
           setIsAdmin(false);
           setIsContributor(false);
+          setIsPro(false);
         } finally {
           setAdminLoading(false);
         }
       } else {
         setIsAdmin(false);
         setIsContributor(false);
+        setIsPro(false);
         setAdminLoading(false);
       }
 
@@ -115,6 +120,8 @@ export const AuthProvider = ({ children }) => {
     error,
     isAdmin,
     isContributor,
+    isPro,
+    canScan: isAdmin || isPro,
     adminLoading,
     loginWithGoogle,
     loginAnonymously,
