@@ -1,14 +1,18 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Search, X, Loader2 } from 'lucide-react';
-import { SETS } from '../constants';
 import { CardService } from '../services/CardService';
 import { getCardQuantities } from '../utils/collectionHelpers';
 
 /**
- * CardPickerModal — full-screen overlay for selecting a specific card type
- * (used for Leader and Base selection in DeckBuilder)
+ * CardPickerModal — full-screen overlay for selecting a card.
+ * With `type`, lists only that type (Leader and Base selection in DeckBuilder).
+ * Without it, searches every card type -- used by the card scanner's review
+ * screen to identify a card the camera could not read.
  * Renders above DeckBuilder (z-[60] > DeckBuilder's z-50).
  */
+const MIN_QUERY = 2;
+const MAX_UNTYPED_RESULTS = 100;
+
 export default function CardPickerModal({ type, collectionData, onSelect, onClose }) {
   const safeCollection = collectionData ?? {};
   const [cards, setCards] = useState([]);
@@ -22,16 +26,17 @@ export default function CardPickerModal({ type, collectionData, onSelect, onClos
     setCollectionOnly(false);
   }, [type]);
 
-  // Load all cards of this type from every known set
+  // Load all cards of this type (or every card) from every registered set
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       setLoading(true);
       const loaded = [];
-      for (const set of SETS) {
+      const registry = await CardService.getSetRegistry();
+      for (const { code } of registry) {
         try {
-          const { data } = await CardService.fetchSetData(set.code);
-          loaded.push(...data.filter(c => c.Type === type));
+          const { data } = await CardService.fetchSetData(code);
+          loaded.push(...data.filter((c) => !type || c.Type === type));
         } catch {
           // Skip sets that fail to load
         }
@@ -45,9 +50,11 @@ export default function CardPickerModal({ type, collectionData, onSelect, onClos
     return () => { cancelled = true; };
   }, [type]);
 
+  const needsQuery = !type;
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return cards
+    if (needsQuery && q.length < MIN_QUERY) return [];
+    const matches = cards
       .filter(card => {
         if (!q) return true;
         return (
@@ -60,7 +67,11 @@ export default function CardPickerModal({ type, collectionData, onSelect, onClos
         if (!collectionOnly) return true;
         return getCardQuantities(safeCollection, card.Set, card.Number).total > 0;
       });
-  }, [cards, search, collectionOnly, collectionData]);
+    return needsQuery ? matches.slice(0, MAX_UNTYPED_RESULTS) : matches;
+  }, [cards, search, collectionOnly, collectionData, needsQuery]);
+
+  const noun = type ? `${type.toLowerCase()}s` : 'cards';
+  const tooShort = needsQuery && search.trim().length < MIN_QUERY;
 
   return (
     // Backdrop — click outside to dismiss
@@ -76,7 +87,7 @@ export default function CardPickerModal({ type, collectionData, onSelect, onClos
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
           <h2 className="text-lg font-bold text-white">
-            Select a {type}
+            Select a {type ?? 'card'}
           </h2>
           <button
             onClick={onClose}
@@ -116,13 +127,19 @@ export default function CardPickerModal({ type, collectionData, onSelect, onClos
           {loading && (
             <div className="flex items-center justify-center py-12 gap-3 text-gray-500">
               <Loader2 size={24} className="animate-spin" />
-              <span>Loading {type.toLowerCase()}s…</span>
+              <span>Loading {noun}…</span>
             </div>
           )}
 
-          {!loading && filtered.length === 0 && (
+          {!loading && tooShort && (
             <div className="text-center py-12 text-gray-500">
-              <p>No {type.toLowerCase()}s found</p>
+              <p>Type at least 2 letters to search every card</p>
+            </div>
+          )}
+
+          {!loading && !tooShort && filtered.length === 0 && (
+            <div className="text-center py-12 text-gray-500">
+              <p>No {noun} found</p>
               {collectionOnly && (
                 <p className="text-sm mt-1 text-gray-600">
                   Try disabling &quot;Owned only&quot;
