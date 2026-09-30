@@ -301,3 +301,37 @@ describe('ShoppingList Component', () => {
     });
   });
 });
+
+// Not every card has both printings: across Spark of Rebellion 58 are
+// standard-only and 16 foil-only. Showing the other printing is better than
+// showing nothing, but it has to be labelled.
+describe('ShoppingList fallback prices', () => {
+  const deck = { cards: { SOR_001: 1 }, leaderId: null, baseId: null };
+  const cardDatabase = [{ Set: 'SOR', Number: '001', Name: 'Director Krennic', Type: 'Leader' }];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should label a price that came from the other printing', async () => {
+    PricingService.getBulkPrices.mockResolvedValue({
+      SOR_001: { market: 9, low: 8, mid: 9, high: 10, printing: 'foil', isFoil: true, isFallback: true },
+    });
+
+    render(<ShoppingList deck={deck} collectionData={{}} cardDatabase={cardDatabase} />);
+
+    expect(await screen.findByText('foil price')).toBeInTheDocument();
+  });
+
+  it('should not label a price that is the printing asked for', async () => {
+    PricingService.getBulkPrices.mockResolvedValue({
+      SOR_001: { market: 9, low: 8, mid: 9, high: 10, printing: 'std', isFoil: false, isFallback: false },
+    });
+
+    render(<ShoppingList deck={deck} collectionData={{}} cardDatabase={cardDatabase} />);
+
+    await screen.findByText(/Total Acquisition Cost/i);
+    expect(screen.queryByText('foil price')).not.toBeInTheDocument();
+    expect(screen.queryByText('standard price')).not.toBeInTheDocument();
+  });
+});
