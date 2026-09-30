@@ -3,8 +3,9 @@ import { Database, Upload, Download, Loader2, CheckCircle2, Layers, Trophy, Aler
 import { SETS } from '../constants';
 import { calculateStats, calculateGlobalSummary } from '../utils/statsCalculator';
 import { generateMissingCardsCSV } from '../utils/csvParser';
+import ScanButton from './ScanButton';
 
-export default function Dashboard({ setCode, cards, collectionData, onImport, onExport, isImporting, hasDataToExport, onUpdateQuantity, onCardClick }) {
+export default function Dashboard({ setCode, cards, collectionData, onImport, onExport, isImporting, hasDataToExport, onUpdateQuantity, onCardClick, onScan }) {
   const stats = useMemo(() => {
     return calculateStats(cards, collectionData, setCode);
   }, [cards, collectionData, setCode]);
@@ -64,6 +65,8 @@ export default function Dashboard({ setCode, cards, collectionData, onImport, on
                 <Download size={18} />
                 <span>Export CSV</span>
             </button>
+            {/* Own full-width row under Import/Export on a phone */}
+            {onScan && <ScanButton onOpen={onScan} className="basis-full sm:basis-auto px-4" />}
         </div>
       </div>
 

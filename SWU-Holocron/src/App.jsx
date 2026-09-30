@@ -115,6 +115,9 @@ export default function App() {
   useEffect(() => {
     setIsScannerOpen(false);
   }, [user?.uid]);
+
+  // Handed only to users who can scan; views render no scan button without it.
+  const openScanner = canScan ? () => setIsScannerOpen(true) : undefined;
   const [importing, setImporting] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [activeDeck, setActiveDeck] = useState(null);
@@ -663,11 +666,6 @@ export default function App() {
 
             {/* View Toggle */}
             <div className="flex items-center gap-1 md:gap-2">
-              <ScanButton
-                isAnonymous={Boolean(user?.isAnonymous)}
-                canScan={canScan}
-                onOpen={() => setIsScannerOpen(true)}
-              />
               <button
                 onClick={() => setIsSearchOpen(true)}
                 className="flex items-center gap-2 px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-all group border border-gray-700 hover:border-blue-500/50"
@@ -816,6 +814,8 @@ export default function App() {
                     className="w-full bg-gray-800/50 border border-gray-700 rounded-full pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-yellow-500/50 focus:ring-1 focus:ring-yellow-500/50 transition-all placeholder:text-gray-600"
                   />
                 </div>
+                {/* Phone width uses the floating button instead: this row is already full */}
+                {openScanner && <ScanButton onOpen={openScanner} className="hidden md:flex rounded-full" />}
                 <button
                   onClick={() => {
                     const next = !showMyCollection;
@@ -966,6 +966,7 @@ export default function App() {
                 hasDataToExport={Object.keys(collectionData).length > 0}
                 onUpdateQuantity={handleGridQuantityChange}
                 onCardClick={setSelectedCard}
+                onScan={openScanner}
               />
               ) : view === 'decks' ? (
                 <DeckManager
@@ -1167,8 +1168,14 @@ export default function App() {
             currentSet={activeSet}
             onClose={() => setIsSearchOpen(false)}
             onUpdateQuantity={handleGridQuantityChange}
+            onScan={openScanner}
           />
         </ErrorBoundary>
+      )}
+
+      {/* Scanner floating button: phone width, binder and dashboard */}
+      {openScanner && (view === 'binder' || view === 'dashboard') && !isScannerOpen && (
+        <ScanButton variant="fab" onOpen={openScanner} />
       )}
 
       {/* Card Scanner - full-screen overlay */}
