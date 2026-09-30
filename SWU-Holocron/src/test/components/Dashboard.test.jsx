@@ -30,6 +30,18 @@ describe('Dashboard Component', () => {
     expect(screen.getByText('Command Center')).toBeInTheDocument();
   });
 
+  it('offers the card scanner beside Import CSV when given onScan', () => {
+    const onScan = vi.fn();
+    render(<Dashboard {...defaultProps} onScan={onScan} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Scan cards' }));
+    expect(onScan).toHaveBeenCalled();
+  });
+
+  it('shows no scan button without onScan (not Pro, not admin)', () => {
+    render(<Dashboard {...defaultProps} />);
+    expect(screen.queryByRole('button', { name: 'Scan cards' })).not.toBeInTheDocument();
+  });
+
   it('should render header details without sync key', () => {
     render(<Dashboard {...defaultProps} />);
     expect(screen.getByText('Manage your collection')).toBeInTheDocument();

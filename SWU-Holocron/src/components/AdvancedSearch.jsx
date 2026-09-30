@@ -5,8 +5,9 @@ import { rankSearchResults } from '../utils/cardSearchRanking';
 import { dedupeToBasePrintings } from '../utils/cardIdentity';
 import { CardService } from '../services/CardService';
 import { getPlaysetQuantity } from '../utils/collectionHelpers';
+import ScanButton from './ScanButton';
 
-export default function AdvancedSearch({ onCardClick, collectionData, currentSet, onClose = () => {}, onUpdateQuantity, embedded = false, getDeckCount = () => 0, initialFilters = {} }) {
+export default function AdvancedSearch({ onCardClick, collectionData, currentSet, onClose = () => {}, onUpdateQuantity, embedded = false, getDeckCount = () => 0, initialFilters = {}, onScan }) {
   const [searchText, setSearchText] = useState('');
   const [selectedSets, setSelectedSets] = useState(initialFilters.sets || []);
   const [selectedAspects, setSelectedAspects] = useState(initialFilters.aspects || []);
@@ -291,15 +292,19 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
             <label className="block text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">
               Search Text
             </label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-              <input
-                type="text"
-                value={searchText}
-                onChange={(e) => setSearchText(e.target.value)}
-                placeholder="Name, text, traits..."
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2 pl-10 pr-4 text-white placeholder:text-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-              />
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+                <input
+                  type="text"
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                  placeholder="Name, text, traits..."
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2 pl-10 pr-4 text-white placeholder:text-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+              {/* Not inside the DeckBuilder: scanning adds to the collection, not a deck */}
+              {onScan && !embedded && <ScanButton onOpen={onScan} />}
             </div>
           </div>
 

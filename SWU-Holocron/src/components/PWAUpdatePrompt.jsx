@@ -29,7 +29,9 @@ export default function PWAUpdatePrompt() {
   if (!offlineReady && !needRefresh) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 max-w-md">
+    // Centred toast. The bottom-right corner belongs to the scanner's floating
+    // button on phones, so the toast sits above it there (bottom-24).
+    <div role="status" className="fixed inset-x-4 bottom-24 md:bottom-4 md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:w-full z-50 max-w-md mx-auto">
       <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-xl p-4 animate-in slide-in-from-bottom-4 fade-in duration-300">
         <div className="flex items-start gap-3">
           {needRefresh ? (

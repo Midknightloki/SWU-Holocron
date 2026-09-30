@@ -7,27 +7,27 @@ import userEvent from '@testing-library/user-event';
 import React from 'react';
 import ScanButton from '../ScanButton';
 
+// Entitlement is decided by the parent: a view only receives an onScan
+// handler when the user is Pro or an admin, and renders no button otherwise.
+
 describe('ScanButton', () => {
-  it('opens the scanner for a user who can scan', async () => {
+  it('opens the scanner from the inline button', async () => {
     const user = userEvent.setup();
     const onOpen = vi.fn();
-    render(<ScanButton isAnonymous={false} canScan onOpen={onOpen} />);
-    await user.click(screen.getByRole('button', { name: 'Scan cards' }));
+    render(<ScanButton onOpen={onOpen} />);
+    const button = screen.getByRole('button', { name: 'Scan cards' });
+    expect(button).toHaveTextContent('Scan');
+    await user.click(button);
     expect(onOpen).toHaveBeenCalled();
   });
 
-  it('is locked, and says why, for a signed-in user without Pro', async () => {
+  it('opens the scanner from the floating button', async () => {
     const user = userEvent.setup();
     const onOpen = vi.fn();
-    render(<ScanButton isAnonymous={false} canScan={false} onOpen={onOpen} />);
-    const button = screen.getByRole('button', { name: 'Card scanning is a Pro feature' });
-    expect(button).toBeDisabled();
+    render(<ScanButton variant="fab" onOpen={onOpen} />);
+    const button = screen.getByRole('button', { name: 'Scan cards' });
+    expect(button).toHaveAttribute('data-variant', 'fab');
     await user.click(button);
-    expect(onOpen).not.toHaveBeenCalled();
-  });
-
-  it('is not shown to a guest', () => {
-    render(<ScanButton isAnonymous canScan={false} onOpen={vi.fn()} />);
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(onOpen).toHaveBeenCalled();
   });
 });

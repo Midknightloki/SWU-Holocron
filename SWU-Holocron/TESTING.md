@@ -120,7 +120,10 @@ these on real hardware and record the results in the PR:
 - Close the scanner mid-batch and reopen: rows survive, photos show "Photo lost".
 - Commit, and check collection counts went **up** by the scanned amounts rather
   than being replaced.
-- A signed-in non-Pro account sees the button locked; a guest sees no button.
+- Scan entry points: beside the binder search (desktop), beside the Advanced
+  Search box, under Import/Export in the Command Center, and a floating button
+  on binder and dashboard at phone width. A non-Pro, non-admin account and a
+  guest see none of them.
 
 ## Skipped suites, and why
 
