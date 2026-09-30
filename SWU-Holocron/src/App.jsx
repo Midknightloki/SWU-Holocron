@@ -26,6 +26,8 @@ import DeckManager from './components/DeckManager';
 import DeckBuilder from './components/DeckBuilder';
 import RedeemInviteModal from './components/RedeemInviteModal';
 import ErrorBoundary from './components/ErrorBoundary';
+import CardScanner from './components/CardScanner';
+import ScanButton from './components/ScanButton';
 
 // Version info
 const VERSION = __APP_VERSION__;
@@ -67,7 +69,7 @@ const getCollectionRef = (user, legacySyncCode, useLegacyPath) => {
 };
 
 export default function App() {
-  const { user, isAdmin, isContributor, loading: authLoading, loginWithGoogle, loginAnonymously, logout, error: authErrorFromContext } = useAuth();
+  const { user, isAdmin, isContributor, canScan, loading: authLoading, loginWithGoogle, loginAnonymously, logout, error: authErrorFromContext } = useAuth();
 
   // Set and Card State
   const [activeSet, setActiveSet] = useState('SOR');
@@ -106,6 +108,7 @@ export default function App() {
   const [selectedType, setSelectedType] = useState('All');
   const [selectedCard, setSelectedCard] = useState(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [importing, setImporting] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [activeDeck, setActiveDeck] = useState(null);
@@ -654,6 +657,11 @@ export default function App() {
 
             {/* View Toggle */}
             <div className="flex items-center gap-1 md:gap-2">
+              <ScanButton
+                isAnonymous={Boolean(user?.isAnonymous)}
+                canScan={canScan}
+                onOpen={() => setIsScannerOpen(true)}
+              />
               <button
                 onClick={() => setIsSearchOpen(true)}
                 className="flex items-center gap-2 px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-all group border border-gray-700 hover:border-blue-500/50"
@@ -1153,6 +1161,21 @@ export default function App() {
             currentSet={activeSet}
             onClose={() => setIsSearchOpen(false)}
             onUpdateQuantity={handleGridQuantityChange}
+          />
+        </ErrorBoundary>
+      )}
+
+      {/* Card Scanner - full-screen overlay */}
+      {isScannerOpen && canScan && (
+        <ErrorBoundary
+          label="the scanner"
+          fallback={<OverlayError what="scanner" onDismiss={() => setIsScannerOpen(false)} />}
+        >
+          <CardScanner
+            uid={user.uid}
+            collectionRef={getCollectionRef(user, legacySyncCode, useLegacyPath)}
+            setCodes={setRegistry.length > 0 ? setRegistry.map((s) => s.code) : availableSets}
+            onClose={() => setIsScannerOpen(false)}
           />
         </ErrorBoundary>
       )}
