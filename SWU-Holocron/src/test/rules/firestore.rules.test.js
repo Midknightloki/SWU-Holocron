@@ -274,3 +274,35 @@ describe('legacy sync collections', () => {
     await assertFails(getDoc(doc(asUser('plain-uid'), p('public', 'data', 'sync_abc123', 'SOR_001_std'))));
   });
 });
+
+describe('scanner entitlement and usage', () => {
+  // isPro gates the card scanner, which costs real money per call. It is
+  // granted by hand (or later by a Patreon webhook) through the Admin SDK,
+  // never by the user themselves.
+
+  it('denies a user granting themselves isPro', async () => {
+    await assertFails(setDoc(doc(asUser('plain-uid'), p('users', 'plain-uid')), { isPro: true }, { merge: true }));
+  });
+
+  it('denies creating a profile that already declares isPro', async () => {
+    await assertFails(setDoc(doc(asUser('fresh-uid'), p('users', 'fresh-uid')), { isPro: true }));
+  });
+
+  it('denies any client reading the scanner config, even an admin', async () => {
+    await seedDoc(p('config', 'scanner'), { dailyLimit: 1000 });
+    await assertFails(getDoc(doc(asUser('admin-uid'), p('config', 'scanner'))));
+  });
+
+  it('denies any client writing the scanner config, even an admin', async () => {
+    await assertFails(setDoc(doc(asUser('admin-uid'), p('config', 'scanner')), { dailyLimit: 999999 }));
+  });
+
+  it('denies a user reading their own scan usage', async () => {
+    await seedDoc(p('scanUsage', 'plain-uid'), { date: '2026-09-29', count: 5 });
+    await assertFails(getDoc(doc(asUser('plain-uid'), p('scanUsage', 'plain-uid'))));
+  });
+
+  it('denies a user resetting their own scan usage', async () => {
+    await assertFails(setDoc(doc(asUser('plain-uid'), p('scanUsage', 'plain-uid')), { date: '2026-09-29', count: 0 }));
+  });
+});

@@ -11,6 +11,7 @@ export const AuthProvider = ({ children }) => {
   const [error, setError] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isContributor, setIsContributor] = useState(false);
+  const [isPro, setIsPro] = useState(false);
   const [adminLoading, setAdminLoading] = useState(false);
 
   useEffect(() => {
@@ -21,6 +22,12 @@ export const AuthProvider = ({ children }) => {
 
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
       setUser(u);
+      // Clear the previous account's roles before the new profile read. Left
+      // in place, an A-to-B switch keeps A's isPro/isAdmin for the length of
+      // that read -- long enough for the scanner to act for the wrong user.
+      setIsAdmin(false);
+      setIsContributor(false);
+      setIsPro(false);
 
       // Check admin/contributor status
       if (u && !u.isAnonymous) {
@@ -37,20 +44,24 @@ export const AuthProvider = ({ children }) => {
             const profileData = profileSnap.data();
             setIsAdmin(profileData.isAdmin === true);
             setIsContributor(profileData.isContributor === true);
+            setIsPro(profileData.isPro === true);
           } else {
             setIsAdmin(false);
             setIsContributor(false);
+            setIsPro(false);
           }
         } catch (error) {
           console.error('Error checking admin status:', error);
           setIsAdmin(false);
           setIsContributor(false);
+          setIsPro(false);
         } finally {
           setAdminLoading(false);
         }
       } else {
         setIsAdmin(false);
         setIsContributor(false);
+        setIsPro(false);
         setAdminLoading(false);
       }
 
@@ -115,6 +126,8 @@ export const AuthProvider = ({ children }) => {
     error,
     isAdmin,
     isContributor,
+    isPro,
+    canScan: isAdmin || isPro,
     adminLoading,
     loginWithGoogle,
     loginAnonymously,

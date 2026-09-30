@@ -39,17 +39,18 @@ service cloud.firestore {
       return isAdmin(appId) || isContributor(appId);
     }
 
-    // Roles are granted ONLY by the Admin SDK, via the invite-redemption Cloud
-    // Function. They live on the user's own profile document, which the user may
-    // otherwise write — so without this guard any authenticated account,
-    // including an anonymous guest, could set isAdmin on itself.
+    // Roles and entitlements are granted ONLY by the Admin SDK (the invite-
+    // redemption Cloud Function for contributor; by hand in the console for
+    // admin and isPro). They live on the user's own profile document, which the
+    // user may otherwise write — so without this guard any authenticated account,
+    // including an anonymous guest, could set isAdmin or isPro on itself.
     function touchesRoles() {
       return request.resource.data.diff(resource.data).affectedKeys()
-        .hasAny(['isAdmin', 'isContributor']);
+        .hasAny(['isAdmin', 'isContributor', 'isPro']);
     }
 
     function declaresRoles() {
-      return request.resource.data.keys().hasAny(['isAdmin', 'isContributor']);
+      return request.resource.data.keys().hasAny(['isAdmin', 'isContributor', 'isPro']);
     }
 
     // ---------------------------------------------------------------------
@@ -131,6 +132,19 @@ service cloud.firestore {
     match /artifacts/{appId}/packets/{packetId} {
       allow read: if isSignedIn();
       allow create, update, delete: if canWriteContent(appId);
+    }
+
+    // ---------------------------------------------------------------------
+    // Card scanner. The daily limit and each user's usage counter are read
+    // and written only by the scanCard Cloud Function (Admin SDK). A client
+    // that could write its own counter could scan without limit.
+    // ---------------------------------------------------------------------
+    match /artifacts/{appId}/config/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /artifacts/{appId}/scanUsage/{document=**} {
+      allow read, write: if false;
     }
 
     // Legacy `sync_*` collections are retired. The migration window expired

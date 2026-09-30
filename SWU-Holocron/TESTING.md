@@ -94,13 +94,33 @@ Worth preserving and extending:
 
 `npm run test:rules` runs `firebase emulators:exec` against a throwaway project
 id and executes `src/test/rules/` with its own Vitest config
-(`vitest.rules.config.js`). It needs a JDK — CI installs Temurin 21.
+(`vitest.rules.config.js`). It needs JDK 21 or newer — CI installs Temurin 21.
+Locally, if `java -version` reports something older, point `JAVA_HOME` and
+`PATH` at a 21 install for the run; firebase-tools refuses to start otherwise.
 
 These tests are the reason `firestore.rules` can be deployed automatically:
 `deploy-firestore-rules.yml` publishes rules only after they pass.
 
 `@firebase/rules-unit-testing` is pinned to **3.0.4**. Version 5 requires
 `firebase@^12` and this project is on `^10`.
+
+## Card scanner — manual checks
+
+happy-dom has no camera, no canvas and no Gemini, so the scanner's unit tests
+mock `captureFrame` and `ScanService`. Before calling a scanner change done, run
+these on real hardware and record the results in the PR:
+
+- The camera opens on Android Chrome and iOS Safari, in the browser and in the
+  installed PWA.
+- A tap anywhere on the preview captures; Space and Enter capture on a laptop
+  webcam; holding Space captures once.
+- A mixed stack of 30+ cards (standard, hyperspace, showcase, a promo, foils),
+  phone in a stand. Record the share that came back unidentified, and **any
+  card that matched wrongly — that should be zero.**
+- Close the scanner mid-batch and reopen: rows survive, photos show "Photo lost".
+- Commit, and check collection counts went **up** by the scanned amounts rather
+  than being replaced.
+- A signed-in non-Pro account sees the button locked; a guest sees no button.
 
 ## Skipped suites, and why
 

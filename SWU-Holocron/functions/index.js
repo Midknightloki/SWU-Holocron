@@ -2,6 +2,7 @@ const { setGlobalOptions } = require("firebase-functions");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
+const { createScanCardHandler } = require("./scanCard");
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -182,6 +183,66 @@ Rules recap: use only IDs from the list above, respect the deck's aspects, and k
     return { suggestions: valid };
   }
 );
+
+/**
+ * scanCard — reads one photographed card for the card scanner.
+ *
+ * Entitlement (isAdmin || isPro), the daily quota and input validation live in
+ * scanCard.js, where they are unit-tested. This file only supplies the Gemini
+ * call. It returns what was read and never writes to the user's collection:
+ * the client resolves the read and the user approves the batch.
+ */
+const SCAN_PROMPT = `This is a photo of a Star Wars: Unlimited trading card.
+Read three things from it:
+- set: the set code printed in the collector line along the card's bottom edge (for example SOR, SHD, TWI, JTL, LOF), exactly as printed.
+- number: the collector number from that same line, without any "/total" part.
+- name: the card's title as printed, without its subtitle.
+If there is no card in the photo, or you cannot read the collector line with confidence, set readable to false and leave the other fields empty. Do not guess.`;
+
+const SCAN_SCHEMA = {
+  type: "object",
+  properties: {
+    readable: { type: "boolean" },
+    set: { type: "string" },
+    number: { type: "string" },
+    name: { type: "string" },
+  },
+  required: ["readable", "set", "number", "name"],
+};
+
+async function readCardWithGemini(imageBase64) {
+  const { GoogleGenAI } = require("@google/genai");
+  const ai = new GoogleGenAI({ enterprise: true, project: GCP_PROJECT, location: VERTEX_LOCATION });
+  const result = await ai.models.generateContent({
+    model: GEMINI_MODEL,
+    contents: [{
+      role: "user",
+      parts: [
+        { inlineData: { mimeType: "image/jpeg", data: imageBase64 } },
+        { text: SCAN_PROMPT },
+      ],
+    }],
+    config: {
+      maxOutputTokens: 256,
+      temperature: 0,
+      // Required: see getCardSuggestions. Thinking tokens count against the cap.
+      thinkingConfig: { thinkingBudget: 0 },
+      responseMimeType: "application/json",
+      responseSchema: SCAN_SCHEMA,
+    },
+  });
+  return JSON.parse(result.text);
+}
+
+const scanCardHandler = createScanCardHandler({
+  db: admin.firestore(),
+  appId: APP_ID,
+  readCard: readCardWithGemini,
+  HttpsError,
+  logger,
+});
+
+exports.scanCard = onCall({ maxInstances: 10 }, scanCardHandler);
 
 /**
  * redeemInviteCode — grants the contributor role in exchange for a valid invite
