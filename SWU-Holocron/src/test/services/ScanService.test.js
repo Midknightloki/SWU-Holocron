@@ -23,7 +23,7 @@ import { ScanService, mapScanError, resetSetCache, COMMIT_CHUNK_SIZE } from '../
 import { emptyDraft, addCapture, applyResult } from '../../utils/scanDraft';
 
 const SET_CODES = ['SOR', 'SHD'];
-const SOR = [{ Set: 'SOR', Number: '012', Name: 'Luke Skywalker', Subtitle: 'Faithful Friend' }];
+const SOR = [{ Set: 'SOR', Number: '012', Name: 'Luke Skywalker', Subtitle: 'Faithful Friend', Type: 'Leader' }];
 const READ = { readable: true, set: 'SOR', number: '012', name: 'Luke Skywalker' };
 
 const httpsError = (code, details) => Object.assign(new Error(code), { code: `functions/${code}`, details });
@@ -49,7 +49,7 @@ describe('ScanService.scan', () => {
   it('resolves a read against the set data', async () => {
     mocks.callable.mockResolvedValue({ data: READ });
     await expect(ScanService.scan('IMG', SET_CODES)).resolves.toEqual({
-      status: 'matched', set: 'SOR', number: '012', name: 'Luke Skywalker',
+      status: 'matched', set: 'SOR', number: '012', name: 'Luke Skywalker', type: 'Leader',
     });
     expect(mocks.callable).toHaveBeenCalledWith({ image: 'IMG' });
   });

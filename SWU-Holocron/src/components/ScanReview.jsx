@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ArrowLeft, Minus, Plus, Sparkles, Trash2, RotateCcw, Loader2, Search } from 'lucide-react';
 import CardPickerModal from './CardPickerModal';
 import { CardService } from '../services/CardService';
+import { isHorizontalCard } from '../utils/collectionHelpers';
 import {
   countByStatus, groupRows, removeRows, resolveManually, setFoil, setGroupQuantity,
 } from '../utils/scanDraft';
@@ -86,10 +87,12 @@ export default function ScanReview({ draft, onChange, onRetry, onBack, onCommit,
                 data-testid={`group-${group.key}`}
                 className="flex items-center gap-3 p-3 bg-gray-900 border border-gray-800 rounded-xl"
               >
+                {/* Leaders and bases are landscape (88:63), as everywhere else in the app */}
                 <img
                   src={CardService.getCardImage(group.set, group.number)}
                   alt=""
-                  className="w-16 h-[88px] object-cover rounded flex-shrink-0"
+                  data-orientation={isHorizontalCard(group.type) ? 'horizontal' : 'vertical'}
+                  className={`${isHorizontalCard(group.type) ? 'w-[88px] h-16' : 'w-16 h-[88px]'} object-cover rounded flex-shrink-0`}
                   onError={(e) => { e.target.style.display = 'none'; }}
                 />
                 <div className="flex-1 min-w-0">

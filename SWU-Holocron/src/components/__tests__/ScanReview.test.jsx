@@ -38,6 +38,16 @@ describe('ScanReview', () => {
     expect(within(line).getByText('×2')).toBeInTheDocument();
   });
 
+  it('shows leaders and bases landscape instead of cropping them', () => {
+    renderReview(build([
+      ['l', { ...LUKE, type: 'Leader' }],
+      ['u', { status: 'matched', set: 'SOR', number: '045', name: 'Admiral Ackbar', type: 'Unit' }],
+    ]));
+    const thumb = (key) => screen.getByTestId(`group-${key}`).querySelector('img');
+    expect(thumb('SOR_012_std')).toHaveAttribute('data-orientation', 'horizontal');
+    expect(thumb('SOR_045_std')).toHaveAttribute('data-orientation', 'vertical');
+  });
+
   it('shows foil and standard copies as separate lines', () => {
     renderReview(build([['a', LUKE], ['b', LUKE, { isFoil: true }]]));
     expect(screen.getByTestId('group-SOR_012_std')).toBeInTheDocument();

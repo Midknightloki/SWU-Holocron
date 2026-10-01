@@ -32,7 +32,7 @@ export function addCapture(draft, { id, isFoil, photo }) {
 export function applyResult(draft, id, result) {
   return mapRows(draft, [id], (row) => {
     if (result.status === 'matched') {
-      return { ...row, status: 'matched', set: result.set, number: result.number, name: result.name, reason: null, read: null };
+      return { ...row, status: 'matched', set: result.set, number: result.number, name: result.name, type: result.type ?? null, reason: null, read: null };
     }
     if (result.status === 'unidentified') {
       return { ...row, status: 'unidentified', reason: result.reason, read: result.read ?? null };
@@ -52,6 +52,7 @@ export function resolveManually(draft, id, card) {
     set: card.Set,
     number: normalizeNumber(card.Number),
     name: card.Name,
+    type: card.Type ?? null,
     reason: null,
     read: null,
   }));
@@ -86,6 +87,7 @@ export function groupRows(draft) {
         set: row.set,
         number: row.number,
         name: row.name,
+        type: row.type ?? null,
         isFoil: row.isFoil,
         photo: row.photo,
         hadPhoto: Boolean(row.hadPhoto),
