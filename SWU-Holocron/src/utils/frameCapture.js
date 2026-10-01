@@ -45,9 +45,11 @@ export async function capturePhoto({
     try {
       const blob = await new ImageCaptureCtor(track).takePhoto();
       const bitmap = await decodeBlob(blob);
-      const image = encode(bitmap, fitWithin(bitmap.width, bitmap.height, CAPTURE_MAX_EDGE));
+      // Read the size before close(): a released ImageBitmap reports 0x0.
+      const { width, height } = bitmap;
+      const image = encode(bitmap, fitWithin(width, height, CAPTURE_MAX_EDGE));
       bitmap.close?.();
-      if (image) return { image, source: 'photo', width: bitmap.width, height: bitmap.height };
+      if (image) return { image, source: 'photo', width, height };
     } catch {
       // takePhoto can reject (camera busy, unsupported settings): use a frame.
     }

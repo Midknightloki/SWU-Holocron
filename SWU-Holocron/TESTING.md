@@ -114,6 +114,11 @@ these on real hardware and record the results in the PR:
   installed PWA.
 - A tap anywhere on the preview captures; Space and Enter capture on a laptop
   webcam; holding Space captures once.
+- The footer reads `photo <width>×<height>` with the camera's full size (not
+  `video …`, and not `0×0`).
+- First open shows the "How to scan" steps; after "Got it" they stay closed.
+- A normal card's number lines up in the bottom-right cyan box; a leader or
+  base turned a quarter-turn counter-clockwise lines up in the top-right one.
 - A mixed stack of 30+ cards (standard, hyperspace, showcase, a promo, foils),
   phone in a stand. Record the share that came back unidentified, and **any
   card that matched wrongly — that should be zero.**

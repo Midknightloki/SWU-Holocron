@@ -39,6 +39,14 @@ describe('capturePhoto', () => {
     expect(result).toEqual({ image: 'PHOTO', source: 'photo', width: 4080, height: 3072 });
   });
 
+  it('reports the photo size even though the bitmap is released after encoding', async () => {
+    // Production showed 'photo 0x0': a closed ImageBitmap reports width/height 0.
+    const bitmap = { width: 4080, height: 3072, close() { this.width = 0; this.height = 0; } };
+    const ImageCaptureCtor = fakeImageCapture(vi.fn(async () => ({})));
+    const result = await capturePhoto({ track, video, ImageCaptureCtor, decodeBlob: async () => bitmap, encode: () => 'PHOTO' });
+    expect(result).toMatchObject({ source: 'photo', width: 4080, height: 3072 });
+  });
+
   it('falls back to a video frame when ImageCapture is unavailable', async () => {
     const encode = vi.fn(() => 'FRAME');
     const result = await capturePhoto({ track, video, ImageCaptureCtor: undefined, encode });
