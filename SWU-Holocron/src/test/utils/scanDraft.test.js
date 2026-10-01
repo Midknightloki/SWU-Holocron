@@ -30,6 +30,14 @@ describe('adding and resolving captures', () => {
     expect(d.rows).toEqual([{ id: 'a', status: 'reading', isFoil: true, qty: 1, photo: 'photo-a' }]);
   });
 
+  it('keeps the card type from a match and from a manual pick', () => {
+    const d = applyResult(capture(emptyDraft(), 'a'), 'a', { ...LUKE, type: 'Leader' });
+    expect(groupRows(d)[0].type).toBe('Leader');
+    const u = applyResult(capture(emptyDraft(), 'b'), 'b', { status: 'unidentified', reason: 'unreadable', read: null });
+    const picked = resolveManually(u, 'b', { Set: 'SOR', Number: 20, Name: 'Echo Base', Type: 'Base' });
+    expect(groupRows(picked)[0].type).toBe('Base');
+  });
+
   it('applies a matched result', () => {
     const d = matched(emptyDraft(), 'a');
     expect(d.rows[0]).toMatchObject({ status: 'matched', set: 'SOR', number: '012', name: 'Luke Skywalker' });

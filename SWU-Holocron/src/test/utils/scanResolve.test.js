@@ -87,7 +87,12 @@ describe('namesMatch', () => {
 describe('resolveScan', () => {
   it('matches a clean read', () => {
     const read = { readable: true, set: 'SOR', number: '012/252', name: 'Luke Skywalker' };
-    expect(resolveScan(read, ctx)).toEqual({ status: 'matched', set: 'SOR', number: '012', name: 'Luke Skywalker' });
+    expect(resolveScan(read, ctx)).toEqual({ status: 'matched', set: 'SOR', number: '012', name: 'Luke Skywalker', type: 'Leader' });
+  });
+
+  it('carries the card type, so leaders and bases can be shown landscape', () => {
+    const read = { readable: true, set: 'SOR', number: '45', name: 'Admiral Ackbar' };
+    expect(resolveScan(read, ctx)).toMatchObject({ status: 'matched', type: 'Unit' });
   });
 
   it('matches when card data stores the number as an integer', () => {

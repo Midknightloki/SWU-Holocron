@@ -62,5 +62,5 @@ export function resolveScan(read, { setCodes, getCards }) {
 
   if (!namesMatch(read.name, card)) return unidentified('name-mismatch', read);
 
-  return { status: 'matched', set, number, name: card.Name };
+  return { status: 'matched', set, number, name: card.Name, type: card.Type ?? null };
 }
