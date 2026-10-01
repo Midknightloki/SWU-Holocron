@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { X, Sparkles, RectangleHorizontal } from 'lucide-react';
+import { X, Sparkles, HelpCircle } from 'lucide-react';
 import { ScanService } from '../services/ScanService';
 import { capturePhoto } from '../utils/frameCapture';
 import { levelReading } from '../utils/level';
@@ -34,20 +34,22 @@ const newId = () =>
 
 const CAPTURE_KEYS = new Set(['Space', 'Enter']);
 
-// Guide geometry per orientation. Portrait cards are 63:88; leaders and bases
-// are 88:63. The collector line is bottom-right on both, and the cyan box is
-// sized to the same physical area (~26 x 4mm) on either card.
-const GUIDES = {
-  portrait: {
-    width: 'min(92cqw, calc(82cqh * 63 / 88))',
-    aspectRatio: '63 / 88',
-    collector: 'right-[3%] bottom-[1.5%] w-[42%] h-[4.5%]',
-  },
-  landscape: {
-    width: 'min(92cqw, calc(82cqh * 88 / 63))',
-    aspectRatio: '88 / 63',
-    collector: 'right-[2%] bottom-[2%] w-[30%] h-[6.5%]',
-  },
+const HELP_SEEN_KEY = 'swu-scan-help-seen';
+
+const readHelpSeen = () => {
+  try {
+    return localStorage.getItem(HELP_SEEN_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
+
+const markHelpSeen = () => {
+  try {
+    localStorage.setItem(HELP_SEEN_KEY, '1');
+  } catch {
+    // Storage unavailable: the how-to just shows again next time.
+  }
 };
 
 const formatReset = (iso) => {
@@ -59,7 +61,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
   const [draft, setDraft] = useState(() => loadDraft(getStorage(), uid));
   const [mode, setMode] = useState('camera');
   const [foilStack, setFoilStack] = useState(false);
-  const [orientation, setOrientation] = useState('portrait');
+  const [showHelp, setShowHelp] = useState(() => !readHelpSeen());
   const [flash, setFlash] = useState(false);
   const [quota, setQuota] = useState(null);
   const [cameraError, setCameraError] = useState(null);
@@ -91,6 +93,9 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
   const trackRef = useRef(null);
   // A real photo takes a moment; taps during it are ignored, not queued.
   const capturingRef = useRef(false);
+  // Captures pause while the how-to is open (ref: read by the key listener).
+  const helpOpenRef = useRef(showHelp);
+  helpOpenRef.current = showHelp;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -167,7 +172,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
   }, [setCodes, signalProblem]);
 
   const capture = useCallback(async () => {
-    if (quotaRef.current || cameraError || capturingRef.current) return;
+    if (helpOpenRef.current || quotaRef.current || cameraError || capturingRef.current) return;
     capturingRef.current = true;
     // Foil is read at the tap, not after the photo resolves.
     const isFoil = foilStack;
@@ -197,6 +202,11 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
     return () => window.removeEventListener('deviceorientation', onOrientation);
   }, [mode]);
 
+  const dismissHelp = useCallback(() => {
+    markHelpSeen();
+    setShowHelp(false);
+  }, []);
+
   useEffect(() => {
     if (mode !== 'camera') return undefined;
     const onKey = (e) => {
@@ -205,11 +215,15 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
       // also toggle it, and a held key would fire a capture per repeat.
       e.preventDefault();
       if (e.repeat) return;
+      if (helpOpenRef.current) {
+        dismissHelp();
+        return;
+      }
       capture();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [mode, capture]);
+  }, [mode, capture, dismissHelp]);
 
   const retry = useCallback((id) => {
     const row = draft.rows.find((r) => r.id === id);
@@ -304,17 +318,13 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
         </button>
         <button
           type="button"
-          aria-label="Landscape guide"
-          title="Landscape guide (leaders and bases)"
-          aria-pressed={orientation === 'landscape'}
-          onClick={() => setOrientation((o) => (o === 'portrait' ? 'landscape' : 'portrait'))}
-          className={`p-2 rounded-lg border ${
-            orientation === 'landscape'
-              ? 'bg-yellow-500/20 border-yellow-500 text-yellow-400'
-              : 'bg-gray-800 border-gray-700 text-gray-400'
-          }`}
+          aria-label="How to scan"
+          title="How to scan"
+          aria-expanded={showHelp}
+          onClick={() => (showHelp ? dismissHelp() : setShowHelp(true))}
+          className="p-2 rounded-lg border bg-gray-800 border-gray-700 text-gray-400 hover:text-white"
         >
-          <RectangleHorizontal size={18} aria-hidden="true" />
+          <HelpCircle size={18} aria-hidden="true" />
         </button>
         <button
           type="button"
@@ -332,20 +342,27 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
         style={{ containerType: 'size' }}
       >
         <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-contain" />
-        {/* Card-shaped guide (63:88), with the collector line marked: the set
-            code and number at the bottom right are what has to be legible.
+        {/* One portrait guide (63:88) for every card, so a physical jig lines
+            them up the same way each time. Two collector boxes, each sized to
+            the ~26 x 4mm collector line:
+            - bottom-right: normal cards;
+            - top-right, upright: leaders and bases turned a quarter-turn
+              counter-clockwise, which moves their bottom-right number there.
             Sized against the preview in both directions (container units) so
             it stays card-shaped on a tall phone and a wide laptop alike. */}
         <div
           data-testid="card-guide"
-          data-orientation={orientation}
           aria-hidden="true"
           className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 border-2 border-yellow-500/70 rounded-xl"
-          style={{ width: GUIDES[orientation].width, aspectRatio: GUIDES[orientation].aspectRatio }}
+          style={{ width: 'min(96cqw, calc(92cqh * 63 / 88))', aspectRatio: '63 / 88' }}
         >
           <div
             data-testid="collector-guide"
-            className={`absolute ${GUIDES[orientation].collector} border-2 border-cyan-400 rounded-sm bg-cyan-400/10`}
+            className="absolute right-[3%] bottom-[1.5%] w-[42%] h-[4.5%] border-2 border-cyan-400 rounded-sm bg-cyan-400/10"
+          />
+          <div
+            data-testid="collector-guide-upright"
+            className="absolute right-[2%] top-[2%] w-[6.5%] h-[30%] border-2 border-cyan-400 rounded-sm bg-cyan-400/10"
           />
         </div>
         {level && (
@@ -377,6 +394,32 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
           </div>
         )}
       </div>
+
+      {showHelp && (
+        <div
+          role="dialog"
+          aria-label="How to scan"
+          className="absolute inset-x-4 top-20 z-10 p-4 rounded-xl bg-gray-900/95 border border-gray-700 text-sm text-gray-200 shadow-xl"
+        >
+          <h3 className="font-bold text-white mb-2">How to scan</h3>
+          <ol className="list-decimal pl-5 space-y-1">
+            <li>Hold the phone flat above the table. Wait for the level at the top to turn green.</li>
+            <li>Raise or lower the phone until the card fills the yellow outline.</li>
+            <li>
+              Put the card number in a cyan box. Most cards: bottom-right. Leaders and bases: stand them
+              upright with a quarter-turn counter-clockwise, so their number sits in the top-right box.
+            </li>
+            <li>Tap the screen or press Space to capture, then slide in the next card.</li>
+          </ol>
+          <button
+            type="button"
+            onClick={dismissHelp}
+            className="mt-3 w-full py-2 rounded-lg bg-yellow-500 hover:bg-yellow-400 text-black font-bold"
+          >
+            Got it
+          </button>
+        </div>
+      )}
 
       <div className="flex items-center gap-4 px-4 py-3 bg-gray-900/90 border-t border-gray-800 text-sm text-gray-400">
         <span>{total} scanned</span>

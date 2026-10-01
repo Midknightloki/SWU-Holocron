@@ -39,6 +39,9 @@ const user_tap = () => act(async () => { fireEvent.click(screen.getByTestId('sca
 
 const flush = () => act(async () => { await new Promise((r) => setTimeout(r, 0)); });
 
+// Most tests start with the how-to already seen; the first-use test flips it.
+let helpSeen = true;
+
 const TRACK = { kind: 'video', stop: vi.fn() };
 const PHOTO = { image: 'IMG', source: 'photo', width: 4080, height: 3072 };
 
@@ -47,8 +50,9 @@ const pressSpace = (target = window, init = {}) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  helpSeen = true;
   localStorage.getItem.mockReset();
-  localStorage.getItem.mockReturnValue(null);
+  localStorage.getItem.mockImplementation((key) => (key === 'swu-scan-help-seen' && helpSeen ? '1' : null));
   mocks.capturePhoto.mockResolvedValue(PHOTO);
   mocks.scan.mockResolvedValue(LUKE);
   stubCamera(async () => ({ getTracks: () => [TRACK], getVideoTracks: () => [TRACK] }));
@@ -171,20 +175,36 @@ describe('CardScanner', () => {
     expect(screen.getByTestId('card-guide')).toContainElement(screen.getByTestId('collector-guide'));
   });
 
-  it('switches the guide to landscape for leaders and bases', async () => {
-    const user = userEvent.setup();
+  it('marks both collector positions in one portrait guide, with no orientation toggle', () => {
     renderScanner();
-    const toggle = screen.getByRole('button', { name: 'Landscape guide' });
-    expect(toggle).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByTestId('card-guide')).toHaveAttribute('data-orientation', 'portrait');
+    const guide = screen.getByTestId('card-guide');
+    // Most cards: bottom-right. Leaders and bases stood upright: top-right.
+    expect(guide).toContainElement(screen.getByTestId('collector-guide'));
+    expect(guide).toContainElement(screen.getByTestId('collector-guide-upright'));
+    expect(screen.queryByRole('button', { name: 'Landscape guide' })).not.toBeInTheDocument();
+  });
 
-    await user.click(toggle);
+  it('opens the how-to on first use, and pauses capture until it is dismissed', async () => {
+    const user = userEvent.setup();
+    helpSeen = false;
+    renderScanner();
+    expect(screen.getByRole('dialog', { name: 'How to scan' })).toHaveTextContent(/quarter-turn counter-clockwise/i);
 
-    expect(toggle).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByTestId('card-guide')).toHaveAttribute('data-orientation', 'landscape');
-    // The collector number is bottom-right on leaders and bases too.
-    expect(screen.getByTestId('card-guide')).toContainElement(screen.getByTestId('collector-guide'));
+    pressSpace();
+    await flush();
     expect(mocks.capturePhoto).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog', { name: 'How to scan' })).not.toBeInTheDocument();
+    expect(localStorage.setItem).toHaveBeenCalledWith('swu-scan-help-seen', '1');
+
+    await user.click(screen.getByRole('button', { name: 'How to scan' }));
+    await user.click(screen.getByRole('button', { name: 'Got it' }));
+    pressSpace();
+    await waitFor(() => expect(mocks.capturePhoto).toHaveBeenCalledTimes(1));
+  });
+
+  it('does not open the how-to again once seen', () => {
+    renderScanner();
+    expect(screen.queryByRole('dialog', { name: 'How to scan' })).not.toBeInTheDocument();
   });
 
   it('shows a level that turns green when the phone is flat', async () => {
@@ -234,7 +254,10 @@ describe('CardScanner', () => {
 
   it("drops the previous account's batch when the signed-in user changes", async () => {
     const saved = JSON.stringify({ rows: [{ id: 'x', status: 'matched', set: 'SOR', number: '012', name: 'Luke Skywalker', isFoil: false, qty: 1 }] });
-    localStorage.getItem.mockImplementation((key) => (key === 'swu-scan-draft-uid-1' ? saved : null));
+    localStorage.getItem.mockImplementation((key) => {
+      if (key === 'swu-scan-help-seen') return '1';
+      return key === 'swu-scan-draft-uid-1' ? saved : null;
+    });
     const { rerender } = renderScanner();
     expect(screen.getByRole('button', { name: 'Review (1)' })).toBeInTheDocument();
     rerender(<CardScanner uid="uid-2" collectionRef={{ id: 'ref-2' }} setCodes={['SOR']} onClose={vi.fn()} />);
