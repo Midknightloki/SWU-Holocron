@@ -68,6 +68,10 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
   const [committing, setCommitting] = useState(false);
   const [commitError, setCommitError] = useState(null);
   const [owner, setOwner] = useState(uid);
+  // Mirrors `quota` for the capture guard. State reaches the key listener only
+  // after React re-runs its effect, so a press in between would still capture;
+  // the ref is set the moment the limit comes back.
+  const quotaRef = useRef(null);
 
   // A different account signed in while the overlay was open. Swap to that
   // account's own batch during render, before any effect can save the old
@@ -76,6 +80,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
     setOwner(uid);
     setDraft(loadDraft(getStorage(), uid));
     setMode('camera');
+    quotaRef.current = null;
     setQuota(null);
     setCommitError(null);
   }
@@ -154,12 +159,15 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
     const result = await ScanService.scan(image, setCodes);
     if (!mountedRef.current) return;
     if (result.status !== 'matched') signalProblem();
-    if (result.error === 'quota') setQuota({ limit: result.limit, resetsAt: result.resetsAt });
+    if (result.error === 'quota') {
+      quotaRef.current = { limit: result.limit, resetsAt: result.resetsAt };
+      setQuota(quotaRef.current);
+    }
     setDraft((d) => applyResult(d, id, result));
   }, [setCodes, signalProblem]);
 
   const capture = useCallback(async () => {
-    if (quota || cameraError || capturingRef.current) return;
+    if (quotaRef.current || cameraError || capturingRef.current) return;
     capturingRef.current = true;
     // Foil is read at the tap, not after the photo resolves.
     const isFoil = foilStack;
@@ -180,7 +188,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
     const id = newId();
     setDraft((d) => addCapture(d, { id, isFoil, photo: shot.image }));
     runScan(id, shot.image);
-  }, [quota, cameraError, foilStack, runScan, signalProblem]);
+  }, [cameraError, foilStack, runScan, signalProblem]);
 
   useEffect(() => {
     if (mode !== 'camera') return undefined;
@@ -205,10 +213,10 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
 
   const retry = useCallback((id) => {
     const row = draft.rows.find((r) => r.id === id);
-    if (!row?.photo || quota) return;
+    if (!row?.photo || quotaRef.current) return;
     setDraft((d) => markReading(d, id));
     runScan(id, row.photo);
-  }, [draft, quota, runScan]);
+  }, [draft, runScan]);
 
   const commit = useCallback(async () => {
     if (!collectionRef) {
