@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { X, Sparkles } from 'lucide-react';
+import { X, Sparkles, RectangleHorizontal } from 'lucide-react';
 import { ScanService } from '../services/ScanService';
 import { capturePhoto } from '../utils/frameCapture';
 import { levelReading } from '../utils/level';
@@ -34,6 +34,22 @@ const newId = () =>
 
 const CAPTURE_KEYS = new Set(['Space', 'Enter']);
 
+// Guide geometry per orientation. Portrait cards are 63:88; leaders and bases
+// are 88:63. The collector line is bottom-right on both, and the cyan box is
+// sized to the same physical area (~26 x 4mm) on either card.
+const GUIDES = {
+  portrait: {
+    width: 'min(92cqw, calc(82cqh * 63 / 88))',
+    aspectRatio: '63 / 88',
+    collector: 'right-[3%] bottom-[1.5%] w-[42%] h-[4.5%]',
+  },
+  landscape: {
+    width: 'min(92cqw, calc(82cqh * 88 / 63))',
+    aspectRatio: '88 / 63',
+    collector: 'right-[2%] bottom-[2%] w-[30%] h-[6.5%]',
+  },
+};
+
 const formatReset = (iso) => {
   if (!iso) return 'midnight UTC';
   return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -43,6 +59,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
   const [draft, setDraft] = useState(() => loadDraft(getStorage(), uid));
   const [mode, setMode] = useState('camera');
   const [foilStack, setFoilStack] = useState(false);
+  const [orientation, setOrientation] = useState('portrait');
   const [flash, setFlash] = useState(false);
   const [quota, setQuota] = useState(null);
   const [cameraError, setCameraError] = useState(null);
@@ -51,6 +68,10 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
   const [committing, setCommitting] = useState(false);
   const [commitError, setCommitError] = useState(null);
   const [owner, setOwner] = useState(uid);
+  // Mirrors `quota` for the capture guard. State reaches the key listener only
+  // after React re-runs its effect, so a press in between would still capture;
+  // the ref is set the moment the limit comes back.
+  const quotaRef = useRef(null);
 
   // A different account signed in while the overlay was open. Swap to that
   // account's own batch during render, before any effect can save the old
@@ -59,6 +80,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
     setOwner(uid);
     setDraft(loadDraft(getStorage(), uid));
     setMode('camera');
+    quotaRef.current = null;
     setQuota(null);
     setCommitError(null);
   }
@@ -137,12 +159,15 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
     const result = await ScanService.scan(image, setCodes);
     if (!mountedRef.current) return;
     if (result.status !== 'matched') signalProblem();
-    if (result.error === 'quota') setQuota({ limit: result.limit, resetsAt: result.resetsAt });
+    if (result.error === 'quota') {
+      quotaRef.current = { limit: result.limit, resetsAt: result.resetsAt };
+      setQuota(quotaRef.current);
+    }
     setDraft((d) => applyResult(d, id, result));
   }, [setCodes, signalProblem]);
 
   const capture = useCallback(async () => {
-    if (quota || cameraError || capturingRef.current) return;
+    if (quotaRef.current || cameraError || capturingRef.current) return;
     capturingRef.current = true;
     // Foil is read at the tap, not after the photo resolves.
     const isFoil = foilStack;
@@ -163,7 +188,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
     const id = newId();
     setDraft((d) => addCapture(d, { id, isFoil, photo: shot.image }));
     runScan(id, shot.image);
-  }, [quota, cameraError, foilStack, runScan, signalProblem]);
+  }, [cameraError, foilStack, runScan, signalProblem]);
 
   useEffect(() => {
     if (mode !== 'camera') return undefined;
@@ -188,10 +213,10 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
 
   const retry = useCallback((id) => {
     const row = draft.rows.find((r) => r.id === id);
-    if (!row?.photo || quota) return;
+    if (!row?.photo || quotaRef.current) return;
     setDraft((d) => markReading(d, id));
     runScan(id, row.photo);
-  }, [draft, quota, runScan]);
+  }, [draft, runScan]);
 
   const commit = useCallback(async () => {
     if (!collectionRef) {
@@ -279,6 +304,20 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
         </button>
         <button
           type="button"
+          aria-label="Landscape guide"
+          title="Landscape guide (leaders and bases)"
+          aria-pressed={orientation === 'landscape'}
+          onClick={() => setOrientation((o) => (o === 'portrait' ? 'landscape' : 'portrait'))}
+          className={`p-2 rounded-lg border ${
+            orientation === 'landscape'
+              ? 'bg-yellow-500/20 border-yellow-500 text-yellow-400'
+              : 'bg-gray-800 border-gray-700 text-gray-400'
+          }`}
+        >
+          <RectangleHorizontal size={18} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
           onClick={() => setMode('review')}
           className="ml-auto px-3 py-2 rounded-lg bg-yellow-500 hover:bg-yellow-400 text-black text-sm font-bold"
         >
@@ -299,13 +338,14 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
             it stays card-shaped on a tall phone and a wide laptop alike. */}
         <div
           data-testid="card-guide"
+          data-orientation={orientation}
           aria-hidden="true"
           className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 border-2 border-yellow-500/70 rounded-xl"
-          style={{ width: 'min(92cqw, calc(82cqh * 63 / 88))', aspectRatio: '63 / 88' }}
+          style={{ width: GUIDES[orientation].width, aspectRatio: GUIDES[orientation].aspectRatio }}
         >
           <div
             data-testid="collector-guide"
-            className="absolute right-[3%] bottom-[1.5%] w-[42%] h-[4.5%] border-2 border-cyan-400 rounded-sm bg-cyan-400/10"
+            className={`absolute ${GUIDES[orientation].collector} border-2 border-cyan-400 rounded-sm bg-cyan-400/10`}
           />
         </div>
         {level && (
