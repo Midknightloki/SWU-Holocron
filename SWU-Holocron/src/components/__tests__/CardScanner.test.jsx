@@ -171,6 +171,22 @@ describe('CardScanner', () => {
     expect(screen.getByTestId('card-guide')).toContainElement(screen.getByTestId('collector-guide'));
   });
 
+  it('switches the guide to landscape for leaders and bases', async () => {
+    const user = userEvent.setup();
+    renderScanner();
+    const toggle = screen.getByRole('button', { name: 'Landscape guide' });
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByTestId('card-guide')).toHaveAttribute('data-orientation', 'portrait');
+
+    await user.click(toggle);
+
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('card-guide')).toHaveAttribute('data-orientation', 'landscape');
+    // The collector number is bottom-right on leaders and bases too.
+    expect(screen.getByTestId('card-guide')).toContainElement(screen.getByTestId('collector-guide'));
+    expect(mocks.capturePhoto).not.toHaveBeenCalled();
+  });
+
   it('shows a level that turns green when the phone is flat', async () => {
     renderScanner();
     expect(screen.queryByTestId('level')).not.toBeInTheDocument();
