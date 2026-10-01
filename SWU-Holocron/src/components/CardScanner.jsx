@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { X, Sparkles } from 'lucide-react';
 import { ScanService } from '../services/ScanService';
-import { captureFrame } from '../utils/frameCapture';
+import { capturePhoto } from '../utils/frameCapture';
+import { levelReading } from '../utils/level';
 import {
   addCapture, applyResult, clearDraft, countByStatus, emptyDraft, loadDraft, markReading, saveDraft,
 } from '../utils/scanDraft';
@@ -45,6 +46,8 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
   const [flash, setFlash] = useState(false);
   const [quota, setQuota] = useState(null);
   const [cameraError, setCameraError] = useState(null);
+  const [lastCapture, setLastCapture] = useState(null);
+  const [level, setLevel] = useState(null);
   const [committing, setCommitting] = useState(false);
   const [commitError, setCommitError] = useState(null);
   const [owner, setOwner] = useState(uid);
@@ -63,6 +66,9 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
   const videoRef = useRef(null);
   const mountedRef = useRef(false);
   const flashTimer = useRef(null);
+  const trackRef = useRef(null);
+  // A real photo takes a moment; taps during it are ignored, not queued.
+  const capturingRef = useRef(false);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -88,7 +94,8 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
       }
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+          // Ask high: the preview is also the fallback capture source.
+          video: { facingMode: 'environment', width: { ideal: 3840 }, height: { ideal: 2160 } },
           audio: false,
         });
         if (cancelled) {
@@ -96,6 +103,10 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
           return;
         }
         if (videoRef.current) videoRef.current.srcObject = stream;
+        const [track] = stream.getVideoTracks?.() ?? [];
+        trackRef.current = track ?? null;
+        // Best effort: keep refocusing as cards slide in. Unsupported → ignored.
+        track?.applyConstraints?.({ advanced: [{ focusMode: 'continuous' }] })?.catch?.(() => {});
         setCameraError(null);
       } catch (err) {
         if (cancelled) return;
@@ -108,6 +119,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
     start();
     return () => {
       cancelled = true;
+      trackRef.current = null;
       stream?.getTracks().forEach((t) => t.stop());
     };
   }, [mode]);
@@ -129,22 +141,36 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
     setDraft((d) => applyResult(d, id, result));
   }, [setCodes, signalProblem]);
 
-  const capture = useCallback(() => {
-    if (quota || cameraError) return;
-    let image = null;
+  const capture = useCallback(async () => {
+    if (quota || cameraError || capturingRef.current) return;
+    capturingRef.current = true;
+    // Foil is read at the tap, not after the photo resolves.
+    const isFoil = foilStack;
+    let shot = null;
     try {
-      image = captureFrame(videoRef.current);
+      shot = await capturePhoto({ track: trackRef.current, video: videoRef.current });
     } catch {
-      image = null;
+      shot = null;
+    } finally {
+      capturingRef.current = false;
     }
-    if (!image) {
+    if (!mountedRef.current) return;
+    if (!shot?.image) {
       signalProblem();
       return;
     }
+    setLastCapture({ source: shot.source, width: shot.width, height: shot.height });
     const id = newId();
-    setDraft((d) => addCapture(d, { id, isFoil: foilStack, photo: image }));
-    runScan(id, image);
+    setDraft((d) => addCapture(d, { id, isFoil, photo: shot.image }));
+    runScan(id, shot.image);
   }, [quota, cameraError, foilStack, runScan, signalProblem]);
+
+  useEffect(() => {
+    if (mode !== 'camera') return undefined;
+    const onOrientation = (e) => setLevel(levelReading(e.beta, e.gamma));
+    window.addEventListener('deviceorientation', onOrientation);
+    return () => window.removeEventListener('deviceorientation', onOrientation);
+  }, [mode]);
 
   useEffect(() => {
     if (mode !== 'camera') return undefined;
@@ -264,9 +290,40 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
         data-testid="scan-preview"
         onClick={capture}
         className="relative flex-1 overflow-hidden cursor-pointer select-none"
+        style={{ containerType: 'size' }}
       >
         <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-contain" />
-        <div aria-hidden="true" className="pointer-events-none absolute inset-[12%] border-2 border-yellow-500/70 rounded-xl" />
+        {/* Card-shaped guide (63:88), with the collector line marked: the set
+            code and number at the bottom right are what has to be legible.
+            Sized against the preview in both directions (container units) so
+            it stays card-shaped on a tall phone and a wide laptop alike. */}
+        <div
+          data-testid="card-guide"
+          aria-hidden="true"
+          className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 border-2 border-yellow-500/70 rounded-xl"
+          style={{ width: 'min(92cqw, calc(82cqh * 63 / 88))', aspectRatio: '63 / 88' }}
+        >
+          <div
+            data-testid="collector-guide"
+            className="absolute right-[3%] bottom-[1.5%] w-[42%] h-[4.5%] border-2 border-cyan-400 rounded-sm bg-cyan-400/10"
+          />
+        </div>
+        {level && (
+          <div
+            data-testid="level"
+            data-level={String(level.isLevel)}
+            aria-label={level.isLevel ? 'Level' : 'Not level'}
+            className={`pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 w-12 h-12 rounded-full border-2 ${
+              level.isLevel ? 'border-green-400 bg-green-400/20' : 'border-white/70 bg-black/30'
+            }`}
+          >
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 rounded-full border border-white/50" />
+            <div
+              className={`absolute left-1/2 top-1/2 w-3 h-3 -ml-1.5 -mt-1.5 rounded-full ${level.isLevel ? 'bg-green-400' : 'bg-yellow-400'}`}
+              style={{ transform: `translate(${level.x * 16}px, ${level.y * 16}px)` }}
+            />
+          </div>
+        )}
         {flash && <div data-testid="scan-flash" className="pointer-events-none absolute inset-0 bg-red-600/40" />}
         {cameraError && (
           <div role="alert" className="absolute inset-0 flex items-center justify-center p-6 text-center bg-black/80">
@@ -283,6 +340,9 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
 
       <div className="flex items-center gap-4 px-4 py-3 bg-gray-900/90 border-t border-gray-800 text-sm text-gray-400">
         <span>{total} scanned</span>
+        {lastCapture && (
+          <span className="text-gray-500">{lastCapture.source} {lastCapture.width}×{lastCapture.height}</span>
+        )}
         {counts.reading > 0 && <span>{counts.reading} reading…</span>}
         {attention > 0 && <span className="text-red-400">{attention} need attention</span>}
         <span className="ml-auto hidden sm:inline">Tap or press Space to capture</span>
