@@ -2,16 +2,16 @@
  * @vitest-environment happy-dom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
 
-const mocks = vi.hoisted(() => ({ scan: vi.fn(), commitDraft: vi.fn(), captureFrame: vi.fn() }));
+const mocks = vi.hoisted(() => ({ scan: vi.fn(), commitDraft: vi.fn(), capturePhoto: vi.fn() }));
 
 vi.mock('../../services/ScanService', () => ({
   ScanService: { scan: mocks.scan, commitDraft: mocks.commitDraft },
 }));
-vi.mock('../../utils/frameCapture', () => ({ captureFrame: mocks.captureFrame }));
+vi.mock('../../utils/frameCapture', () => ({ capturePhoto: mocks.capturePhoto }));
 vi.mock('../CardPickerModal', () => ({ default: () => null }));
 
 import CardScanner from '../CardScanner';
@@ -29,6 +29,19 @@ const renderScanner = (props = {}) => render(
   <CardScanner uid="uid-1" collectionRef={{ id: 'ref' }} setCodes={['SOR']} onClose={vi.fn()} {...props} />,
 );
 
+// Capture is asynchronous now (a real photo takes a moment): let it settle.
+const tilt = (beta, gamma) => act(() => {
+  window.dispatchEvent(Object.assign(new Event('deviceorientation'), { beta, gamma }));
+});
+
+// A tap on the preview while the first photo is still pending.
+const user_tap = () => act(async () => { fireEvent.click(screen.getByTestId('scan-preview')); });
+
+const flush = () => act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+const TRACK = { kind: 'video', stop: vi.fn() };
+const PHOTO = { image: 'IMG', source: 'photo', width: 4080, height: 3072 };
+
 const pressSpace = (target = window, init = {}) =>
   fireEvent.keyDown(target, { key: ' ', code: 'Space', ...init });
 
@@ -36,9 +49,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   localStorage.getItem.mockReset();
   localStorage.getItem.mockReturnValue(null);
-  mocks.captureFrame.mockReturnValue('IMG');
+  mocks.capturePhoto.mockResolvedValue(PHOTO);
   mocks.scan.mockResolvedValue(LUKE);
-  stubCamera(async () => ({ getTracks: () => [{ stop: vi.fn() }] }));
+  stubCamera(async () => ({ getTracks: () => [TRACK], getVideoTracks: () => [TRACK] }));
 });
 
 describe('CardScanner', () => {
@@ -46,21 +59,21 @@ describe('CardScanner', () => {
     renderScanner();
     await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
     pressSpace();
-    expect(mocks.scan).toHaveBeenCalledWith('IMG', ['SOR']);
+    await waitFor(() => expect(mocks.scan).toHaveBeenCalledWith('IMG', ['SOR']));
     expect(await screen.findByRole('button', { name: 'Review (1)' })).toBeInTheDocument();
   });
 
   it('captures on Enter', async () => {
     renderScanner();
     fireEvent.keyDown(window, { key: 'Enter', code: 'Enter' });
-    expect(mocks.scan).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mocks.scan).toHaveBeenCalledTimes(1));
   });
 
   it('captures on a tap anywhere on the preview', async () => {
     const user = userEvent.setup();
     renderScanner();
     await user.click(screen.getByTestId('scan-preview'));
-    expect(mocks.scan).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mocks.scan).toHaveBeenCalledTimes(1));
   });
 
   it('ignores auto-repeated key presses', async () => {
@@ -68,6 +81,7 @@ describe('CardScanner', () => {
     pressSpace();
     pressSpace(window, { repeat: true });
     pressSpace(window, { repeat: true });
+    await flush();
     expect(mocks.scan).toHaveBeenCalledTimes(1);
   });
 
@@ -78,7 +92,7 @@ describe('CardScanner', () => {
     const event = new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true });
     foil.dispatchEvent(event);
     expect(event.defaultPrevented).toBe(true);
-    expect(mocks.scan).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mocks.scan).toHaveBeenCalledTimes(1));
     expect(foil).toHaveAttribute('aria-pressed', 'false');
   });
 
@@ -99,7 +113,7 @@ describe('CardScanner', () => {
   });
 
   it('flashes when the frame cannot be captured, without calling the function', async () => {
-    mocks.captureFrame.mockReturnValue(null);
+    mocks.capturePhoto.mockResolvedValue({ image: null, source: 'video', width: 0, height: 0 });
     renderScanner();
     pressSpace();
     expect(await screen.findByTestId('scan-flash')).toBeInTheDocument();
@@ -112,6 +126,7 @@ describe('CardScanner', () => {
     pressSpace();
     expect(await screen.findByText(/Daily scan limit of 1000 reached/)).toBeInTheDocument();
     pressSpace();
+    await flush();
     expect(mocks.scan).toHaveBeenCalledTimes(1);
   });
 
@@ -120,7 +135,49 @@ describe('CardScanner', () => {
     renderScanner();
     expect(await screen.findByText(/Camera access was denied/)).toBeInTheDocument();
     pressSpace();
+    await flush();
+    expect(mocks.capturePhoto).not.toHaveBeenCalled();
     expect(mocks.scan).not.toHaveBeenCalled();
+  });
+
+  it('takes the photo from the live camera track', async () => {
+    renderScanner();
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
+    await flush();
+    pressSpace();
+    await waitFor(() => expect(mocks.capturePhoto).toHaveBeenCalledWith(expect.objectContaining({ track: TRACK })));
+  });
+
+  it('ignores captures while a photo is still being taken', async () => {
+    let finish;
+    mocks.capturePhoto.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    renderScanner();
+    pressSpace();
+    pressSpace();
+    await user_tap();
+    expect(mocks.capturePhoto).toHaveBeenCalledTimes(1);
+    await act(async () => { finish(PHOTO); });
+    await waitFor(() => expect(mocks.scan).toHaveBeenCalledTimes(1));
+  });
+
+  it('shows which capture path ran and at what size', async () => {
+    renderScanner();
+    pressSpace();
+    expect(await screen.findByText('photo 4080×3072')).toBeInTheDocument();
+  });
+
+  it('marks the collector-number area inside the card guide', () => {
+    renderScanner();
+    expect(screen.getByTestId('card-guide')).toContainElement(screen.getByTestId('collector-guide'));
+  });
+
+  it('shows a level that turns green when the phone is flat', async () => {
+    renderScanner();
+    expect(screen.queryByTestId('level')).not.toBeInTheDocument();
+    tilt(10, 0);
+    expect(await screen.findByTestId('level')).toHaveAttribute('data-level', 'false');
+    tilt(1, -1);
+    await waitFor(() => expect(screen.getByTestId('level')).toHaveAttribute('data-level', 'true'));
   });
 
   it('persists the batch under the user\'s own key', async () => {
