@@ -82,6 +82,29 @@ export function moveCorner(rect, corner, px, py) {
 }
 
 /**
+ * Photo fractions -> stream fractions. A 16:9 stream is a centre crop of the
+ * 4:3 sensor the still photo uses, so the same card sits at different
+ * fractions in each. Without the photo's aspect, the two are assumed to match.
+ */
+export function toStreamRect(rect, streamAspect, photoAspect) {
+  if (!(photoAspect > 0) || !(streamAspect > 0) || streamAspect === photoAspect) return rect;
+  if (streamAspect < photoAspect) {
+    const f = streamAspect / photoAspect;
+    return { ...rect, x: (rect.x - (1 - f) / 2) / f, w: rect.w / f };
+  }
+  const f = photoAspect / streamAspect;
+  return { ...rect, y: (rect.y - (1 - f) / 2) / f, h: rect.h / f };
+}
+
+export function clampRect(rect) {
+  const left = clamp01(rect.x);
+  const top = clamp01(rect.y);
+  const right = clamp01(rect.x + rect.w);
+  const bottom = clamp01(rect.y + rect.h);
+  return rect4({ x: left, y: top, w: right - left, h: bottom - top });
+}
+
+/**
  * Where to draw a photo-fraction rect over the live preview (object-contain).
  *
  * The stream and the still photo usually differ in shape: a 16:9 stream is a
@@ -91,16 +114,7 @@ export function moveCorner(rect, corner, px, py) {
  */
 export function guideStyle(rect, videoWidth, videoHeight, boxWidth, boxHeight, photoAspect) {
   if (!(videoWidth > 0 && videoHeight > 0 && boxWidth > 0 && boxHeight > 0)) return null;
-  const streamAspect = videoWidth / videoHeight;
-  if (photoAspect > 0 && streamAspect < photoAspect) {
-    // Stream shows the middle `f` of the photo's width.
-    const f = streamAspect / photoAspect;
-    rect = { ...rect, x: (rect.x - (1 - f) / 2) / f, w: rect.w / f };
-  } else if (photoAspect > 0 && streamAspect > photoAspect) {
-    // Stream shows the middle `f` of the photo's height.
-    const f = photoAspect / streamAspect;
-    rect = { ...rect, y: (rect.y - (1 - f) / 2) / f, h: rect.h / f };
-  }
+  rect = toStreamRect(rect, videoWidth / videoHeight, photoAspect);
   const scale = Math.min(boxWidth / videoWidth, boxHeight / videoHeight);
   const shownW = videoWidth * scale;
   const shownH = videoHeight * scale;

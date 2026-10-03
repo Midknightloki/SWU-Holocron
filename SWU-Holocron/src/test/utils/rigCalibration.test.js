@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   RIG_KEY, CROP_MARGIN, MIN_SIZE, boxToRect, defaultRect, withMargin, cropPixels,
-  orientationOf, cropFor, cornerPoint, moveCorner, guideStyle, calibratedGuide,
+  orientationOf, cropFor, cornerPoint, moveCorner, guideStyle, calibratedGuide, toStreamRect, clampRect,
   saveCalibration, loadCalibration, clearCalibration,
 } from '../../utils/rigCalibration';
 
@@ -91,6 +91,23 @@ describe('geometry', () => {
     expect(s.top).toBeCloseTo(15, 1);
     expect(s.height).toBeCloseTo(420, 1);
     expect(s.left).toBeCloseTo(80, 1);
+  });
+
+  it('converts photo fractions to stream fractions for a narrower stream', () => {
+    // 9:16 stream shows the middle 75% of a 3:4 photo's width.
+    const r = toStreamRect({ x: 0.15, y: 0.1, w: 0.7, h: 0.8 }, 9 / 16, 3 / 4);
+    expect(r.x).toBeCloseTo(0.0333, 3);
+    expect(r.w).toBeCloseTo(0.9333, 3);
+    expect(r).toMatchObject({ y: 0.1, h: 0.8 });
+  });
+
+  it('leaves the rect alone when the aspects match or the photo aspect is unknown', () => {
+    expect(toStreamRect(RECT, 0.75, 0.75)).toEqual(RECT);
+    expect(toStreamRect(RECT, 0.5625, undefined)).toEqual(RECT);
+  });
+
+  it('clamps a rect to the frame', () => {
+    expect(clampRect({ x: -0.1, y: 0.5, w: 0.5, h: 0.7 })).toEqual({ x: 0, y: 0.5, w: 0.4, h: 0.5 });
   });
 
   it('guideStyle returns null without sizes', () => {
