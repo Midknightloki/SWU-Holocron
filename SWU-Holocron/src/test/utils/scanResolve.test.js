@@ -135,6 +135,55 @@ describe('promo sets printed with the parent code', () => {
   });
 });
 
+// The common failure in practice: Gemini reads the set code wrong (usually as
+// SOR) but the number and name right. A set picked in the scanner is a hint
+// the resolver falls back to; the name check still guards every candidate.
+describe('set hints from the scanner picker', () => {
+  const CODES = ['SOR', 'SHD', 'SHDOP'];
+  const DATA = {
+    SOR: [{ Set: 'SOR', Number: '010', Name: 'Darth Vader', Type: 'Leader' }],
+    SHD: [{ Set: 'SHD', Number: '010', Name: 'Cad Bane', Type: 'Leader' }],
+    SHDOP: [{ Set: 'SHDOP', Number: '10', Name: 'Calculated Lethality', Type: 'Event' }],
+  };
+  const ctx2 = (hintSets = []) => ({ setCodes: CODES, getCards: (c) => DATA[c] ?? null, hintSets });
+
+  it('rejects a misread set code without a hint, as before', () => {
+    const read = { readable: true, set: 'SOR', number: '10', name: 'Cad Bane' };
+    expect(resolveScan(read, ctx2())).toMatchObject({ status: 'unidentified', reason: 'name-mismatch' });
+  });
+
+  it('matches in a hinted set when the printed set was misread', () => {
+    const read = { readable: true, set: 'SOR', number: '10', name: 'Cad Bane' };
+    expect(resolveScan(read, ctx2(['SHD']))).toEqual({ status: 'matched', set: 'SHD', number: '010', name: 'Cad Bane', type: 'Leader' });
+  });
+
+  it('matches in a hinted set when no set code could be read at all', () => {
+    const read = { readable: true, set: '', number: '10', name: 'Cad Bane' };
+    expect(resolveScan(read, ctx2())).toMatchObject({ status: 'unidentified', reason: 'unknown-set' });
+    expect(resolveScan(read, ctx2(['SHD']))).toMatchObject({ status: 'matched', set: 'SHD' });
+  });
+
+  it("includes the hinted set's promo sets", () => {
+    const read = { readable: true, set: 'SOR', number: '10', name: 'Calculated Lethality' };
+    expect(resolveScan(read, ctx2(['SHD']))).toMatchObject({ status: 'matched', set: 'SHDOP' });
+  });
+
+  it('never overrides a valid match in the printed set', () => {
+    const read = { readable: true, set: 'SOR', number: '10', name: 'Darth Vader' };
+    expect(resolveScan(read, ctx2(['SHD']))).toMatchObject({ status: 'matched', set: 'SOR' });
+  });
+
+  it('keeps the original reason when the hints do not match either', () => {
+    const read = { readable: true, set: 'SOR', number: '10', name: 'Nobody' };
+    expect(resolveScan(read, ctx2(['SHD']))).toMatchObject({ status: 'unidentified', reason: 'name-mismatch' });
+  });
+
+  it('still needs a readable number', () => {
+    const read = { readable: true, set: '', number: '', name: 'Cad Bane' };
+    expect(resolveScan(read, ctx2(['SHD']))).toMatchObject({ status: 'unidentified', reason: 'unreadable' });
+  });
+});
+
 describe('resolveScan', () => {
   it('matches a clean read', () => {
     const read = { readable: true, set: 'SOR', number: '012/252', name: 'Luke Skywalker' };

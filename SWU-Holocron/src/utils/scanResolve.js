@@ -62,25 +62,46 @@ const findByNumber = (cards, number) => (cards ?? []).find((c) => normalizeNumbe
 
 const matched = (set, number, card) => ({ status: 'matched', set, number, name: card.Name, type: card.Type ?? null });
 
-export function resolveScan(read, { setCodes, getCards }) {
-  if (!read || read.readable !== true) return unidentified('unreadable', read);
+// The first card in `codes` (each extended by its promo sets) whose number and
+// name both match, as a match result; otherwise null.
+function matchIn(codes, setCodes, getCards, number, name) {
+  for (const code of codes) {
+    for (const candidate of [code, ...relatedSetCodes(code, setCodes)]) {
+      const card = findByNumber(getCards(candidate), number);
+      if (card && namesMatch(name, card)) return matched(candidate, number, card);
+    }
+  }
+  return null;
+}
 
-  const set = normalizeSetCode(read.set, setCodes);
-  if (!set) return unidentified('unknown-set', read);
+/**
+ * @param {object} read  what Gemini read: { readable, set, number, name }
+ * @param {object} ctx
+ * @param {string[]} ctx.setCodes  registered set codes
+ * @param {(code: string) => object[]|null} ctx.getCards  loaded card data, or null if not loaded
+ * @param {string[]} [ctx.hintSets]  sets picked in the scanner: fallbacks when the
+ *   printed set code was misread or unreadable. Never override a match on the printed set.
+ */
+export function resolveScan(read, { setCodes, getCards, hintSets = [] }) {
+  if (!read || read.readable !== true) return unidentified('unreadable', read);
 
   const number = normalizeNumber(read.number);
   if (!number) return unidentified('unreadable', read);
 
-  const card = findByNumber(getCards(set), number);
-  if (card && namesMatch(read.name, card)) return matched(set, number, card);
+  const set = normalizeSetCode(read.set, setCodes);
+  let reason = 'unknown-set';
+  if (set) {
+    const card = findByNumber(getCards(set), number);
+    if (card && namesMatch(read.name, card)) return matched(set, number, card);
 
-  // Not this card in the printed set: try the promo sets printed with this
-  // code. The name check still guards every candidate, so a match here is
-  // as trustworthy as one in the printed set.
-  for (const code of relatedSetCodes(set, setCodes)) {
-    const promo = findByNumber(getCards(code), number);
-    if (promo && namesMatch(read.name, promo)) return matched(code, number, promo);
+    // Not this card in the printed set: try the promo sets printed with this
+    // code. The name check still guards every candidate.
+    const promo = matchIn(relatedSetCodes(set, setCodes), setCodes, getCards, number, read.name);
+    if (promo) return promo;
+    reason = card ? 'name-mismatch' : 'no-such-card';
   }
 
-  return unidentified(card ? 'name-mismatch' : 'no-such-card', read);
+  // The printed set code was misread or illegible: try the sets the user picked.
+  const hinted = matchIn(hintSets.filter((code) => code !== set), setCodes, getCards, number, read.name);
+  return hinted ?? unidentified(reason, read);
 }

@@ -192,12 +192,16 @@ Rules recap: use only IDs from the list above, respect the deck's aspects, and k
  * call. It returns what was read and never writes to the user's collection:
  * the client resolves the read and the user approves the batch.
  */
-const SCAN_PROMPT = `This is a photo of a Star Wars: Unlimited trading card.
+// No example set codes: listing "SOR, SHD, ..." made Gemini fall back to SOR
+// whenever the small set code was hard to read, and every such card then
+// failed the name check against the wrong set. An empty set lets the client
+// fall back to the sets the user picked in the scanner instead.
+const SCAN_PROMPT = `This is a photo of a Star Wars: Unlimited trading card. The card may be rotated.
 Read three things from it:
-- set: the set code printed in the collector line along the card's bottom edge (for example SOR, SHD, TWI, JTL, LOF), exactly as printed.
+- set: the set code printed in the collector line along the card's bottom edge, just before the language code (as in "XXX • EN"). Copy it letter by letter exactly as printed. If you cannot read the set code with confidence, leave set empty -- do not guess, and do not substitute a different or more common set.
 - number: the collector number from that same line, without any "/total" part.
 - name: the card's title as printed, without its subtitle.
-If there is no card in the photo, or you cannot read the collector line with confidence, set readable to false and leave the other fields empty. Do not guess.`;
+If there is no card in the photo, or you cannot read the number or the name with confidence, set readable to false and leave the other fields empty.`;
 
 const SCAN_SCHEMA = {
   type: "object",

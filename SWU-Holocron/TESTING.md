@@ -118,6 +118,9 @@ these on real hardware and record the results in the PR:
   button carries a red badge with the number needing attention. Controls sit
   in the bottom bar. Tapping a review thumbnail opens the photo full size.
 - First open shows the "How to scan" steps; after "Got it" they stay closed.
+- Pick a set (e.g. SHD) and scan cards from it whose set code Gemini used to
+  misread: they should match. A stray card from another set must still match
+  its own set. The pick survives closing the app.
 - A normal card's number lines up in the bottom-right cyan box; a leader or
   base turned a quarter-turn counter-clockwise lines up in the top-right one.
 - A mixed stack of 30+ cards (standard, hyperspace, showcase, a promo, foils),

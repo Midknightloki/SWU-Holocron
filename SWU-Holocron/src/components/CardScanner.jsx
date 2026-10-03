@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { X, Sparkles, HelpCircle, Crosshair } from 'lucide-react';
 import { calibratedGuide, clearCalibration, cropFor, loadCalibration, saveCalibration } from '../utils/rigCalibration';
 import RigCalibration from './RigCalibration';
+import ScanSetPicker from './ScanSetPicker';
 import { ScanService } from '../services/ScanService';
 import { capturePhoto } from '../utils/frameCapture';
 import { levelReading } from '../utils/level';
@@ -38,6 +39,31 @@ const CAPTURE_KEYS = new Set(['Space', 'Enter']);
 
 const HELP_SEEN_KEY = 'swu-scan-help-seen';
 
+// Sets picked in the scanner, kept per device: a booster box is one set.
+const SETS_KEY = 'swu-scan-sets';
+
+const readPickedSets = (validCodes) => {
+  try {
+    const stored = JSON.parse(localStorage.getItem(SETS_KEY) ?? '[]');
+    return Array.isArray(stored) ? stored.filter((code) => validCodes.includes(code)) : [];
+  } catch {
+    return [];
+  }
+};
+
+const writePickedSets = (codes) => {
+  try {
+    localStorage.setItem(SETS_KEY, JSON.stringify(codes));
+  } catch {
+    // Storage unavailable: the pick lasts for this session only.
+  }
+};
+
+const pickedLabel = (codes) => {
+  if (codes.length === 0) return 'Any set';
+  return codes.length === 1 ? codes[0] : `${codes[0]} +${codes.length - 1}`;
+};
+
 const readHelpSeen = () => {
   try {
     return localStorage.getItem(HELP_SEEN_KEY) === '1';
@@ -59,7 +85,7 @@ const formatReset = (iso) => {
   return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 };
 
-export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
+export default function CardScanner({ uid, collectionRef, setCodes, setOptions, onClose }) {
   const [draft, setDraft] = useState(() => loadDraft(getStorage(), uid));
   const [mode, setMode] = useState('camera');
   const [foilStack, setFoilStack] = useState(false);
@@ -77,6 +103,10 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
   const [calibrating, setCalibrating] = useState(false);
   const [view, setView] = useState({ vw: 0, vh: 0, bw: 0, bh: 0 });
   const calibratingRef = useRef(false);
+  const [pickedSets, setPickedSets] = useState(() => readPickedSets(setCodes));
+  const [pickingSets, setPickingSets] = useState(false);
+  const pickingSetsRef = useRef(false);
+  pickingSetsRef.current = pickingSets;
   calibratingRef.current = calibrating;
   const previewRef = useRef(null);
   const [owner, setOwner] = useState(uid);
@@ -179,7 +209,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
   }, []);
 
   const runScan = useCallback(async (id, image) => {
-    const result = await ScanService.scan(image, setCodes);
+    const result = await ScanService.scan(image, setCodes, { hintSets: pickedSets });
     if (!mountedRef.current) return;
     signal(result.status === 'matched' ? 'success' : 'error');
     if (result.error === 'quota') {
@@ -187,10 +217,10 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
       setQuota(quotaRef.current);
     }
     setDraft((d) => applyResult(d, id, result));
-  }, [setCodes, signal]);
+  }, [setCodes, pickedSets, signal]);
 
   const capture = useCallback(async () => {
-    if (calibratingRef.current || helpOpenRef.current || quotaRef.current || cameraError || capturingRef.current) return;
+    if (pickingSetsRef.current || calibratingRef.current || helpOpenRef.current || quotaRef.current || cameraError || capturingRef.current) return;
     capturingRef.current = true;
     // Foil is read at the tap, not after the photo resolves.
     const isFoil = foilStack;
@@ -273,6 +303,11 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
     setCalibrating(false);
   }, []);
 
+  // Warm the picked sets' card data so the first card from them doesn't wait.
+  useEffect(() => {
+    if (pickedSets.length) ScanService.prefetchSets(pickedSets);
+  }, [pickedSets]);
+
   const dismissHelp = useCallback(() => {
     markHelpSeen();
     setShowHelp(false);
@@ -282,7 +317,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
     if (mode !== 'camera') return undefined;
     const onKey = (e) => {
       // Calibration has its own buttons and arrow-key nudging: leave keys alone.
-      if (calibratingRef.current) return;
+      if (calibratingRef.current || pickingSetsRef.current) return;
       if (!CAPTURE_KEYS.has(e.code) && e.key !== ' ' && e.key !== 'Enter') return;
       // Always swallow the key: Space on a focused button would otherwise
       // also toggle it, and a held key would fire a capture per repeat.
@@ -476,6 +511,19 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
         </button>
         <button
           type="button"
+          aria-label="Choose sets"
+          title="Sets you are scanning: used when a set code is misread"
+          onClick={() => setPickingSets(true)}
+          className={`px-3 py-2 rounded-lg text-sm font-bold border ${
+            pickedSets.length
+              ? 'bg-yellow-500/20 border-yellow-500 text-yellow-400'
+              : 'bg-gray-800 border-gray-700 text-gray-400'
+          }`}
+        >
+          {pickedLabel(pickedSets)}
+        </button>
+        <button
+          type="button"
           aria-label="How to scan"
           title="How to scan"
           aria-expanded={showHelp}
@@ -547,6 +595,18 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
             Got it
           </button>
         </div>
+      )}
+
+      {pickingSets && (
+        <ScanSetPicker
+          options={setOptions?.length ? setOptions : setCodes.map((code) => ({ code, name: code }))}
+          selected={pickedSets}
+          onChange={(codes) => {
+            setPickedSets(codes);
+            writePickedSets(codes);
+          }}
+          onClose={() => setPickingSets(false)}
+        />
       )}
 
       {calibrating && (

@@ -59,7 +59,11 @@ function cardsForSet(setCode) {
 let commitInFlight = false;
 
 export const ScanService = {
-  async scan(imageBase64, setCodes) {
+  /**
+   * @param {string[]} [options.hintSets] sets picked in the scanner, tried when
+   *   the printed set code was misread or illegible
+   */
+  async scan(imageBase64, setCodes, { hintSets = [] } = {}) {
     if (!isConfigured) return { status: 'failed', error: 'unknown' };
 
     let read;
@@ -80,21 +84,37 @@ export const ScanService = {
       }
     }
 
-    const loaded = { [set]: cards };
-    const first = resolveScan(read, { setCodes, getCards: (code) => loaded[code] ?? null });
-    const related = set ? relatedSetCodes(set, setCodes) : [];
-    if (first.status !== 'unidentified' || !related.length
-      || !['no-such-card', 'name-mismatch'].includes(first.reason)) {
+    const loaded = set ? { [set]: cards } : {};
+    const hints = hintSets.filter((code) => setCodes.includes(code));
+    const resolve = () => resolveScan(read, { setCodes, getCards: (code) => loaded[code] ?? null, hintSets: hints });
+
+    const first = resolve();
+    if (first.status !== 'unidentified' || !['no-such-card', 'name-mismatch', 'unknown-set'].includes(first.reason)) {
       return first;
     }
 
-    // Promo sets print their parent's code: only now load the sets that
-    // extend it, and resolve again. A set that fails to load is skipped.
-    const results = await Promise.allSettled(related.map((code) => cardsForSet(code)));
-    related.forEach((code, i) => {
+    // Only now load what a fallback needs: the promo sets printed with this
+    // code, and the picked sets with their promo sets. A set that fails to
+    // load is skipped.
+    const extra = new Set(set ? relatedSetCodes(set, setCodes) : []);
+    for (const code of hints) {
+      extra.add(code);
+      relatedSetCodes(code, setCodes).forEach((c) => extra.add(c));
+    }
+    Object.keys(loaded).forEach((code) => extra.delete(code));
+    if (extra.size === 0) return first;
+
+    const codes = [...extra];
+    const results = await Promise.allSettled(codes.map((code) => cardsForSet(code)));
+    codes.forEach((code, i) => {
       if (results[i].status === 'fulfilled') loaded[code] = results[i].value;
     });
-    return resolveScan(read, { setCodes, getCards: (code) => loaded[code] ?? null });
+    return resolve();
+  },
+
+  /** Warm the per-session set cache (e.g. for sets picked in the scanner). Never throws. */
+  async prefetchSets(codes) {
+    await Promise.allSettled(codes.map((code) => cardsForSet(code)));
   },
 
   /** Finds the card in a rig-calibration photo. Never throws. */
