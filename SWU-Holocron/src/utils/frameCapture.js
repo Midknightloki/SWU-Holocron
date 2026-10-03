@@ -13,6 +13,8 @@
  *
  * @environment:web-media
  */
+import { cropPixels } from './rigCalibration';
+
 export const CAPTURE_MAX_EDGE = 2048;
 const JPEG_QUALITY = 0.85;
 
@@ -21,22 +23,40 @@ export function fitWithin(width, height, maxEdge) {
   return { width: Math.round(width * scale), height: Math.round(height * scale) };
 }
 
-/** Draw a bitmap or video onto a canvas at the given size; base64 JPEG, no prefix. */
-export function encodeJpeg(source, { width, height }) {
+/**
+ * Draw a bitmap or video onto a canvas at the given size; base64 JPEG, no prefix.
+ * With a region, only that part of the source is drawn (the calibrated crop).
+ */
+export function encodeJpeg(source, { width, height }, region) {
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
-  canvas.getContext('2d').drawImage(source, 0, 0, width, height);
+  const ctx = canvas.getContext('2d');
+  if (region) {
+    ctx.drawImage(source, region.sx, region.sy, region.sw, region.sh, 0, 0, width, height);
+  } else {
+    ctx.drawImage(source, 0, 0, width, height);
+  }
   return canvas.toDataURL('image/jpeg', JPEG_QUALITY).split(',')[1] ?? null;
 }
 
+// Encode the whole source, or only the calibrated region of it, scaled to the
+// long-edge limit. Returns the image and whether it was cropped.
+function encodeWithCrop(source, width, height, crop, sourceKind, encode) {
+  const rect = crop(sourceKind, width, height);
+  if (!rect) return { image: encode(source, fitWithin(width, height, CAPTURE_MAX_EDGE)), cropped: false };
+  const region = cropPixels(rect, width, height);
+  return { image: encode(source, fitWithin(region.sw, region.sh, CAPTURE_MAX_EDGE), region), cropped: true };
+}
+
 /**
- * @returns {Promise<{ image: string|null, source: 'photo'|'video', width: number, height: number }>}
+ * @returns {Promise<{ image: string|null, source: 'photo'|'video', width: number, height: number, cropped: boolean }>}
  *   width/height are the camera's native size, for the scanner footer.
  */
 export async function capturePhoto({
   track,
   video,
+  crop = () => null,
   ImageCaptureCtor = globalThis.ImageCapture,
   decodeBlob = (blob) => createImageBitmap(blob),
   encode = encodeJpeg,
@@ -47,9 +67,9 @@ export async function capturePhoto({
       const bitmap = await decodeBlob(blob);
       // Read the size before close(): a released ImageBitmap reports 0x0.
       const { width, height } = bitmap;
-      const image = encode(bitmap, fitWithin(width, height, CAPTURE_MAX_EDGE));
+      const { image, cropped } = encodeWithCrop(bitmap, width, height, crop, 'photo', encode);
       bitmap.close?.();
-      if (image) return { image, source: 'photo', width, height };
+      if (image) return { image, source: 'photo', width, height, cropped };
     } catch {
       // takePhoto can reject (camera busy, unsupported settings): use a frame.
     }
@@ -57,6 +77,7 @@ export async function capturePhoto({
 
   const width = video?.videoWidth ?? 0;
   const height = video?.videoHeight ?? 0;
-  if (!width || !height) return { image: null, source: 'video', width: 0, height: 0 };
-  return { image: encode(video, fitWithin(width, height, CAPTURE_MAX_EDGE)), source: 'video', width, height };
+  if (!width || !height) return { image: null, source: 'video', width: 0, height: 0, cropped: false };
+  const { image, cropped } = encodeWithCrop(video, width, height, crop, 'video', encode);
+  return { image, source: 'video', width, height, cropped };
 }
