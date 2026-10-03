@@ -92,6 +92,47 @@ describe('cardCache', () => {
     });
   });
 
+  describe('when IndexedDB misbehaves', () => {
+    // A hung open (WebKit has shipped this) used to mean a card-load spinner
+    // forever; a failed open was cached for the whole session.
+    const hungFactory = { open: () => ({}) }; // never fires success/error/blocked
+
+    it('gives up on a hung open instead of waiting forever', async () => {
+      const hung = createCardCache({ indexedDB: hungFactory, openTimeoutMs: 20 });
+      await expect(hung.get('SOR', null)).resolves.toBeNull();
+      await expect(hung.set('SOR', SOR)).resolves.toBe(false);
+    });
+
+    it('retries the open after a failure rather than caching it for the session', async () => {
+      const real = new IDBFactory();
+      let calls = 0;
+      const flaky = {
+        open: (...args) => {
+          calls += 1;
+          if (calls === 1) {
+            const req = {};
+            setTimeout(() => req.onerror?.(), 0);
+            return req;
+          }
+          return real.open(...args);
+        },
+      };
+      const cache2 = createCardCache({ indexedDB: flaky, openTimeoutMs: 200 });
+      expect(await cache2.set('SOR', SOR)).toBe(false);
+      expect(await cache2.set('SOR', SOR)).toBe(true);
+      expect(await cache2.get('SOR', null)).toEqual(SOR);
+    });
+
+    it('reopens after the browser closes the connection', async () => {
+      const factory = new IDBFactory();
+      const cache3 = createCardCache({ indexedDB: factory });
+      await cache3.set('SOR', SOR);
+      cache3._connectionForTests().then((db) => db.onclose?.());
+      await Promise.resolve();
+      expect(await cache3.get('SOR', null)).toEqual(SOR);
+    });
+  });
+
   describe('without IndexedDB', () => {
     it('reports misses and failed saves instead of throwing', async () => {
       const noIdb = createCardCache({ indexedDB: undefined });

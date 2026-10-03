@@ -18,6 +18,10 @@ export const LEGACY_PREFIX = 'swu-cards-';
 const DB_NAME = 'swu-holocron';
 const DB_VERSION = 1;
 const STORE = 'cardSets';
+// IndexedDB can hang without ever firing success/error/blocked (WebKit has
+// shipped this). Give up quickly: the app just fetches the set instead.
+const OPEN_TIMEOUT_MS = 2000;
+const READ_TIMEOUT_MS = 2000;
 
 const defaultLocalStorage = () => {
   try {
@@ -32,29 +36,66 @@ const request = (req) => new Promise((resolve, reject) => {
   req.onerror = () => reject(req.error);
 });
 
-export function createCardCache({ indexedDB = globalThis.indexedDB } = {}) {
+const withTimeout = (promise, ms, fallback) => new Promise((resolve) => {
+  const timer = setTimeout(() => resolve(fallback), ms);
+  promise.then(
+    (value) => { clearTimeout(timer); resolve(value); },
+    () => { clearTimeout(timer); resolve(fallback); },
+  );
+});
+
+export function createCardCache({ indexedDB = globalThis.indexedDB, openTimeoutMs = OPEN_TIMEOUT_MS } = {}) {
   let dbPromise = null;
+
+  const openOnce = () => new Promise((resolve) => {
+    let settled = false;
+    const done = (db) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(db);
+    };
+    const timer = setTimeout(() => done(null), openTimeoutMs);
+    let req;
+    try {
+      req = indexedDB.open(DB_NAME, DB_VERSION);
+    } catch {
+      done(null);
+      return;
+    }
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains(STORE)) {
+        req.result.createObjectStore(STORE, { keyPath: 'setCode' });
+      }
+    };
+    req.onsuccess = () => {
+      const db = req.result;
+      // A late success after the timeout: don't leak the connection.
+      if (settled) {
+        db.close();
+        return;
+      }
+      // iOS drops connections when a PWA is backgrounded; a version bump in
+      // another tab must not be blocked by this one. Either way, forget the
+      // connection so the next call reopens.
+      db.onclose = () => { dbPromise = null; };
+      db.onversionchange = () => {
+        try { db.close(); } catch { /* already closed */ }
+        dbPromise = null;
+      };
+      done(db);
+    };
+    req.onerror = () => done(null);
+    req.onblocked = () => done(null);
+  });
 
   const open = () => {
     if (!indexedDB) return Promise.resolve(null);
     if (!dbPromise) {
-      dbPromise = new Promise((resolve) => {
-        let req;
-        try {
-          req = indexedDB.open(DB_NAME, DB_VERSION);
-        } catch {
-          resolve(null);
-          return;
-        }
-        req.onupgradeneeded = () => {
-          if (!req.result.objectStoreNames.contains(STORE)) {
-            req.result.createObjectStore(STORE, { keyPath: 'setCode' });
-          }
-        };
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => resolve(null);
-        req.onblocked = () => resolve(null);
-      });
+      const attempt = openOnce();
+      dbPromise = attempt;
+      // A failed or timed-out open is not cached for the whole session.
+      attempt.then((db) => { if (!db && dbPromise === attempt) dbPromise = null; });
     }
     return dbPromise;
   };
@@ -80,7 +121,11 @@ export function createCardCache({ indexedDB = globalThis.indexedDB } = {}) {
     const db = await open();
     if (!db) return null;
     try {
-      const record = await request(db.transaction(STORE, 'readonly').objectStore(STORE).get(setCode));
+      const record = await withTimeout(
+        request(db.transaction(STORE, 'readonly').objectStore(STORE).get(setCode)),
+        READ_TIMEOUT_MS,
+        null,
+      );
       return Array.isArray(record?.cards) ? record.cards : null;
     } catch {
       return null;
@@ -132,6 +177,11 @@ export function createCardCache({ indexedDB = globalThis.indexedDB } = {}) {
      * localStorage space it held. Run once at startup.
      * @returns {Promise<number>} how many sets were moved
      */
+    /** Test hook: the current connection promise. */
+    _connectionForTests() {
+      return open();
+    },
+
     async migrateFromLocalStorage(storage = defaultLocalStorage()) {
       if (!(await open())) return 0;
       let moved = 0;

@@ -42,6 +42,12 @@ describe('loadSet', () => {
     await expect(loadSet('SOR', { cache, fetchSet })).resolves.toEqual({ cards: sorted, source: 'Firestore' });
   });
 
+  it('returns fetched cards without waiting for the cache write', async () => {
+    const cache = { get: vi.fn(async () => null), set: vi.fn(() => new Promise(() => {})) };
+    const fetchSet = vi.fn(async () => ({ data: SOR, source: 'Firestore' }));
+    await expect(loadSet('SOR', { cache, fetchSet })).resolves.toEqual({ cards: sorted, source: 'Firestore' });
+  });
+
   it('still fetches when the cache read fails', async () => {
     const cache = { get: vi.fn(async () => { throw new Error('broken'); }), set: vi.fn(async () => true) };
     const fetchSet = vi.fn(async () => ({ data: SOR, source: 'Firestore' }));

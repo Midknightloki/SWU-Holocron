@@ -24,8 +24,10 @@ export async function loadSet(setCode, { force = false, cache = CardCache, fetch
 
   const { data, source } = await fetchSet(setCode);
   const cards = [...data].sort((a, b) => String(a.Number).localeCompare(String(b.Number), undefined, { numeric: true }));
+  // Cache in the background: the cards are ready now, and a slow or hung
+  // IndexedDB write must never hold them back.
   try {
-    await cache.set(setCode, cards);
+    Promise.resolve(cache.set(setCode, cards)).catch(() => {});
   } catch {
     // Not cached this time; it is fetched again next load.
   }
