@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { X, Sparkles, HelpCircle, Crosshair, ScanLine as AutoIcon } from 'lucide-react';
-import { calibratedGuide, clampRect, clearCalibration, cropFor, loadCalibration, saveCalibration, toStreamRect } from '../utils/rigCalibration';
+import { calibratedGuide, clampRect, clearCalibration, cropFor, loadCalibration, orientationOf, saveCalibration, toStreamRect } from '../utils/rigCalibration';
 import { initialAutoState, loadAutoSettings, saveAutoSettings, stepAuto } from '../utils/autoCapture';
 import { createFrameSampler } from '../utils/frameSampler';
 import AutoSettings from './AutoSettings';
@@ -50,7 +50,15 @@ const AUTO_STATUS = {
   empty: 'Ready — slide a card in',
   arriving: 'Card coming in',
   captured: 'Scanned — remove card',
+  stuck: 'Scanned — remove card (tap here if the rig is empty)',
+  rotate: 'Rotate phone to match calibration',
 };
+// Ignore the camera's first second: after a (re)start it can show black or
+// mis-exposed frames for long enough to look like a settled card.
+const AUTO_WARMUP_MS = 1000;
+// "Remove card" this long suggests the baseline is wrong rather than a card
+// being left in place, so the chip offers a re-learn.
+const AUTO_STUCK_MS = 10000;
 
 const SETS_KEY = 'swu-scan-sets';
 
@@ -122,6 +130,10 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
   calibratingRef.current = calibrating;
   const previewRef = useRef(null);
   const [autoOn, setAutoOn] = useState(false);
+  const autoOnRef = useRef(false);
+  autoOnRef.current = autoOn;
+  const [autoCapturing, setAutoCapturing] = useState(false);
+  const cameraStartedAtRef = useRef(null);
   const [autoPhase, setAutoPhase] = useState('learning');
   const [autoSettings, setAutoSettings] = useState(() => loadAutoSettings(getStorage()));
   const [showAutoSettings, setShowAutoSettings] = useState(false);
@@ -194,6 +206,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
           return;
         }
         if (videoRef.current) videoRef.current.srcObject = stream;
+        cameraStartedAtRef.current = Date.now();
         const [track] = stream.getVideoTracks?.() ?? [];
         trackRef.current = track ?? null;
         // Best effort: keep refocusing as cards slide in. Unsupported → ignored.
@@ -242,9 +255,16 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
     setDraft((d) => applyResult(d, id, result));
   }, [setCodes, pickedSets, signal]);
 
-  const capture = useCallback(async () => {
+  const capture = useCallback(async (options) => {
     if (showAutoSettingsRef.current || pickingSetsRef.current || calibratingRef.current || helpOpenRef.current || quotaRef.current || cameraError || capturingRef.current) return;
     capturingRef.current = true;
+    // A tap (or Space) with Auto on: tell Auto this card is done, or it would
+    // settle a moment later and scan the same card again -- and commits add.
+    // (`options` is a click event for taps; only the auto loop passes { auto: true }.)
+    if (options?.auto !== true && autoOnRef.current && autoStateRef.current.phase !== 'learning') {
+      autoStateRef.current = { ...autoStateRef.current, phase: 'captured', capturedAt: Date.now(), stillSince: null, anchor: null };
+      setAutoPhase('captured');
+    }
     // Foil is read at the tap, not after the photo resolves.
     const isFoil = foilStack;
     let shot = null;
@@ -272,26 +292,47 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
   captureRef.current = capture;
 
   // Hands-free capture: sample the calibrated card area ~10x a second and let
-  // the reducer decide when a card has settled. Any open overlay, the daily
-  // limit, or a capture in flight skips the tick.
+  // the reducer decide when a card has settled. Any open overlay or the daily
+  // limit skips the tick. Sampling continues during a capture -- from
+  // 'captured' the reducer can only re-arm -- so a swap made during the
+  // exposure is still seen; a card that settles while a capture is in flight
+  // is held in 'arriving' and captured as soon as the camera is free.
   useEffect(() => {
     if (!autoOn || mode !== 'camera' || !calibration) return undefined;
     if (!samplerRef.current) samplerRef.current = createFrameSampler();
+    // The video may have restarted (e.g. back from Review): forget motion state.
+    autoStateRef.current = { ...autoStateRef.current, previous: null, anchor: null, stillSince: null };
     const timer = setInterval(() => {
       if (helpOpenRef.current || calibratingRef.current || pickingSetsRef.current
-        || showAutoSettingsRef.current || quotaRef.current || capturingRef.current) return;
+        || showAutoSettingsRef.current || quotaRef.current) return;
+      const now = Date.now();
+      if (cameraStartedAtRef.current === null || now - cameraStartedAtRef.current < AUTO_WARMUP_MS) return;
       const video = videoRef.current;
       const vw = video?.videoWidth;
       const vh = video?.videoHeight;
+      if (vw && vh && calibration.orientation !== orientationOf(vw, vh)) {
+        setAutoPhase('rotate');
+        return;
+      }
       const rect = vw && vh
         ? clampRect(toStreamRect(calibration.rect, vw / vh, calibration.aspect))
         : calibration.rect;
       const frame = samplerRef.current(video, rect);
       if (!frame) return;
-      const { state, event } = stepAuto(autoStateRef.current, frame, Date.now(), autoSettingsRef.current);
+      const { state, event } = stepAuto(autoStateRef.current, frame, now, autoSettingsRef.current);
+      if (event === 'capture' && capturingRef.current) {
+        // Camera busy: keep the card pending; it fires again once free.
+        autoStateRef.current = { ...state, phase: 'arriving' };
+        setAutoPhase('arriving');
+        return;
+      }
       autoStateRef.current = state;
-      setAutoPhase(state.phase);
-      if (event === 'capture') captureRef.current?.();
+      setAutoPhase(state.phase === 'captured' && now - (state.capturedAt ?? now) > AUTO_STUCK_MS ? 'stuck' : state.phase);
+      if (event === 'capture') {
+        setAutoCapturing(true);
+        Promise.resolve(captureRef.current?.({ auto: true }))
+          .finally(() => { if (mountedRef.current) setAutoCapturing(false); });
+      }
     }, AUTO_TICK_MS);
     return () => clearInterval(timer);
   }, [autoOn, mode, calibration]);
@@ -344,6 +385,9 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
     setCalibration(saved ?? { version: 1, ...cal, savedAt: Date.now() });
     setLastCropped(null);
     setCalibrating(false);
+    // A new card area makes the old empty-rig baseline meaningless.
+    autoStateRef.current = initialAutoState();
+    setAutoPhase('learning');
   }, []);
 
   const clearRig = useCallback(() => {
@@ -351,6 +395,8 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
     setCalibration(null);
     setLastCropped(null);
     setCalibrating(false);
+    // Auto needs a calibration: don't leave a dead toggle looking switched on.
+    setAutoOn(false);
   }, []);
 
   // Warm the picked sets' card data so the first card from them doesn't wait.
@@ -521,7 +567,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
           <button
             type="button"
             data-testid="auto-status"
-            aria-label={`Auto settings: ${AUTO_STATUS[autoPhase]}`}
+            aria-label={`Auto settings: ${autoCapturing ? 'Capturing… hold still' : AUTO_STATUS[autoPhase]}`}
             onClick={(e) => { e.stopPropagation(); setShowAutoSettings(true); }}
             className={`absolute top-3 left-3 px-3 py-1 rounded-full text-xs font-bold border ${
               autoPhase === 'captured' ? 'bg-green-500/20 border-green-400 text-green-300'
@@ -529,7 +575,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
                   : 'bg-gray-900/80 border-gray-700 text-gray-200'
             }`}
           >
-            {AUTO_STATUS[autoPhase]}
+            {autoCapturing ? 'Capturing… hold still' : AUTO_STATUS[autoPhase]}
           </button>
         )}
         {level && (

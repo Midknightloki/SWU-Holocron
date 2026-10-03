@@ -28,21 +28,51 @@ export function frameDiff(a, b) {
 // Float baseline: with whole-number pixels, a 5% blend toward a frame one
 // level brighter rounds back to the old value, so the baseline would never
 // follow slow lighting drift at all.
+const mean = (a) => {
+  let sum = 0;
+  for (let i = 0; i < a.length; i += 1) sum += a[i];
+  return sum / a.length;
+};
+
+/**
+ * Like frameDiff, but blind to an overall brightness shift: each frame's mean
+ * is subtracted first. Presence uses this, so a room light switched on (or the
+ * camera re-metering its exposure) doesn't read as a card arriving -- which
+ * used to capture the empty rig and then stall Auto, because the rig never
+ * matched the old baseline again.
+ */
+export function shapeDiff(a, b) {
+  if (!a || !b || a.length !== b.length || a.length === 0) return 1;
+  const ma = mean(a);
+  const mb = mean(b);
+  let sum = 0;
+  for (let i = 0; i < a.length; i += 1) sum += Math.abs((a[i] - ma) - (b[i] - mb));
+  return Math.min(1, sum / (a.length * 255));
+}
+
 const blend = (base, frame) => {
   const out = new Float32Array(base.length);
   for (let i = 0; i < base.length; i += 1) out[i] = base[i] * (1 - BASELINE_BLEND) + frame[i] * BASELINE_BLEND;
   return out;
 };
 
-export const initialAutoState = () => ({ phase: 'learning', baseline: null, previous: null, stillSince: null });
+export const initialAutoState = () => ({
+  phase: 'learning', baseline: null, previous: null, anchor: null, stillSince: null, capturedAt: null,
+});
 
 export function stepAuto(state, frame, now, settings = DEFAULT_AUTO_SETTINGS) {
   const { presence, stillness, settleMs } = settings;
-  const moving = !state.previous || frameDiff(frame, state.previous) > stillness;
+  // Still means unchanged since the still period began (the anchor), not just
+  // since the last tick: a card slid in slowly changes little per tick and was
+  // captured part-way in before.
+  const moving = !state.previous
+    || frameDiff(frame, state.previous) > stillness
+    || (state.anchor !== null && frameDiff(frame, state.anchor) > stillness);
+  const anchor = moving ? frame : (state.anchor ?? frame);
   const stillSince = moving ? null : (state.stillSince ?? now);
   const settled = stillSince !== null && now - stillSince >= settleMs;
-  const next = { ...state, previous: frame, stillSince };
-  const present = () => frameDiff(frame, state.baseline) > presence;
+  const next = { ...state, previous: frame, anchor, stillSince };
+  const present = () => shapeDiff(frame, state.baseline) > presence;
 
   switch (state.phase) {
     case 'learning':
@@ -51,14 +81,16 @@ export function stepAuto(state, frame, now, settings = DEFAULT_AUTO_SETTINGS) {
         : { state: next, event: null };
 
     case 'empty':
-      if (present()) return { state: { ...next, phase: 'arriving' }, event: null };
+      // Arriving starts its own stillness clock: one carried over from the empty
+      // rig would let a capture fire the instant presence crosses the line.
+      if (present()) return { state: { ...next, phase: 'arriving', stillSince: null, anchor: frame }, event: null };
       // Still and empty: let the baseline follow slow lighting changes.
       return { state: { ...next, baseline: moving ? state.baseline : blend(state.baseline, frame) }, event: null };
 
     case 'arriving':
       if (!settled) return { state: next, event: null };
       return present()
-        ? { state: { ...next, phase: 'captured' }, event: 'capture' }
+        ? { state: { ...next, phase: 'captured', capturedAt: now }, event: 'capture' }
         : { state: { ...next, phase: 'empty' }, event: null };
 
     case 'captured':

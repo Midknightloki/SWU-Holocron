@@ -21,10 +21,11 @@ vi.mock('../../utils/frameSampler', () => ({
   },
 }));
 vi.mock('../RigCalibration', () => ({
-  default: ({ onSave, onClose, onTakePhoto }) => (
+  default: ({ onSave, onClose, onTakePhoto, onClear }) => (
     <div role="dialog" aria-label="Calibrate rig">
       <button type="button" onClick={() => onSave({ rect: { x: 0.2, y: 0.1, w: 0.6, h: 0.8 }, source: 'photo', orientation: 'portrait' })}>save-mock</button>
       <button type="button" onClick={onClose}>close-mock</button>
+      <button type="button" onClick={onClear}>clear-mock</button>
       <button
         type="button"
         onClick={async (e) => {
@@ -377,9 +378,25 @@ describe('CardScanner', () => {
   });
 
   describe('auto mode', () => {
-    const F = (v) => new Uint8Array(16).fill(v);
+    // Structured scenes: presence ignores overall brightness, so flat frames
+    // would all look alike. 100 = empty rig (paper + ruler), 200 = a card,
+    // 0 = a black frame (camera warming up).
+    const SCENE = {
+      100: [...Array(12).fill(180), ...Array(4).fill(40)],
+      200: [40, 40, 200, 200, 40, 200, 40, 200, 200, 40, 40, 200, 40, 40, 200, 40],
+      0: Array(16).fill(0),
+    };
+    const F = (v) => Uint8Array.from(SCENE[v]);
     const many = (n, v) => Array.from({ length: n }, () => F(v));
-    const handFrames = (n) => Array.from({ length: n }, (_, i) => F(i % 2 ? 30 : 70));
+    const handFrames = (n) => Array.from({ length: n }, (_, i) => Uint8Array.from({ length: 16 }, (_, j) => ((i + j) % 2 ? 30 : 110)));
+    // Auto ignores the first second after the camera (re)starts.
+    const warm = () => tick(10);
+    const enableAndLearn = async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Auto capture' }));
+      await warm();
+      sampler.queue.push(...many(8, 100));
+      await tick(8);
+    };
     const CAL = JSON.stringify({ version: 1, rect: { x: 0.2, y: 0.1, w: 0.6, h: 0.8 }, source: 'photo', orientation: 'portrait', savedAt: 1 });
     const tick = async (n) => {
       for (let i = 0; i < n; i += 1) {
@@ -403,6 +420,7 @@ describe('CardScanner', () => {
       renderScanner();
       fireEvent.click(screen.getByRole('button', { name: 'Auto capture' }));
       expect(screen.getByTestId('auto-status')).toHaveTextContent(/learning/i);
+      await warm();
       sampler.queue.push(...many(8, 100));
       await tick(8);
       expect(screen.getByTestId('auto-status')).toHaveTextContent(/ready/i);
@@ -426,15 +444,113 @@ describe('CardScanner', () => {
     it('opens auto settings from the chip, saves changes, and re-learns', async () => {
       rigStored = CAL;
       renderScanner();
-      fireEvent.click(screen.getByRole('button', { name: 'Auto capture' }));
-      sampler.queue.push(...many(8, 100));
-      await tick(8);
+      await enableAndLearn();
       fireEvent.click(screen.getByRole('button', { name: /^Auto settings/ }));
       fireEvent.change(screen.getByLabelText('Settle time'), { target: { value: '900' } });
       expect(localStorage.setItem).toHaveBeenCalledWith('swu-scan-auto', expect.stringContaining('"settleMs":900'));
       fireEvent.click(screen.getByRole('button', { name: 'Re-learn empty rig' }));
       fireEvent.click(screen.getByRole('button', { name: 'Done' }));
       expect(screen.getByTestId('auto-status')).toHaveTextContent(/learning/i);
+    });
+
+    it('a habitual tap with Auto on does not scan the card twice', async () => {
+      rigStored = CAL;
+      renderScanner();
+      await enableAndLearn();
+      sampler.queue.push(...handFrames(3));
+      await tick(3);
+      pressSpace();
+      await act(async () => {});
+      sampler.queue.push(...many(20, 200));
+      await tick(20);
+      expect(mocks.capturePhoto).toHaveBeenCalledTimes(1);
+    });
+
+    it('says "Capturing" until the photo is taken, then "remove card"', async () => {
+      rigStored = CAL;
+      let finish;
+      mocks.capturePhoto.mockImplementation(() => new Promise((r) => { finish = r; }));
+      renderScanner();
+      await enableAndLearn();
+      sampler.queue.push(...handFrames(3), ...many(8, 200));
+      await tick(11);
+      expect(screen.getByTestId('auto-status')).toHaveTextContent(/capturing/i);
+      await act(async () => { finish(PHOTO); });
+      expect(screen.getByTestId('auto-status')).toHaveTextContent(/remove card/i);
+    });
+
+    it('catches the next card when it settles while a capture is still in flight', async () => {
+      rigStored = CAL;
+      let finish;
+      mocks.capturePhoto
+        .mockImplementationOnce(() => new Promise((r) => { finish = r; }))
+        .mockResolvedValue(PHOTO);
+      renderScanner();
+      await enableAndLearn();
+      // Card 1 settles and capture starts; the swap happens during the exposure.
+      sampler.queue.push(...handFrames(3), ...many(8, 200), ...handFrames(2), ...many(8, 100), ...handFrames(3), ...many(8, 200));
+      await tick(32);
+      expect(mocks.capturePhoto).toHaveBeenCalledTimes(1);
+      await act(async () => { finish(PHOTO); });
+      sampler.queue.push(...many(3, 200));
+      await tick(3);
+      expect(mocks.capturePhoto).toHaveBeenCalledTimes(2);
+    });
+
+    it('re-learns the empty rig after a recalibration', async () => {
+      rigStored = CAL;
+      renderScanner();
+      await enableAndLearn();
+      expect(screen.getByTestId('auto-status')).toHaveTextContent(/ready/i);
+      fireEvent.click(screen.getByRole('button', { name: 'Calibrate rig' }));
+      fireEvent.click(screen.getByText('save-mock'));
+      expect(screen.getByTestId('auto-status')).toHaveTextContent(/learning/i);
+    });
+
+    it('switches Auto off when the calibration is cleared', async () => {
+      rigStored = CAL;
+      renderScanner();
+      await enableAndLearn();
+      fireEvent.click(screen.getByRole('button', { name: 'Calibrate rig' }));
+      fireEvent.click(screen.getByText('clear-mock'));
+      expect(screen.getByRole('button', { name: 'Auto capture' })).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('pauses with a rotate hint when the phone is turned away from the calibration', async () => {
+      rigStored = CAL; // portrait
+      const { container } = renderScanner();
+      const video = container.querySelector('video');
+      Object.defineProperty(video, 'videoWidth', { value: 1920, configurable: true });
+      Object.defineProperty(video, 'videoHeight', { value: 1080, configurable: true });
+      fireEvent.click(screen.getByRole('button', { name: 'Auto capture' }));
+      await warm();
+      sampler.queue.push(...many(8, 100));
+      await tick(8);
+      expect(screen.getByTestId('auto-status')).toHaveTextContent(/rotate/i);
+      expect(sampler.fn).not.toHaveBeenCalled();
+    });
+
+    it('ignores the camera warming up after returning from Review', async () => {
+      rigStored = CAL;
+      renderScanner();
+      await enableAndLearn();
+      fireEvent.click(screen.getByRole('button', { name: 'Review (0)' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Back to camera' }));
+      await act(async () => {});
+      const before = sampler.fn.mock.calls.length;
+      sampler.queue.push(...many(9, 0));
+      await tick(9);
+      expect(sampler.fn.mock.calls.length).toBe(before);
+      expect(mocks.capturePhoto).not.toHaveBeenCalled();
+    });
+
+    it('hints at re-learning when "remove card" has lasted a long time', async () => {
+      rigStored = CAL;
+      renderScanner();
+      await enableAndLearn();
+      sampler.queue.push(...handFrames(3), ...many(120, 200));
+      await tick(123);
+      expect(screen.getByTestId('auto-status')).toHaveTextContent(/tap here if the rig is empty/i);
     });
 
     it('turning Auto off stops sampling', async () => {
