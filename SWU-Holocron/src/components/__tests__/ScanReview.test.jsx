@@ -83,6 +83,31 @@ describe('ScanReview', () => {
     expect(onChange.mock.calls[0][0].rows[0]).toMatchObject({ status: 'matched', set: 'SHD', number: '007' });
   });
 
+  it('opens a captured photo full size and closes it again', async () => {
+    const user = userEvent.setup();
+    renderReview(build([['u', { status: 'unidentified', reason: 'unreadable', read: null }]]));
+    await user.click(screen.getByRole('button', { name: 'View photo' }));
+    const viewer = screen.getByRole('dialog', { name: 'Photo' });
+    expect(within(viewer).getByRole('img')).toHaveAttribute('src', 'data:image/jpeg;base64,p-u');
+    await user.click(within(viewer).getByRole('button', { name: 'Close photo' }));
+    expect(screen.queryByRole('dialog', { name: 'Photo' })).not.toBeInTheDocument();
+  });
+
+  it('shows the captured photo for a matched card, so a match can be checked', async () => {
+    const user = userEvent.setup();
+    renderReview(build([['a', LUKE]]));
+    await user.click(screen.getByRole('button', { name: 'View photo of Luke Skywalker' }));
+    expect(within(screen.getByRole('dialog', { name: 'Photo' })).getByRole('img')).toHaveAttribute('src', 'data:image/jpeg;base64,p-a');
+  });
+
+  it('falls back to the card image when the photo was not kept', async () => {
+    const user = userEvent.setup();
+    const draft = { rows: [{ id: 'a', status: 'matched', set: 'SOR', number: '012', name: 'Luke Skywalker', isFoil: false, qty: 1, photo: null, hadPhoto: true }] };
+    renderReview(draft);
+    await user.click(screen.getByRole('button', { name: 'View photo of Luke Skywalker' }));
+    expect(within(screen.getByRole('dialog', { name: 'Photo' })).getByRole('img').getAttribute('src')).toContain('/cards/SOR/012');
+  });
+
   it('says so when a photo was lost to a reload', () => {
     const draft = { rows: [{ id: 'u', status: 'unidentified', reason: 'unreadable', read: null, isFoil: false, qty: 1, photo: null, hadPhoto: true }] };
     renderReview(draft);

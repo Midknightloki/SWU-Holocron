@@ -64,10 +64,12 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
   const [mode, setMode] = useState('camera');
   const [foilStack, setFoilStack] = useState(false);
   const [showHelp, setShowHelp] = useState(() => !readHelpSeen());
-  const [flash, setFlash] = useState(false);
+  const [flash, setFlash] = useState(null); // null | 'success' | 'error'
+  // Whether the last capture was cropped to the rig calibration; drives the
+  // amber "not cropped" state of the calibrate button.
+  const [lastCropped, setLastCropped] = useState(null);
   const [quota, setQuota] = useState(null);
   const [cameraError, setCameraError] = useState(null);
-  const [lastCapture, setLastCapture] = useState(null);
   const [level, setLevel] = useState(null);
   const [committing, setCommitting] = useState(false);
   const [commitError, setCommitError] = useState(null);
@@ -98,6 +100,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
   const videoRef = useRef(null);
   const mountedRef = useRef(false);
   const flashTimer = useRef(null);
+  const flashKindRef = useRef(null);
   const trackRef = useRef(null);
   // A real photo takes a moment; taps during it are ignored, not queued.
   const capturingRef = useRef(false);
@@ -159,25 +162,32 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
     };
   }, [mode]);
 
-  const signalProblem = useCallback(() => {
-    setFlash(true);
-    navigator.vibrate?.(150);
+  // Green on a good read, red on a problem. Only problems vibrate: on a rigid
+  // rig a buzz after every card could blur the next photo.
+  // Results arrive out of order, so a green flash never replaces a red one
+  // that is still showing: a problem must not be masked by the next card.
+  const signal = useCallback((kind) => {
+    if (kind === 'success' && flashKindRef.current === 'error') return;
+    flashKindRef.current = kind;
+    setFlash(kind);
+    if (kind === 'error') navigator.vibrate?.(150);
     clearTimeout(flashTimer.current);
     flashTimer.current = setTimeout(() => {
-      if (mountedRef.current) setFlash(false);
-    }, 600);
+      flashKindRef.current = null;
+      if (mountedRef.current) setFlash(null);
+    }, kind === 'error' ? 600 : 400);
   }, []);
 
   const runScan = useCallback(async (id, image) => {
     const result = await ScanService.scan(image, setCodes);
     if (!mountedRef.current) return;
-    if (result.status !== 'matched') signalProblem();
+    signal(result.status === 'matched' ? 'success' : 'error');
     if (result.error === 'quota') {
       quotaRef.current = { limit: result.limit, resetsAt: result.resetsAt };
       setQuota(quotaRef.current);
     }
     setDraft((d) => applyResult(d, id, result));
-  }, [setCodes, signalProblem]);
+  }, [setCodes, signal]);
 
   const capture = useCallback(async () => {
     if (calibratingRef.current || helpOpenRef.current || quotaRef.current || cameraError || capturingRef.current) return;
@@ -198,14 +208,14 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
     }
     if (!mountedRef.current) return;
     if (!shot?.image) {
-      signalProblem();
+      signal('error');
       return;
     }
-    setLastCapture({ source: shot.source, width: shot.width, height: shot.height, cropped: Boolean(shot.cropped) });
+    setLastCropped(Boolean(shot.cropped));
     const id = newId();
     setDraft((d) => addCapture(d, { id, isFoil, photo: shot.image }));
     runScan(id, shot.image);
-  }, [calibration, cameraError, foilStack, runScan, signalProblem]);
+  }, [calibration, cameraError, foilStack, runScan, signal]);
 
   useEffect(() => {
     if (mode !== 'camera') return undefined;
@@ -252,12 +262,14 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
     const saved = saveCalibration(getStorage(), cal);
     // Storage unavailable: keep it for this session anyway.
     setCalibration(saved ?? { version: 1, ...cal, savedAt: Date.now() });
+    setLastCropped(null);
     setCalibrating(false);
   }, []);
 
   const clearRig = useCallback(() => {
     clearCalibration(getStorage());
     setCalibration(null);
+    setLastCropped(null);
     setCalibrating(false);
   }, []);
 
@@ -355,62 +367,12 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
   }
 
   const calibratedStyle = calibratedGuide(calibration, view);
+  // Calibrated, yet the last capture went out full frame: the only live sign
+  // that cropping has silently stopped applying.
+  const cropMissed = Boolean(calibration) && lastCropped === false;
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-black text-gray-100">
-      <div className="flex flex-wrap items-center gap-2 px-4 py-3 bg-gray-900/90 border-b border-gray-800">
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close scanner"
-          className="p-2 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white"
-        >
-          <X size={20} />
-        </button>
-        <button
-          type="button"
-          aria-pressed={foilStack}
-          onClick={() => setFoilStack((v) => !v)}
-          className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-bold border ${
-            foilStack
-              ? 'bg-yellow-500/20 border-yellow-500 text-yellow-400'
-              : 'bg-gray-800 border-gray-700 text-gray-400'
-          }`}
-        >
-          <Sparkles size={14} aria-hidden="true" />Foil stack
-        </button>
-        <button
-          type="button"
-          aria-label="How to scan"
-          title="How to scan"
-          aria-expanded={showHelp}
-          onClick={() => (showHelp ? dismissHelp() : setShowHelp(true))}
-          className="p-2 rounded-lg border bg-gray-800 border-gray-700 text-gray-400 hover:text-white"
-        >
-          <HelpCircle size={18} aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          aria-label="Calibrate rig"
-          title="Calibrate for your rig"
-          onClick={() => setCalibrating(true)}
-          className={`p-2 rounded-lg border ${
-            calibration
-              ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300'
-              : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white'
-          }`}
-        >
-          <Crosshair size={18} aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          onClick={() => setMode('review')}
-          className="ml-auto px-3 py-2 rounded-lg bg-yellow-500 hover:bg-yellow-400 text-black text-sm font-bold"
-        >
-          Review ({total})
-        </button>
-      </div>
-
       <div
         ref={previewRef}
         data-testid="scan-preview"
@@ -467,7 +429,13 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
             />
           </div>
         )}
-        {flash && <div data-testid="scan-flash" className="pointer-events-none absolute inset-0 bg-red-600/40" />}
+        {flash && (
+          <div
+            data-testid="scan-flash"
+            data-kind={flash}
+            className={`pointer-events-none absolute inset-0 ${flash === 'success' ? 'bg-green-500/35' : 'bg-red-600/40'}`}
+          />
+        )}
         {cameraError && (
           <div role="alert" className="absolute inset-0 flex items-center justify-center p-6 text-center bg-black/80">
             {cameraError}
@@ -481,11 +449,84 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
         )}
       </div>
 
+      {/* Controls at the bottom, within thumb reach of a phone in a stand. */}
+      <div
+        data-testid="scanner-controls"
+        className="flex flex-wrap items-center gap-2 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-gray-900/90 border-t border-gray-800"
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close scanner"
+          className="p-2 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white"
+        >
+          <X size={20} />
+        </button>
+        <button
+          type="button"
+          aria-pressed={foilStack}
+          onClick={() => setFoilStack((v) => !v)}
+          className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-bold border ${
+            foilStack
+              ? 'bg-yellow-500/20 border-yellow-500 text-yellow-400'
+              : 'bg-gray-800 border-gray-700 text-gray-400'
+          }`}
+        >
+          <Sparkles size={14} aria-hidden="true" />Foil stack
+        </button>
+        <button
+          type="button"
+          aria-label="How to scan"
+          title="How to scan"
+          aria-expanded={showHelp}
+          onClick={() => (showHelp ? dismissHelp() : setShowHelp(true))}
+          className="p-2 rounded-lg border bg-gray-800 border-gray-700 text-gray-400 hover:text-white"
+        >
+          <HelpCircle size={18} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          aria-label="Calibrate rig"
+          title={cropMissed
+            ? 'Last photo was not cropped (video frame or phone rotated) — tap to recalibrate'
+            : 'Calibrate for your rig'}
+          data-crop={cropMissed ? 'missed' : undefined}
+          onClick={() => setCalibrating(true)}
+          className={`p-2 rounded-lg border ${
+            cropMissed
+              ? 'bg-amber-500/20 border-amber-400 text-amber-300'
+              : calibration
+                ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300'
+                : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white'
+          }`}
+        >
+          <Crosshair size={18} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          aria-label={`Review (${total})`}
+          title={attention > 0 ? `${attention} need attention` : undefined}
+          onClick={() => setMode('review')}
+          className="relative ml-auto px-3 py-2 rounded-lg bg-yellow-500 hover:bg-yellow-400 text-black text-sm font-bold"
+        >
+          Review ({total})
+          {attention > 0 && (
+            <span
+              data-testid="review-badge"
+              aria-hidden="true"
+              className="absolute -top-2 -right-2 min-w-[1.25rem] h-5 px-1 rounded-full bg-red-600 text-white text-xs font-bold flex items-center justify-center"
+            >
+              {attention}
+            </span>
+          )}
+        </button>
+      </div>
+
       {showHelp && (
         <div
           role="dialog"
           aria-label="How to scan"
-          className="absolute inset-x-4 top-20 z-10 p-4 rounded-xl bg-gray-900/95 border border-gray-700 text-sm text-gray-200 shadow-xl"
+          className="absolute inset-x-4 top-4 z-10 p-4 rounded-xl bg-gray-900/95 border border-gray-700 text-sm text-gray-200 shadow-xl"
         >
           <h3 className="font-bold text-white mb-2">How to scan</h3>
           <ol className="list-decimal pl-5 space-y-1">
@@ -518,17 +559,6 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
         />
       )}
 
-      <div className="flex items-center gap-4 px-4 py-3 bg-gray-900/90 border-t border-gray-800 text-sm text-gray-400">
-        <span>{total} scanned</span>
-        {lastCapture && (
-          <span className="text-gray-500">
-            {lastCapture.source} {lastCapture.width}×{lastCapture.height} · {lastCapture.cropped ? 'cropped' : 'full frame'}
-          </span>
-        )}
-        {counts.reading > 0 && <span>{counts.reading} reading…</span>}
-        {attention > 0 && <span className="text-red-400">{attention} need attention</span>}
-        <span className="ml-auto hidden sm:inline">Tap or press Space to capture</span>
-      </div>
     </div>
   );
 }

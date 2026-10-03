@@ -137,7 +137,7 @@ describe('CardScanner', () => {
     mocks.scan.mockResolvedValue({ status: 'unidentified', reason: 'unreadable', read: null });
     renderScanner();
     pressSpace();
-    expect(await screen.findByTestId('scan-flash')).toBeInTheDocument();
+    expect(await screen.findByTestId('scan-flash')).toHaveAttribute('data-kind', 'error');
   });
 
   it('flashes when the frame cannot be captured, without calling the function', async () => {
@@ -188,10 +188,84 @@ describe('CardScanner', () => {
     await waitFor(() => expect(mocks.scan).toHaveBeenCalledTimes(1));
   });
 
-  it('shows which capture path ran and at what size', async () => {
+  it('has no status footer: counts live on the Review button', async () => {
     renderScanner();
     pressSpace();
-    expect(await screen.findByText('photo 4080×3072 · full frame')).toBeInTheDocument();
+    await screen.findByRole('button', { name: 'Review (1)' });
+    expect(screen.queryByText(/scanned/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/reading/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/photo 4080/)).not.toBeInTheDocument();
+  });
+
+  it('puts the controls in a bar below the preview, within thumb reach', () => {
+    renderScanner();
+    const controls = screen.getByTestId('scanner-controls');
+    expect(controls).toContainElement(screen.getByRole('button', { name: 'Close scanner' }));
+    expect(controls).toContainElement(screen.getByRole('button', { name: 'Review (0)' }));
+    expect(screen.getByTestId('scan-preview').compareDocumentPosition(controls) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('badges the Review button with how many cards need attention', async () => {
+    mocks.scan.mockResolvedValue({ status: 'unidentified', reason: 'unreadable', read: null });
+    renderScanner();
+    expect(screen.queryByTestId('review-badge')).not.toBeInTheDocument();
+    pressSpace();
+    expect(await screen.findByTestId('review-badge')).toHaveTextContent('1');
+  });
+
+  it('never lets a green flash cover a pending red one', async () => {
+    // Results arrive out of order at hand speed: an unreadable card's red flash
+    // must not be replaced by the next card's green one.
+    mocks.scan
+      .mockResolvedValueOnce({ status: 'unidentified', reason: 'unreadable', read: null })
+      .mockResolvedValueOnce(LUKE);
+    renderScanner();
+    pressSpace();
+    await flush();
+    pressSpace();
+    await flush();
+    await waitFor(() => expect(mocks.scan).toHaveBeenCalledTimes(2));
+    await flush();
+    expect(screen.getByTestId('scan-flash')).toHaveAttribute('data-kind', 'error');
+  });
+
+  it('turns the calibrate button amber when a calibrated rig capture was not cropped', async () => {
+    rigStored = JSON.stringify({ version: 1, rect: { x: 0.2, y: 0.1, w: 0.6, h: 0.8 }, source: 'photo', orientation: 'portrait', savedAt: 1 });
+    mocks.capturePhoto.mockResolvedValue({ ...PHOTO, source: 'video', cropped: false });
+    renderScanner();
+    const button = screen.getByRole('button', { name: 'Calibrate rig' });
+    expect(button).not.toHaveAttribute('data-crop', 'missed');
+    pressSpace();
+    await waitFor(() => expect(button).toHaveAttribute('data-crop', 'missed'));
+    expect(button.getAttribute('title')).toMatch(/not cropped/i);
+  });
+
+  it('clears the amber warning once the rig is recalibrated', async () => {
+    const user = userEvent.setup();
+    rigStored = JSON.stringify({ version: 1, rect: { x: 0.2, y: 0.1, w: 0.6, h: 0.8 }, source: 'photo', orientation: 'portrait', savedAt: 1 });
+    mocks.capturePhoto.mockResolvedValue({ ...PHOTO, source: 'video', cropped: false });
+    renderScanner();
+    pressSpace();
+    const button = screen.getByRole('button', { name: 'Calibrate rig' });
+    await waitFor(() => expect(button).toHaveAttribute('data-crop', 'missed'));
+    await user.click(button);
+    await user.click(screen.getByText('save-mock'));
+    expect(screen.getByRole('button', { name: 'Calibrate rig' })).not.toHaveAttribute('data-crop', 'missed');
+  });
+
+  it('keeps the calibrate button normal while captures are cropped', async () => {
+    rigStored = JSON.stringify({ version: 1, rect: { x: 0.2, y: 0.1, w: 0.6, h: 0.8 }, source: 'photo', orientation: 'portrait', savedAt: 1 });
+    mocks.capturePhoto.mockResolvedValue({ ...PHOTO, cropped: true });
+    renderScanner();
+    pressSpace();
+    await waitFor(() => expect(mocks.scan).toHaveBeenCalled());
+    expect(screen.getByRole('button', { name: 'Calibrate rig' })).not.toHaveAttribute('data-crop', 'missed');
+  });
+
+  it('flashes green when a card is read', async () => {
+    renderScanner();
+    pressSpace();
+    expect(await screen.findByTestId('scan-flash')).toHaveAttribute('data-kind', 'success');
   });
 
   it('marks the collector-number area inside the card guide', () => {
@@ -251,7 +325,6 @@ describe('CardScanner', () => {
     expect(crop('photo', 3024, 4032)).toEqual({ x: 0.176, y: 0.068, w: 0.648, h: 0.864 });
     expect(crop('video', 3024, 4032)).toBeNull();
     expect(crop('photo', 4032, 3024)).toBeNull();
-    expect(await screen.findByText('photo 3024×4032 · cropped')).toBeInTheDocument();
   });
 
   it('falls back to the centred guide when the preview size is unknown', () => {

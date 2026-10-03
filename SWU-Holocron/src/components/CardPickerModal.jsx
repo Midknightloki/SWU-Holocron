@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Search, X, Loader2 } from 'lucide-react';
 import { CardService } from '../services/CardService';
-import { getCardQuantities } from '../utils/collectionHelpers';
+import { getCardQuantities, isHorizontalCard } from '../utils/collectionHelpers';
 
 /**
  * CardPickerModal — full-screen overlay for selecting a card.
@@ -157,10 +157,12 @@ export default function CardPickerModal({ type, collectionData, onSelect, onClos
                 onClick={() => onSelect(card)}
                 className="w-full flex items-center gap-4 p-3 bg-gray-800 hover:bg-gray-700 border border-gray-700 hover:border-yellow-500 rounded-xl transition-all text-left"
               >
+                {/* Leaders and bases are landscape (88:63), as everywhere else in the app */}
                 <img
                   src={CardService.getCardImage(card.Set, card.Number)}
                   alt={card.Name}
-                  className="flex-shrink-0 w-16 h-[88px] object-cover rounded"
+                  data-orientation={isHorizontalCard(card.Type) ? 'horizontal' : 'vertical'}
+                  className={`flex-shrink-0 ${isHorizontalCard(card.Type) ? 'w-[88px] h-16' : 'w-16 h-[88px]'} object-cover rounded`}
                   onError={e => { e.target.style.display = 'none'; }}
                 />
                 <div className="flex-1 min-w-0">
