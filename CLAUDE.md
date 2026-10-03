@@ -259,6 +259,19 @@ name**. The client resolves the read against its own card data and rejects it
 unless the name matches the card at that number (`src/utils/scanResolve.js`) —
 that cross-check is what keeps a misread number from adding the wrong card.
 
+- Promo cards print their **parent** set's code: an SHDOP card says "SHD" with
+  its own promo number, which in SHD is a different card. When a read fails in
+  the printed set, `resolveScan` retries every registered set whose code starts
+  with it (SHDOP, SHDPQ, SHDPQJ, ...) — by prefix, because `parentSetId` is
+  missing on judge sets — and `ScanService` only downloads those sets then. The
+  name check guards every candidate.
+- **Set picker (hint, not filter).** The scanner's "Any set / SHD" button stores
+  picked set codes per device (`localStorage['swu-scan-sets']`). When the
+  printed set code was misread — in practice Gemini reading it as SOR — or left
+  empty, `resolveScan` falls back to the picked sets and their promo sets; it
+  never overrides a match on the printed set. `scanCard`'s prompt deliberately
+  lists no example set codes: the old "for example SOR, SHD, …" made SOR
+  Gemini's default guess, and it now leaves `set` empty rather than guessing.
 - The batch lives in `localStorage['swu-scan-draft-{uid}']` until the user
   approves it (`src/utils/scanDraft.js`). The key is per uid on purpose: a
   shared key would let one account's batch land in another's collection.
@@ -432,7 +445,7 @@ it is an ESLint *error*, so CI blocks on it.
 - `ASPECTS` is an array of objects, not strings — render `aspect.name`.
 - `localStorage` keys are `swu-`-prefixed: `swu-available-sets`,
   `swu-active-set`, `swu-has-visited`, `swu-sync-code`, `swu-holocron`,
-  `swu-scan-draft-{uid}`, `swu-scan-help-seen`, `swu-scan-rig`.
+  `swu-scan-draft-{uid}`, `swu-scan-help-seen`, `swu-scan-rig`, `swu-scan-sets`.
 - Leaders and Bases are horizontal: `aspect-[88/63] col-span-2`. Everything else
   is `aspect-[63/88] col-span-1` (`App.jsx:982`).
 - Owned counts render as a dual `3 +2F` — standard count prominent, foil count as

@@ -1181,6 +1181,7 @@ export default function App() {
             uid={user.uid}
             collectionRef={getCollectionRef(user, legacySyncCode, useLegacyPath)}
             setCodes={setRegistry.length > 0 ? setRegistry.map((s) => s.code) : availableSets}
+            setOptions={setRegistry}
             onClose={() => setIsScannerOpen(false)}
           />
         </ErrorBoundary>

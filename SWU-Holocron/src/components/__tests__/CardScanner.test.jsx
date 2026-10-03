@@ -2,14 +2,14 @@
  * @vitest-environment happy-dom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
 
-const mocks = vi.hoisted(() => ({ scan: vi.fn(), commitDraft: vi.fn(), capturePhoto: vi.fn() }));
+const mocks = vi.hoisted(() => ({ scan: vi.fn(), commitDraft: vi.fn(), capturePhoto: vi.fn(), prefetchSets: vi.fn() }));
 
 vi.mock('../../services/ScanService', () => ({
-  ScanService: { scan: mocks.scan, commitDraft: mocks.commitDraft },
+  ScanService: { scan: mocks.scan, commitDraft: mocks.commitDraft, prefetchSets: mocks.prefetchSets },
 }));
 vi.mock('../../utils/frameCapture', () => ({ capturePhoto: mocks.capturePhoto }));
 vi.mock('../CardPickerModal', () => ({ default: () => null }));
@@ -60,6 +60,7 @@ const flush = () => act(async () => { await new Promise((r) => setTimeout(r, 0))
 // Most tests start with the how-to already seen; the first-use test flips it.
 let helpSeen = true;
 let rigStored = null;
+let setsStored = null;
 
 const TRACK = { kind: 'video', stop: vi.fn() };
 const PHOTO = { image: 'IMG', source: 'photo', width: 4080, height: 3072 };
@@ -71,10 +72,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   helpSeen = true;
   rigStored = null;
+  setsStored = null;
+  mocks.prefetchSets.mockResolvedValue(undefined);
   localStorage.getItem.mockReset();
   localStorage.getItem.mockImplementation((key) => {
     if (key === 'swu-scan-help-seen') return helpSeen ? '1' : null;
     if (key === 'swu-scan-rig') return rigStored;
+    if (key === 'swu-scan-sets') return setsStored;
     return null;
   });
   mocks.capturePhoto.mockResolvedValue(PHOTO);
@@ -87,7 +91,7 @@ describe('CardScanner', () => {
     renderScanner();
     await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
     pressSpace();
-    await waitFor(() => expect(mocks.scan).toHaveBeenCalledWith('IMG', ['SOR']));
+    await waitFor(() => expect(mocks.scan).toHaveBeenCalledWith('IMG', ['SOR'], { hintSets: [] }));
     expect(await screen.findByRole('button', { name: 'Review (1)' })).toBeInTheDocument();
   });
 
@@ -362,6 +366,69 @@ describe('CardScanner', () => {
     // A second takePhoto on a busy track is what fell back to a video frame.
     expect(mocks.capturePhoto).toHaveBeenCalledTimes(1);
     await act(async () => { finish(PHOTO); });
+  });
+
+  describe('set picker', () => {
+    const OPTIONS = [
+      { code: 'SOR', name: 'Spark of Rebellion', isBaseSet: true },
+      { code: 'SHD', name: 'Shadows of the Galaxy', isBaseSet: true },
+      { code: 'SHDOP', name: 'Shadows of the Galaxy - OP Promo', isBaseSet: false },
+    ];
+    const renderWithSets = () => renderScanner({ setCodes: ['SOR', 'SHD', 'SHDOP'], setOptions: OPTIONS });
+
+    it('defaults to any set and sends no hints', async () => {
+      renderWithSets();
+      expect(screen.getByRole('button', { name: 'Choose sets' })).toHaveTextContent('Any set');
+      pressSpace();
+      await waitFor(() => expect(mocks.scan).toHaveBeenCalledWith('IMG', ['SOR', 'SHD', 'SHDOP'], { hintSets: [] }));
+    });
+
+    it('picks a set as a hint, remembers it, and warms its card data', async () => {
+      const user = userEvent.setup();
+      renderWithSets();
+      await user.click(screen.getByRole('button', { name: 'Choose sets' }));
+      const dialog = screen.getByRole('dialog', { name: 'Choose sets' });
+      await user.click(within(dialog).getByRole('button', { name: /SHD.*Shadows of the Galaxy$/ }));
+      await user.click(within(dialog).getByRole('button', { name: 'Done' }));
+      expect(screen.getByRole('button', { name: 'Choose sets' })).toHaveTextContent('SHD');
+      expect(localStorage.setItem).toHaveBeenCalledWith('swu-scan-sets', '["SHD"]');
+      expect(mocks.prefetchSets).toHaveBeenCalledWith(['SHD']);
+      pressSpace();
+      await waitFor(() => expect(mocks.scan).toHaveBeenCalledWith('IMG', ['SOR', 'SHD', 'SHDOP'], { hintSets: ['SHD'] }));
+    });
+
+    it('restores the picked sets and prefetches them on open', () => {
+      setsStored = '["SHD","SOR"]';
+      renderWithSets();
+      expect(screen.getByRole('button', { name: 'Choose sets' })).toHaveTextContent('SHD +1');
+      expect(mocks.prefetchSets).toHaveBeenCalledWith(['SHD', 'SOR']);
+    });
+
+    it('ignores stored codes that are no longer registered', () => {
+      setsStored = '["NOPE"]';
+      renderWithSets();
+      expect(screen.getByRole('button', { name: 'Choose sets' })).toHaveTextContent('Any set');
+    });
+
+    it('"Any set" clears the picks', async () => {
+      const user = userEvent.setup();
+      setsStored = '["SHD"]';
+      renderWithSets();
+      await user.click(screen.getByRole('button', { name: 'Choose sets' }));
+      await user.click(screen.getByRole('button', { name: 'Any set' }));
+      await user.click(screen.getByRole('button', { name: 'Done' }));
+      expect(screen.getByRole('button', { name: 'Choose sets' })).toHaveTextContent('Any set');
+      expect(localStorage.setItem).toHaveBeenCalledWith('swu-scan-sets', '[]');
+    });
+
+    it('does not capture while the picker is open', async () => {
+      const user = userEvent.setup();
+      renderWithSets();
+      await user.click(screen.getByRole('button', { name: 'Choose sets' }));
+      pressSpace();
+      await flush();
+      expect(mocks.capturePhoto).not.toHaveBeenCalled();
+    });
   });
 
   it('mentions calibration in the how-to', () => {

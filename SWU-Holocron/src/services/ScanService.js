@@ -2,7 +2,7 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import { doc, increment, writeBatch } from 'firebase/firestore';
 import { db, isConfigured } from '../firebase';
 import { CardService } from './CardService';
-import { normalizeSetCode, resolveScan } from '../utils/scanResolve';
+import { normalizeSetCode, relatedSetCodes, resolveScan } from '../utils/scanResolve';
 import { removeRows, toWrites } from '../utils/scanDraft';
 
 /**
@@ -59,7 +59,11 @@ function cardsForSet(setCode) {
 let commitInFlight = false;
 
 export const ScanService = {
-  async scan(imageBase64, setCodes) {
+  /**
+   * @param {string[]} [options.hintSets] sets picked in the scanner, tried when
+   *   the printed set code was misread or illegible
+   */
+  async scan(imageBase64, setCodes, { hintSets = [] } = {}) {
     if (!isConfigured) return { status: 'failed', error: 'unknown' };
 
     let read;
@@ -80,7 +84,37 @@ export const ScanService = {
       }
     }
 
-    return resolveScan(read, { setCodes, getCards: (code) => (code === set ? cards : null) });
+    const loaded = set ? { [set]: cards } : {};
+    const hints = hintSets.filter((code) => setCodes.includes(code));
+    const resolve = () => resolveScan(read, { setCodes, getCards: (code) => loaded[code] ?? null, hintSets: hints });
+
+    const first = resolve();
+    if (first.status !== 'unidentified' || !['no-such-card', 'name-mismatch', 'unknown-set'].includes(first.reason)) {
+      return first;
+    }
+
+    // Only now load what a fallback needs: the promo sets printed with this
+    // code, and the picked sets with their promo sets. A set that fails to
+    // load is skipped.
+    const extra = new Set(set ? relatedSetCodes(set, setCodes) : []);
+    for (const code of hints) {
+      extra.add(code);
+      relatedSetCodes(code, setCodes).forEach((c) => extra.add(c));
+    }
+    Object.keys(loaded).forEach((code) => extra.delete(code));
+    if (extra.size === 0) return first;
+
+    const codes = [...extra];
+    const results = await Promise.allSettled(codes.map((code) => cardsForSet(code)));
+    codes.forEach((code, i) => {
+      if (results[i].status === 'fulfilled') loaded[code] = results[i].value;
+    });
+    return resolve();
+  },
+
+  /** Warm the per-session set cache (e.g. for sets picked in the scanner). Never throws. */
+  async prefetchSets(codes) {
+    await Promise.allSettled(codes.map((code) => cardsForSet(code)));
   },
 
   /** Finds the card in a rig-calibration photo. Never throws. */
