@@ -51,7 +51,8 @@ function encodeWithCrop(source, width, height, crop, sourceKind, encode) {
 
 /**
  * @returns {Promise<{ image: string|null, source: 'photo'|'video', width: number, height: number, cropped: boolean }>}
- *   width/height are the camera's native size, for the scanner footer.
+ *   width/height are the camera's native size; `cropped` drives the scanner's
+ *   "not cropped" warning on the calibrate button.
  */
 export async function capturePhoto({
   track,

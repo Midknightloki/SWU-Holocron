@@ -213,6 +213,55 @@ describe('CardScanner', () => {
     expect(await screen.findByTestId('review-badge')).toHaveTextContent('1');
   });
 
+  it('never lets a green flash cover a pending red one', async () => {
+    // Results arrive out of order at hand speed: an unreadable card's red flash
+    // must not be replaced by the next card's green one.
+    mocks.scan
+      .mockResolvedValueOnce({ status: 'unidentified', reason: 'unreadable', read: null })
+      .mockResolvedValueOnce(LUKE);
+    renderScanner();
+    pressSpace();
+    await flush();
+    pressSpace();
+    await flush();
+    await waitFor(() => expect(mocks.scan).toHaveBeenCalledTimes(2));
+    await flush();
+    expect(screen.getByTestId('scan-flash')).toHaveAttribute('data-kind', 'error');
+  });
+
+  it('turns the calibrate button amber when a calibrated rig capture was not cropped', async () => {
+    rigStored = JSON.stringify({ version: 1, rect: { x: 0.2, y: 0.1, w: 0.6, h: 0.8 }, source: 'photo', orientation: 'portrait', savedAt: 1 });
+    mocks.capturePhoto.mockResolvedValue({ ...PHOTO, source: 'video', cropped: false });
+    renderScanner();
+    const button = screen.getByRole('button', { name: 'Calibrate rig' });
+    expect(button).not.toHaveAttribute('data-crop', 'missed');
+    pressSpace();
+    await waitFor(() => expect(button).toHaveAttribute('data-crop', 'missed'));
+    expect(button.getAttribute('title')).toMatch(/not cropped/i);
+  });
+
+  it('clears the amber warning once the rig is recalibrated', async () => {
+    const user = userEvent.setup();
+    rigStored = JSON.stringify({ version: 1, rect: { x: 0.2, y: 0.1, w: 0.6, h: 0.8 }, source: 'photo', orientation: 'portrait', savedAt: 1 });
+    mocks.capturePhoto.mockResolvedValue({ ...PHOTO, source: 'video', cropped: false });
+    renderScanner();
+    pressSpace();
+    const button = screen.getByRole('button', { name: 'Calibrate rig' });
+    await waitFor(() => expect(button).toHaveAttribute('data-crop', 'missed'));
+    await user.click(button);
+    await user.click(screen.getByText('save-mock'));
+    expect(screen.getByRole('button', { name: 'Calibrate rig' })).not.toHaveAttribute('data-crop', 'missed');
+  });
+
+  it('keeps the calibrate button normal while captures are cropped', async () => {
+    rigStored = JSON.stringify({ version: 1, rect: { x: 0.2, y: 0.1, w: 0.6, h: 0.8 }, source: 'photo', orientation: 'portrait', savedAt: 1 });
+    mocks.capturePhoto.mockResolvedValue({ ...PHOTO, cropped: true });
+    renderScanner();
+    pressSpace();
+    await waitFor(() => expect(mocks.scan).toHaveBeenCalled());
+    expect(screen.getByRole('button', { name: 'Calibrate rig' })).not.toHaveAttribute('data-crop', 'missed');
+  });
+
   it('flashes green when a card is read', async () => {
     renderScanner();
     pressSpace();

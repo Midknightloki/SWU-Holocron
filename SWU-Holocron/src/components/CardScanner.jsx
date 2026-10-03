@@ -65,6 +65,9 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
   const [foilStack, setFoilStack] = useState(false);
   const [showHelp, setShowHelp] = useState(() => !readHelpSeen());
   const [flash, setFlash] = useState(null); // null | 'success' | 'error'
+  // Whether the last capture was cropped to the rig calibration; drives the
+  // amber "not cropped" state of the calibrate button.
+  const [lastCropped, setLastCropped] = useState(null);
   const [quota, setQuota] = useState(null);
   const [cameraError, setCameraError] = useState(null);
   const [level, setLevel] = useState(null);
@@ -97,6 +100,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
   const videoRef = useRef(null);
   const mountedRef = useRef(false);
   const flashTimer = useRef(null);
+  const flashKindRef = useRef(null);
   const trackRef = useRef(null);
   // A real photo takes a moment; taps during it are ignored, not queued.
   const capturingRef = useRef(false);
@@ -160,11 +164,16 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
 
   // Green on a good read, red on a problem. Only problems vibrate: on a rigid
   // rig a buzz after every card could blur the next photo.
+  // Results arrive out of order, so a green flash never replaces a red one
+  // that is still showing: a problem must not be masked by the next card.
   const signal = useCallback((kind) => {
+    if (kind === 'success' && flashKindRef.current === 'error') return;
+    flashKindRef.current = kind;
     setFlash(kind);
     if (kind === 'error') navigator.vibrate?.(150);
     clearTimeout(flashTimer.current);
     flashTimer.current = setTimeout(() => {
+      flashKindRef.current = null;
       if (mountedRef.current) setFlash(null);
     }, kind === 'error' ? 600 : 400);
   }, []);
@@ -202,6 +211,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
       signal('error');
       return;
     }
+    setLastCropped(Boolean(shot.cropped));
     const id = newId();
     setDraft((d) => addCapture(d, { id, isFoil, photo: shot.image }));
     runScan(id, shot.image);
@@ -252,12 +262,14 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
     const saved = saveCalibration(getStorage(), cal);
     // Storage unavailable: keep it for this session anyway.
     setCalibration(saved ?? { version: 1, ...cal, savedAt: Date.now() });
+    setLastCropped(null);
     setCalibrating(false);
   }, []);
 
   const clearRig = useCallback(() => {
     clearCalibration(getStorage());
     setCalibration(null);
+    setLastCropped(null);
     setCalibrating(false);
   }, []);
 
@@ -355,6 +367,9 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
   }
 
   const calibratedStyle = calibratedGuide(calibration, view);
+  // Calibrated, yet the last capture went out full frame: the only live sign
+  // that cropping has silently stopped applying.
+  const cropMissed = Boolean(calibration) && lastCropped === false;
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-black text-gray-100">
@@ -472,12 +487,17 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
         <button
           type="button"
           aria-label="Calibrate rig"
-          title="Calibrate for your rig"
+          title={cropMissed
+            ? 'Last photo was not cropped (video frame or phone rotated) — tap to recalibrate'
+            : 'Calibrate for your rig'}
+          data-crop={cropMissed ? 'missed' : undefined}
           onClick={() => setCalibrating(true)}
           className={`p-2 rounded-lg border ${
-            calibration
-              ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300'
-              : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white'
+            cropMissed
+              ? 'bg-amber-500/20 border-amber-400 text-amber-300'
+              : calibration
+                ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300'
+                : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white'
           }`}
         >
           <Crosshair size={18} aria-hidden="true" />
