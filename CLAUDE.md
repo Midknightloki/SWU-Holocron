@@ -263,8 +263,20 @@ that cross-check is what keeps a misread number from adding the wrong card.
   the Gemini reader are injected — because CI does not install
   `functions/node_modules` and still has to test it
   (`src/test/functions/scanCard.test.js`).
-- Functions are deployed by hand (`firebase deploy --only functions:scanCard`);
-  no workflow deploys them.
+- Functions are deployed by hand
+  (`firebase deploy --only functions:scanCard,functions:locateCard`); no
+  workflow deploys them.
+- **Rig calibration.** Users with a fixed scanning rig calibrate once:
+  `locateCard` (same pipeline, entitlement and quota as `scanCard`, shared in
+  `functions/scanCard.js`) asks Gemini for the card's `box_2d`, the user adjusts
+  the corners (`RigCalibration.jsx`), and the result is stored per device in
+  `localStorage['swu-scan-rig']` as photo fractions plus the capture source and
+  orientation (`src/utils/rigCalibration.js`). Every capture is then cropped to
+  that rect plus a 4% margin before scaling to 2048. A capture from a different
+  source (photo vs video frame) or orientation is sent full frame instead of
+  being cropped to the wrong place. The on-screen guide follows the calibration
+  only approximately — the live stream and the still photo can frame
+  differently — but the crop is exact because it is applied to the photo.
 
 ### Constants split
 
@@ -411,7 +423,7 @@ it is an ESLint *error*, so CI blocks on it.
 - `ASPECTS` is an array of objects, not strings — render `aspect.name`.
 - `localStorage` keys are `swu-`-prefixed: `swu-cards-{SET}`, `swu-available-sets`,
   `swu-active-set`, `swu-has-visited`, `swu-sync-code`, `swu-holocron`,
-  `swu-scan-draft-{uid}`.
+  `swu-scan-draft-{uid}`, `swu-scan-help-seen`, `swu-scan-rig`.
 - Leaders and Bases are horizontal: `aspect-[88/63] col-span-2`. Everything else
   is `aspect-[63/88] col-span-1` (`App.jsx:982`).
 - Owned counts render as a dual `3 +2F` — standard count prominent, foil count as
