@@ -40,6 +40,17 @@ describe('CardPickerModal', () => {
     expect(screen.queryByText('Death Trooper')).not.toBeInTheDocument();
   });
 
+  it('frames leaders and bases landscape so their sides are not cut off', async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(<CardPickerModal type="Leader" collectionData={{}} onSelect={vi.fn()} onClose={vi.fn()} />);
+    expect(await screen.findByAltText('Director Krennic')).toHaveAttribute('data-orientation', 'horizontal');
+    unmount();
+    render(<CardPickerModal collectionData={{}} onSelect={vi.fn()} onClose={vi.fn()} />);
+    await waitFor(() => expect(mocks.fetchSetData).toHaveBeenCalledTimes(4)); // two sets per render
+    await user.type(screen.getByPlaceholderText(/search/i), 'death');
+    expect(await screen.findByAltText('Death Trooper')).toHaveAttribute('data-orientation', 'vertical');
+  });
+
   it('loads sets from the registry, not the hardcoded fallback', async () => {
     render(<CardPickerModal type="Upgrade" collectionData={{}} onSelect={vi.fn()} onClose={vi.fn()} />);
     expect(await screen.findByText('Death Star Plans')).toBeInTheDocument();

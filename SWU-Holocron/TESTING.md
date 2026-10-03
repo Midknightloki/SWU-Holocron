@@ -114,8 +114,9 @@ these on real hardware and record the results in the PR:
   installed PWA.
 - A tap anywhere on the preview captures; Space and Enter capture on a laptop
   webcam; holding Space captures once.
-- The footer reads `photo <width>×<height>` with the camera's full size (not
-  `video …`, and not `0×0`).
+- Each capture flashes green on a good read and red on a problem; the Review
+  button carries a red badge with the number needing attention. Controls sit
+  in the bottom bar. Tapping a review thumbnail opens the photo full size.
 - First open shows the "How to scan" steps; after "Got it" they stay closed.
 - A normal card's number lines up in the bottom-right cyan box; a leader or
   base turned a quarter-turn counter-clockwise lines up in the top-right one.
@@ -127,8 +128,10 @@ these on real hardware and record the results in the PR:
   than being replaced.
 - Rig calibration: calibrate with a card in the rig and check the detected box
   fits the card; after saving, check the live outline sits over the card (note
-  any offset — it is approximate by design) and the footer shows `· cropped`.
-  Compare the unidentified count on the same stack calibrated vs cleared.
+  any offset — it is approximate by design). Close and reopen the app: the
+  calibration must still be there (it lived in localStorage, which the old card
+  cache used to fill). Compare the unidentified count on the same stack
+  calibrated vs cleared.
 - Scan entry points: beside the binder search (desktop), beside the Advanced
   Search box, under Import/Export in the Command Center, and a floating button
   on binder and dashboard at phone width. A non-Pro, non-admin account and a

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Minus, Plus, Sparkles, Trash2, RotateCcw, Loader2, Search } from 'lucide-react';
+import { ArrowLeft, Minus, Plus, Sparkles, Trash2, RotateCcw, Loader2, Search, X } from 'lucide-react';
 import CardPickerModal from './CardPickerModal';
 import { CardService } from '../services/CardService';
 import { isHorizontalCard } from '../utils/collectionHelpers';
@@ -29,14 +29,18 @@ const REASON_TEXT = {
 
 const plural = (n) => `${n} card${n === 1 ? '' : 's'}`;
 
-function Photo({ group }) {
+const photoSrc = (photo) => `data:image/jpeg;base64,${photo}`;
+
+function Photo({ group, onView }) {
   if (group.photo) {
     return (
-      <img
-        src={`data:image/jpeg;base64,${group.photo}`}
-        alt="Captured photo"
-        className="w-16 h-[88px] object-cover rounded flex-shrink-0"
-      />
+      <button type="button" aria-label="View photo" onClick={() => onView(photoSrc(group.photo))} className="flex-shrink-0">
+        <img
+          src={photoSrc(group.photo)}
+          alt="Captured photo"
+          className="w-16 h-[88px] object-cover rounded"
+        />
+      </button>
     );
   }
   return (
@@ -49,6 +53,7 @@ function Photo({ group }) {
 export default function ScanReview({ draft, onChange, onRetry, onBack, onCommit, onDiscard, committing, commitError }) {
   const [pickingFor, setPickingFor] = useState(null);
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  const [viewing, setViewing] = useState(null);
 
   const groups = groupRows(draft);
   const counts = countByStatus(draft);
@@ -87,14 +92,23 @@ export default function ScanReview({ draft, onChange, onRetry, onBack, onCommit,
                 data-testid={`group-${group.key}`}
                 className="flex items-center gap-3 p-3 bg-gray-900 border border-gray-800 rounded-xl"
               >
-                {/* Leaders and bases are landscape (88:63), as everywhere else in the app */}
-                <img
-                  src={CardService.getCardImage(group.set, group.number)}
-                  alt=""
-                  data-orientation={isHorizontalCard(group.type) ? 'horizontal' : 'vertical'}
-                  className={`${isHorizontalCard(group.type) ? 'w-[88px] h-16' : 'w-16 h-[88px]'} object-cover rounded flex-shrink-0`}
-                  onError={(e) => { e.target.style.display = 'none'; }}
-                />
+                {/* Leaders and bases are landscape (88:63), as everywhere else in the app.
+                    Tapping shows the photo actually captured, so a match can be checked
+                    against it; the card image stands in if the photo was not kept. */}
+                <button
+                  type="button"
+                  aria-label={`View photo of ${group.name}`}
+                  onClick={() => setViewing(group.photo ? photoSrc(group.photo) : CardService.getCardImage(group.set, group.number))}
+                  className="flex-shrink-0"
+                >
+                  <img
+                    src={CardService.getCardImage(group.set, group.number)}
+                    alt=""
+                    data-orientation={isHorizontalCard(group.type) ? 'horizontal' : 'vertical'}
+                    className={`${isHorizontalCard(group.type) ? 'w-[88px] h-16' : 'w-16 h-[88px]'} object-cover rounded`}
+                    onError={(e) => { e.target.style.display = 'none'; }}
+                  />
+                </button>
                 <div className="flex-1 min-w-0">
                   <p className="font-bold text-white truncate">{group.name}</p>
                   <p className="text-xs text-gray-500">{group.set} {group.number}</p>
@@ -140,7 +154,7 @@ export default function ScanReview({ draft, onChange, onRetry, onBack, onCommit,
           if (group.status === 'reading') {
             return (
               <div key={group.key} className="flex items-center gap-3 p-3 bg-gray-900 border border-gray-800 rounded-xl text-gray-400">
-                <Photo group={group} />
+                <Photo group={group} onView={setViewing} />
                 <Loader2 size={16} className="animate-spin" />
                 <span>Reading…</span>
               </div>
@@ -154,7 +168,7 @@ export default function ScanReview({ draft, onChange, onRetry, onBack, onCommit,
 
           return (
             <div key={group.key} className="flex items-center gap-3 p-3 bg-gray-900 border border-red-500/40 rounded-xl">
-              <Photo group={group} />
+              <Photo group={group} onView={setViewing} />
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-red-300">{detail}</p>
                 {read && read.readable && (
@@ -241,6 +255,25 @@ export default function ScanReview({ draft, onChange, onRetry, onBack, onCommit,
           </div>
         )}
       </div>
+
+      {viewing && (
+        <div
+          role="dialog"
+          aria-label="Photo"
+          onClick={() => setViewing(null)}
+          className="fixed inset-0 z-[70] bg-black/95 flex items-center justify-center p-4"
+        >
+          <img src={viewing} alt="Full-size photo" className="max-w-full max-h-full object-contain" />
+          <button
+            type="button"
+            aria-label="Close photo"
+            onClick={() => setViewing(null)}
+            className="absolute top-4 right-4 p-2 rounded-full bg-gray-900/80 text-white"
+          >
+            <X size={22} />
+          </button>
+        </div>
+      )}
 
       {pickingFor && (
         <CardPickerModal
