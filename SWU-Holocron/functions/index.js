@@ -2,7 +2,7 @@ const { setGlobalOptions } = require("firebase-functions");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
-const { createScanCardHandler } = require("./scanCard");
+const { createScanCardHandler, createLocateCardHandler } = require("./scanCard");
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -210,7 +210,9 @@ const SCAN_SCHEMA = {
   required: ["readable", "set", "number", "name"],
 };
 
-async function readCardWithGemini(imageBase64) {
+// One image, one prompt, schema-constrained JSON out. Shared by scanCard and
+// locateCard so the Vertex setup and the thinking-budget fix exist once.
+async function askGemini(imageBase64, prompt, schema) {
   const { GoogleGenAI } = require("@google/genai");
   const ai = new GoogleGenAI({ enterprise: true, project: GCP_PROJECT, location: VERTEX_LOCATION });
   const result = await ai.models.generateContent({
@@ -219,7 +221,7 @@ async function readCardWithGemini(imageBase64) {
       role: "user",
       parts: [
         { inlineData: { mimeType: "image/jpeg", data: imageBase64 } },
-        { text: SCAN_PROMPT },
+        { text: prompt },
       ],
     }],
     config: {
@@ -228,10 +230,14 @@ async function readCardWithGemini(imageBase64) {
       // Required: see getCardSuggestions. Thinking tokens count against the cap.
       thinkingConfig: { thinkingBudget: 0 },
       responseMimeType: "application/json",
-      responseSchema: SCAN_SCHEMA,
+      responseSchema: schema,
     },
   });
   return JSON.parse(result.text);
+}
+
+async function readCardWithGemini(imageBase64) {
+  return askGemini(imageBase64, SCAN_PROMPT, SCAN_SCHEMA);
 }
 
 const scanCardHandler = createScanCardHandler({
@@ -243,6 +249,37 @@ const scanCardHandler = createScanCardHandler({
 });
 
 exports.scanCard = onCall({ maxInstances: 10 }, scanCardHandler);
+
+/**
+ * locateCard — finds the card in a scanner-rig calibration photo, using
+ * Gemini's native bounding-box format. Called once per rig, not per scan.
+ */
+const LOCATE_PROMPT = `This photo is taken from above a scanning rig and shows one Star Wars: Unlimited trading card, possibly with paper, a ruler or other objects around it.
+Return the bounding box of the card itself -- its outer edge, including the black border -- as box_2d [ymin, xmin, ymax, xmax], normalised to 0-1000.
+If there is no card in the photo, set found to false.`;
+
+const LOCATE_SCHEMA = {
+  type: "object",
+  properties: {
+    found: { type: "boolean" },
+    box_2d: { type: "array", items: { type: "integer" } },
+  },
+  required: ["found", "box_2d"],
+};
+
+async function locateCardWithGemini(imageBase64) {
+  return askGemini(imageBase64, LOCATE_PROMPT, LOCATE_SCHEMA);
+}
+
+const locateCardHandler = createLocateCardHandler({
+  db: admin.firestore(),
+  appId: APP_ID,
+  locate: locateCardWithGemini,
+  HttpsError,
+  logger,
+});
+
+exports.locateCard = onCall({ maxInstances: 5 }, locateCardHandler);
 
 /**
  * redeemInviteCode — grants the contributor role in exchange for a valid invite
