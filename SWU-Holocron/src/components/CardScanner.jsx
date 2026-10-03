@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { X, Sparkles, HelpCircle, Crosshair } from 'lucide-react';
-import { calibratedGuide, clearCalibration, cropFor, loadCalibration, saveCalibration } from '../utils/rigCalibration';
+import { X, Sparkles, HelpCircle, Crosshair, ScanLine as AutoIcon } from 'lucide-react';
+import { calibratedGuide, clampRect, clearCalibration, cropFor, loadCalibration, saveCalibration, toStreamRect } from '../utils/rigCalibration';
+import { initialAutoState, loadAutoSettings, saveAutoSettings, stepAuto } from '../utils/autoCapture';
+import { createFrameSampler } from '../utils/frameSampler';
+import AutoSettings from './AutoSettings';
 import RigCalibration from './RigCalibration';
 import ScanSetPicker from './ScanSetPicker';
 import { ScanService } from '../services/ScanService';
@@ -40,6 +43,15 @@ const CAPTURE_KEYS = new Set(['Space', 'Enter']);
 const HELP_SEEN_KEY = 'swu-scan-help-seen';
 
 // Sets picked in the scanner, kept per device: a booster box is one set.
+export const AUTO_TICK_MS = 100;
+
+const AUTO_STATUS = {
+  learning: 'Learning empty rig…',
+  empty: 'Ready — slide a card in',
+  arriving: 'Card coming in',
+  captured: 'Scanned — remove card',
+};
+
 const SETS_KEY = 'swu-scan-sets';
 
 const readPickedSets = (validCodes) => {
@@ -109,6 +121,17 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
   pickingSetsRef.current = pickingSets;
   calibratingRef.current = calibrating;
   const previewRef = useRef(null);
+  const [autoOn, setAutoOn] = useState(false);
+  const [autoPhase, setAutoPhase] = useState('learning');
+  const [autoSettings, setAutoSettings] = useState(() => loadAutoSettings(getStorage()));
+  const [showAutoSettings, setShowAutoSettings] = useState(false);
+  const autoStateRef = useRef(initialAutoState());
+  const autoSettingsRef = useRef(autoSettings);
+  autoSettingsRef.current = autoSettings;
+  const showAutoSettingsRef = useRef(false);
+  showAutoSettingsRef.current = showAutoSettings;
+  const captureRef = useRef(null);
+  const samplerRef = useRef(null);
   const [owner, setOwner] = useState(uid);
   // Mirrors `quota` for the capture guard. State reaches the key listener only
   // after React re-runs its effect, so a press in between would still capture;
@@ -220,7 +243,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
   }, [setCodes, pickedSets, signal]);
 
   const capture = useCallback(async () => {
-    if (pickingSetsRef.current || calibratingRef.current || helpOpenRef.current || quotaRef.current || cameraError || capturingRef.current) return;
+    if (showAutoSettingsRef.current || pickingSetsRef.current || calibratingRef.current || helpOpenRef.current || quotaRef.current || cameraError || capturingRef.current) return;
     capturingRef.current = true;
     // Foil is read at the tap, not after the photo resolves.
     const isFoil = foilStack;
@@ -246,6 +269,33 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
     setDraft((d) => addCapture(d, { id, isFoil, photo: shot.image }));
     runScan(id, shot.image);
   }, [calibration, cameraError, foilStack, runScan, signal]);
+  captureRef.current = capture;
+
+  // Hands-free capture: sample the calibrated card area ~10x a second and let
+  // the reducer decide when a card has settled. Any open overlay, the daily
+  // limit, or a capture in flight skips the tick.
+  useEffect(() => {
+    if (!autoOn || mode !== 'camera' || !calibration) return undefined;
+    if (!samplerRef.current) samplerRef.current = createFrameSampler();
+    const timer = setInterval(() => {
+      if (helpOpenRef.current || calibratingRef.current || pickingSetsRef.current
+        || showAutoSettingsRef.current || quotaRef.current || capturingRef.current) return;
+      const video = videoRef.current;
+      const vw = video?.videoWidth;
+      const vh = video?.videoHeight;
+      const rect = vw && vh
+        ? clampRect(toStreamRect(calibration.rect, vw / vh, calibration.aspect))
+        : calibration.rect;
+      const frame = samplerRef.current(video, rect);
+      if (!frame) return;
+      const { state, event } = stepAuto(autoStateRef.current, frame, Date.now(), autoSettingsRef.current);
+      autoStateRef.current = state;
+      setAutoPhase(state.phase);
+      if (event === 'capture') captureRef.current?.();
+    }, AUTO_TICK_MS);
+    return () => clearInterval(timer);
+  }, [autoOn, mode, calibration]);
+
 
   useEffect(() => {
     if (mode !== 'camera') return undefined;
@@ -308,6 +358,25 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
     if (pickedSets.length) ScanService.prefetchSets(pickedSets);
   }, [pickedSets]);
 
+  const toggleAuto = () => {
+    if (autoOn) {
+      setAutoOn(false);
+      return;
+    }
+    if (!calibration) {
+      setCalibrating(true);
+      return;
+    }
+    autoStateRef.current = initialAutoState();
+    setAutoPhase('learning');
+    setAutoOn(true);
+  };
+
+  const relearnAuto = () => {
+    autoStateRef.current = initialAutoState();
+    setAutoPhase('learning');
+  };
+
   const dismissHelp = useCallback(() => {
     markHelpSeen();
     setShowHelp(false);
@@ -317,7 +386,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
     if (mode !== 'camera') return undefined;
     const onKey = (e) => {
       // Calibration has its own buttons and arrow-key nudging: leave keys alone.
-      if (calibratingRef.current || pickingSetsRef.current) return;
+      if (calibratingRef.current || pickingSetsRef.current || showAutoSettingsRef.current) return;
       if (!CAPTURE_KEYS.has(e.code) && e.key !== ' ' && e.key !== 'Enter') return;
       // Always swallow the key: Space on a focused button would otherwise
       // also toggle it, and a held key would fire a capture per repeat.
@@ -448,6 +517,21 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
             className="absolute right-[2%] top-[2%] w-[6.5%] h-[30%] border-2 border-cyan-400 rounded-sm bg-cyan-400/10"
           />
         </div>
+        {autoOn && (
+          <button
+            type="button"
+            data-testid="auto-status"
+            aria-label={`Auto settings: ${AUTO_STATUS[autoPhase]}`}
+            onClick={(e) => { e.stopPropagation(); setShowAutoSettings(true); }}
+            className={`absolute top-3 left-3 px-3 py-1 rounded-full text-xs font-bold border ${
+              autoPhase === 'captured' ? 'bg-green-500/20 border-green-400 text-green-300'
+                : autoPhase === 'arriving' ? 'bg-yellow-500/20 border-yellow-400 text-yellow-300'
+                  : 'bg-gray-900/80 border-gray-700 text-gray-200'
+            }`}
+          >
+            {AUTO_STATUS[autoPhase]}
+          </button>
+        )}
         {level && (
           <div
             data-testid="level"
@@ -524,6 +608,18 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
         </button>
         <button
           type="button"
+          aria-label="Auto capture"
+          aria-pressed={autoOn}
+          title="Hands-free: scan each card once it settles (needs a calibrated rig)"
+          onClick={toggleAuto}
+          className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-bold border ${
+            autoOn ? 'bg-green-500/20 border-green-400 text-green-300' : 'bg-gray-800 border-gray-700 text-gray-400'
+          }`}
+        >
+          <AutoIcon size={14} aria-hidden="true" />Auto
+        </button>
+        <button
+          type="button"
           aria-label="How to scan"
           title="How to scan"
           aria-expanded={showHelp}
@@ -586,6 +682,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
               upright with a quarter-turn counter-clockwise, so their number sits in the top-right box.
             </li>
             <li>Tap the screen or press Space to capture, then slide in the next card.</li>
+            <li>Calibrated? Turn on Auto with the rig empty: once it says Ready, slide each card in and it scans by itself once the card is still. Take it out before the next one.</li>
           </ol>
           <button
             type="button"
@@ -595,6 +692,15 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
             Got it
           </button>
         </div>
+      )}
+
+      {showAutoSettings && (
+        <AutoSettings
+          settings={autoSettings}
+          onChange={(next) => setAutoSettings(saveAutoSettings(getStorage(), next))}
+          onRelearn={relearnAuto}
+          onClose={() => setShowAutoSettings(false)}
+        />
       )}
 
       {pickingSets && (

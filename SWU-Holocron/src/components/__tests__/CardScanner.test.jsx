@@ -1,7 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, fireEvent, act, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
@@ -13,6 +13,13 @@ vi.mock('../../services/ScanService', () => ({
 }));
 vi.mock('../../utils/frameCapture', () => ({ capturePhoto: mocks.capturePhoto }));
 vi.mock('../CardPickerModal', () => ({ default: () => null }));
+const sampler = vi.hoisted(() => ({ queue: [], fn: null }));
+vi.mock('../../utils/frameSampler', () => ({
+  createFrameSampler: () => {
+    sampler.fn = vi.fn(() => (sampler.queue.length ? sampler.queue.shift() : null));
+    return (...args) => sampler.fn(...args);
+  },
+}));
 vi.mock('../RigCalibration', () => ({
   default: ({ onSave, onClose, onTakePhoto }) => (
     <div role="dialog" aria-label="Calibrate rig">
@@ -32,7 +39,7 @@ vi.mock('../RigCalibration', () => ({
   ),
 }));
 
-import CardScanner from '../CardScanner';
+import CardScanner, { AUTO_TICK_MS } from '../CardScanner';
 
 const LUKE = { status: 'matched', set: 'SOR', number: '012', name: 'Luke Skywalker' };
 
@@ -72,6 +79,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   helpSeen = true;
   rigStored = null;
+  sampler.queue = [];
   setsStored = null;
   mocks.prefetchSets.mockResolvedValue(undefined);
   localStorage.getItem.mockReset();
@@ -366,6 +374,81 @@ describe('CardScanner', () => {
     // A second takePhoto on a busy track is what fell back to a video frame.
     expect(mocks.capturePhoto).toHaveBeenCalledTimes(1);
     await act(async () => { finish(PHOTO); });
+  });
+
+  describe('auto mode', () => {
+    const F = (v) => new Uint8Array(16).fill(v);
+    const many = (n, v) => Array.from({ length: n }, () => F(v));
+    const handFrames = (n) => Array.from({ length: n }, (_, i) => F(i % 2 ? 30 : 70));
+    const CAL = JSON.stringify({ version: 1, rect: { x: 0.2, y: 0.1, w: 0.6, h: 0.8 }, source: 'photo', orientation: 'portrait', savedAt: 1 });
+    const tick = async (n) => {
+      for (let i = 0; i < n; i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        await act(async () => { vi.advanceTimersByTime(AUTO_TICK_MS); });
+      }
+    };
+
+    beforeEach(() => { vi.useFakeTimers(); });
+    afterEach(() => { vi.useRealTimers(); });
+
+    it('needs a calibration: without one, Auto opens calibration', () => {
+      renderScanner();
+      fireEvent.click(screen.getByRole('button', { name: 'Auto capture' }));
+      expect(screen.getByRole('dialog', { name: 'Calibrate rig' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Auto capture' })).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('learns the empty rig, then captures a settled card exactly once', async () => {
+      rigStored = CAL;
+      renderScanner();
+      fireEvent.click(screen.getByRole('button', { name: 'Auto capture' }));
+      expect(screen.getByTestId('auto-status')).toHaveTextContent(/learning/i);
+      sampler.queue.push(...many(8, 100));
+      await tick(8);
+      expect(screen.getByTestId('auto-status')).toHaveTextContent(/ready/i);
+      sampler.queue.push(...handFrames(4), ...many(40, 200));
+      await tick(44);
+      expect(mocks.capturePhoto).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId('auto-status')).toHaveTextContent(/remove card/i);
+    });
+
+    it('pauses while an overlay is open', async () => {
+      rigStored = CAL;
+      renderScanner();
+      fireEvent.click(screen.getByRole('button', { name: 'Auto capture' }));
+      fireEvent.click(screen.getByRole('button', { name: 'How to scan' }));
+      sampler.queue.push(...many(8, 100), ...handFrames(4), ...many(20, 200));
+      await tick(32);
+      expect(sampler.fn).not.toHaveBeenCalled();
+      expect(mocks.capturePhoto).not.toHaveBeenCalled();
+    });
+
+    it('opens auto settings from the chip, saves changes, and re-learns', async () => {
+      rigStored = CAL;
+      renderScanner();
+      fireEvent.click(screen.getByRole('button', { name: 'Auto capture' }));
+      sampler.queue.push(...many(8, 100));
+      await tick(8);
+      fireEvent.click(screen.getByRole('button', { name: /^Auto settings/ }));
+      fireEvent.change(screen.getByLabelText('Settle time'), { target: { value: '900' } });
+      expect(localStorage.setItem).toHaveBeenCalledWith('swu-scan-auto', expect.stringContaining('"settleMs":900'));
+      fireEvent.click(screen.getByRole('button', { name: 'Re-learn empty rig' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+      expect(screen.getByTestId('auto-status')).toHaveTextContent(/learning/i);
+    });
+
+    it('turning Auto off stops sampling', async () => {
+      rigStored = CAL;
+      renderScanner();
+      const toggle = screen.getByRole('button', { name: 'Auto capture' });
+      fireEvent.click(toggle);
+      fireEvent.click(toggle);
+      expect(toggle).toHaveAttribute('aria-pressed', 'false');
+      sampler.queue.push(...many(10, 100));
+      await tick(10);
+      expect(sampler.fn ?? vi.fn()).not.toHaveBeenCalled();
+      expect(screen.queryByTestId('auto-status')).not.toBeInTheDocument();
+    });
   });
 
   describe('set picker', () => {
