@@ -21,6 +21,7 @@ vi.mock('../../services/CardService', () => ({ CardService: { fetchSetData: mock
 
 import { ScanService, mapScanError, resetSetCache, COMMIT_CHUNK_SIZE } from '../../services/ScanService';
 import { emptyDraft, addCapture, applyResult } from '../../utils/scanDraft';
+import { httpsCallable } from 'firebase/functions';
 
 const SET_CODES = ['SOR', 'SHD'];
 const SOR = [{ Set: 'SOR', Number: '012', Name: 'Luke Skywalker', Subtitle: 'Faithful Friend', Type: 'Leader' }];
@@ -160,5 +161,24 @@ describe('ScanService.commitDraft', () => {
     d = applyResult(d, 'u', { status: 'unidentified', reason: 'unreadable', read: null });
     const rest = await ScanService.commitDraft(d, { id: 'ref' });
     expect(rest.rows.map((r) => r.id)).toEqual(['u']);
+  });
+});
+
+describe('ScanService.locateCard', () => {
+  it('calls the locateCard function and returns the box', async () => {
+    mocks.callable.mockResolvedValue({ data: { found: true, box: [100, 200, 900, 800] } });
+    await expect(ScanService.locateCard('IMG')).resolves.toEqual({ found: true, box: [100, 200, 900, 800] });
+    expect(httpsCallable).toHaveBeenCalledWith(expect.anything(), 'locateCard');
+    expect(mocks.callable).toHaveBeenCalledWith({ image: 'IMG' });
+  });
+
+  it('normalises a not-found answer', async () => {
+    mocks.callable.mockResolvedValue({ data: { found: false } });
+    await expect(ScanService.locateCard('IMG')).resolves.toEqual({ found: false, box: null });
+  });
+
+  it('maps errors without throwing', async () => {
+    mocks.callable.mockRejectedValue(httpsError('resource-exhausted', { limit: 5, resetsAt: 'x' }));
+    await expect(ScanService.locateCard('IMG')).resolves.toEqual({ error: 'quota', limit: 5, resetsAt: 'x' });
   });
 });
