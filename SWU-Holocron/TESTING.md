@@ -118,6 +118,10 @@ these on real hardware and record the results in the PR:
   button carries a red badge with the number needing attention. Controls sit
   in the bottom bar. Tapping a review thumbnail opens the photo full size.
 - First open shows the "How to scan" steps; after "Got it" they stay closed.
+- Auto mode on the rig: switched on with the rig empty, the chip reaches
+  "Ready". A full stack gives exactly one capture per card — count captures vs
+  cards, and expect zero captures of the empty rig and zero double scans of a
+  card left in place. Record any tuned Auto settings in the PR.
 - Pick a set (e.g. SHD) and scan cards from it whose set code Gemini used to
   misread: they should match. A stray card from another set must still match
   its own set. The pick survives closing the app.

@@ -272,6 +272,16 @@ that cross-check is what keeps a misread number from adding the wrong card.
   never overrides a match on the printed set. `scanCard`'s prompt deliberately
   lists no example set codes: the old "for example SOR, SHD, …" made SOR
   Gemini's default guess, and it now leaves `set` empty rather than guessing.
+- **Auto mode (hands-free).** Requires a rig calibration. Built for a *swap*
+  rig: the rig is empty between cards, so it captures once each time a card
+  settles after the rig was empty, and re-arms only when it is empty again —
+  one capture per card, however long a card sits there. `frameSampler.js`
+  (browser only) takes 48×64 grayscale samples of the calibrated card area of
+  the live video at ~10 Hz; the pure reducer in `autoCapture.js` decides
+  (`learning → empty → arriving → captured`). The empty-rig baseline is a float
+  array that slowly follows lighting drift — whole numbers would round the
+  blend away. Tunable per device in `localStorage['swu-scan-auto']`. Auto pauses
+  while any overlay is open, at the daily limit, and during a capture.
 - The batch lives in `localStorage['swu-scan-draft-{uid}']` until the user
   approves it (`src/utils/scanDraft.js`). The key is per uid on purpose: a
   shared key would let one account's batch land in another's collection.
@@ -445,7 +455,7 @@ it is an ESLint *error*, so CI blocks on it.
 - `ASPECTS` is an array of objects, not strings — render `aspect.name`.
 - `localStorage` keys are `swu-`-prefixed: `swu-available-sets`,
   `swu-active-set`, `swu-has-visited`, `swu-sync-code`, `swu-holocron`,
-  `swu-scan-draft-{uid}`, `swu-scan-help-seen`, `swu-scan-rig`, `swu-scan-sets`.
+  `swu-scan-draft-{uid}`, `swu-scan-help-seen`, `swu-scan-rig`, `swu-scan-sets`, `swu-scan-auto`.
 - Leaders and Bases are horizontal: `aspect-[88/63] col-span-2`. Everything else
   is `aspect-[63/88] col-span-1` (`App.jsx:982`).
 - Owned counts render as a dual `3 +2F` — standard count prominent, foil count as
