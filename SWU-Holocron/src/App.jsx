@@ -7,6 +7,8 @@ import {
 import { SETS, ASPECTS } from './constants';
 import { db, APP_ID } from './firebase';
 import { CardService } from './services/CardService';
+import { CardCache } from './services/cardCache';
+import { loadSet } from './services/setLoader';
 import { DeckService } from './services/DeckService';
 import { collection, doc, onSnapshot, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 import { parseCSV, generateCSV } from './utils/csvParser';
@@ -109,6 +111,13 @@ export default function App() {
   const [selectedCard, setSelectedCard] = useState(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+
+  // One-time move of the old localStorage card cache into IndexedDB. Until it
+  // runs, that cache can fill the ~5 MB localStorage quota, which silently
+  // breaks every other localStorage write (rig calibration, scan drafts).
+  useEffect(() => {
+    CardCache.migrateFromLocalStorage().catch(() => {});
+  }, []);
 
   // The scanner belongs to whoever opened it: close it on any account change,
   // so it never reopens by itself for the next user who signs in.
@@ -308,19 +317,12 @@ export default function App() {
       if (activeSet === 'ALL') {
         const allCards = [];
         for (const setCode of availableSets) {
-          const cacheKey = `swu-cards-${setCode}`;
-          const local = localStorage.getItem(cacheKey);
-          if (local) {
-            try { allCards.push(...JSON.parse(local)); } catch (_) { /* corrupt cache entry — skip this set */ }
-          } else {
-            // Set not cached yet — fetch it now and cache for next time
-            try {
-              const { data } = await CardService.fetchSetData(setCode);
-              allCards.push(...data);
-              localStorage.setItem(cacheKey, JSON.stringify(data));
-            } catch (e) {
-              console.warn(`[All Sets] Could not fetch ${setCode}:`, e);
-            }
+          // Cached set, or fetched now and cached for next time.
+          try {
+            const { cards: setCardList } = await loadSet(setCode);
+            allCards.push(...setCardList);
+          } catch (e) {
+            console.warn(`[All Sets] Could not fetch ${setCode}:`, e);
           }
         }
         if (allCards.length > 0) {
@@ -340,21 +342,11 @@ export default function App() {
         return;
       }
 
-      // 1. Try Local Cache
-      const cacheKey = `swu-cards-${activeSet}`;
-      const local = localStorage.getItem(cacheKey);
-      if (!force && local) {
-        setCards(JSON.parse(local));
-        setLoading(false);
-        return;
-      }
-
-      // 2. Fetch from Service
-      const { data, source } = await CardService.fetchSetData(activeSet);
-      data.sort((a, b) => String(a.Number).localeCompare(String(b.Number), undefined, { numeric: true }));
-      setCards(data);
-      setLastSync(source);
-      localStorage.setItem(cacheKey, JSON.stringify(data));
+      // 1. IndexedDB cache (no TTL), else 2. fetch through the service and cache.
+      // @environment:web-indexeddb
+      const { cards: loaded, source } = await loadSet(activeSet, { force });
+      setCards(loaded);
+      if (source !== 'cache') setLastSync(source);
     } catch (e) {
       console.error(e);
       // 3. Fallback: Reconstruct from Collection
