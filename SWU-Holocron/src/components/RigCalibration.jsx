@@ -85,7 +85,12 @@ export default function RigCalibration({ hasCalibration, onTakePhoto, onSave, on
     });
   };
 
-  const save = () => onSave({ rect, source: shot.source, orientation: orientationOf(shot.width, shot.height) });
+  const save = () => onSave({
+    rect,
+    source: shot.source,
+    orientation: orientationOf(shot.width, shot.height),
+    aspect: shot.width / shot.height,
+  });
 
   const retake = () => {
     setShot(null);
@@ -182,6 +187,12 @@ export default function RigCalibration({ hasCalibration, onTakePhoto, onSave, on
 
       <div className="px-4 py-3 bg-gray-900 border-t border-gray-800 space-y-2">
         {step === 'adjust' && message && <p className="text-sm text-gray-300">{message}</p>}
+        {step === 'adjust' && shot?.source === 'video' && (
+          <p className="text-sm text-yellow-300">
+            This was taken from a video frame, not a full photo, so scans that use full photos
+            won&apos;t be cropped. Retake to try again.
+          </p>
+        )}
         <div className="flex gap-2">
           <button
             type="button"

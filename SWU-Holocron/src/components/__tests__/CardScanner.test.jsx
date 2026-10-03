@@ -14,10 +14,20 @@ vi.mock('../../services/ScanService', () => ({
 vi.mock('../../utils/frameCapture', () => ({ capturePhoto: mocks.capturePhoto }));
 vi.mock('../CardPickerModal', () => ({ default: () => null }));
 vi.mock('../RigCalibration', () => ({
-  default: ({ onSave, onClose }) => (
+  default: ({ onSave, onClose, onTakePhoto }) => (
     <div role="dialog" aria-label="Calibrate rig">
       <button type="button" onClick={() => onSave({ rect: { x: 0.2, y: 0.1, w: 0.6, h: 0.8 }, source: 'photo', orientation: 'portrait' })}>save-mock</button>
       <button type="button" onClick={onClose}>close-mock</button>
+      <button
+        type="button"
+        onClick={async (e) => {
+          const target = e.currentTarget;
+          const shot = await onTakePhoto();
+          target.setAttribute('data-image', String(shot.image));
+        }}
+      >
+        take-mock
+      </button>
     </div>
   ),
 }));
@@ -264,6 +274,21 @@ describe('CardScanner', () => {
     expect(screen.queryByRole('dialog', { name: 'Calibrate rig' })).not.toBeInTheDocument();
     expect(localStorage.setItem).toHaveBeenCalledWith('swu-scan-rig', expect.stringContaining('"source":"photo"'));
     expect(screen.getByTestId('card-guide')).toHaveAttribute('data-calibrated', 'true');
+  });
+
+  it('will not take the calibration photo while a scan capture is still running', async () => {
+    const user = userEvent.setup();
+    let finish;
+    mocks.capturePhoto.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    renderScanner();
+    pressSpace();
+    await flush();
+    await user.click(screen.getByRole('button', { name: 'Calibrate rig' }));
+    await user.click(screen.getByText('take-mock'));
+    await waitFor(() => expect(screen.getByText('take-mock')).toHaveAttribute('data-image', 'null'));
+    // A second takePhoto on a busy track is what fell back to a video frame.
+    expect(mocks.capturePhoto).toHaveBeenCalledTimes(1);
+    await act(async () => { finish(PHOTO); });
   });
 
   it('mentions calibration in the how-to', () => {

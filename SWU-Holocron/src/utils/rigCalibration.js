@@ -81,8 +81,26 @@ export function moveCorner(rect, corner, px, py) {
   return rect4({ x: left, y: top, w: right - left, h: bottom - top });
 }
 
-export function guideStyle(rect, videoWidth, videoHeight, boxWidth, boxHeight) {
+/**
+ * Where to draw a photo-fraction rect over the live preview (object-contain).
+ *
+ * The stream and the still photo usually differ in shape: a 16:9 stream is a
+ * centre crop of the 4:3 sensor the photo uses. With the photo's aspect known,
+ * the rect is first converted from photo fractions to stream fractions;
+ * without it (older calibrations) the two are assumed to match.
+ */
+export function guideStyle(rect, videoWidth, videoHeight, boxWidth, boxHeight, photoAspect) {
   if (!(videoWidth > 0 && videoHeight > 0 && boxWidth > 0 && boxHeight > 0)) return null;
+  const streamAspect = videoWidth / videoHeight;
+  if (photoAspect > 0 && streamAspect < photoAspect) {
+    // Stream shows the middle `f` of the photo's width.
+    const f = streamAspect / photoAspect;
+    rect = { ...rect, x: (rect.x - (1 - f) / 2) / f, w: rect.w / f };
+  } else if (photoAspect > 0 && streamAspect > photoAspect) {
+    // Stream shows the middle `f` of the photo's height.
+    const f = photoAspect / streamAspect;
+    rect = { ...rect, y: (rect.y - (1 - f) / 2) / f, h: rect.h / f };
+  }
   const scale = Math.min(boxWidth / videoWidth, boxHeight / videoHeight);
   const shownW = videoWidth * scale;
   const shownH = videoHeight * scale;
@@ -96,6 +114,17 @@ export function guideStyle(rect, videoWidth, videoHeight, boxWidth, boxHeight) {
   };
 }
 
+/**
+ * The calibrated guide for the current preview, or null to fall back to the
+ * centred guide: when uncalibrated, when the preview size is unknown, or when
+ * the phone is now in the other orientation (the crop is skipped then too).
+ */
+export function calibratedGuide(calibration, { vw, vh, bw, bh }) {
+  if (!calibration || !(vw > 0 && vh > 0)) return null;
+  if (calibration.orientation !== orientationOf(vw, vh)) return null;
+  return guideStyle(calibration.rect, vw, vh, bw, bh, calibration.aspect);
+}
+
 const isFraction = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1;
 
 function isValidRect(rect) {
@@ -105,8 +134,9 @@ function isValidRect(rect) {
   return w >= MIN_SIZE - 1e-9 && h >= MIN_SIZE - 1e-9 && x + w <= 1 + 1e-9 && y + h <= 1 + 1e-9;
 }
 
-export function saveCalibration(storage, { rect, source, orientation }) {
+export function saveCalibration(storage, { rect, source, orientation, aspect }) {
   const calibration = { version: 1, rect: rect4(rect), source, orientation, savedAt: Date.now() };
+  if (Number.isFinite(aspect) && aspect > 0) calibration.aspect = aspect;
   try {
     storage.setItem(RIG_KEY, JSON.stringify(calibration));
     return calibration;
@@ -123,6 +153,7 @@ export function loadCalibration(storage) {
     if (c?.version !== 1) return null;
     if (!SOURCES.includes(c.source) || !ORIENTATIONS.includes(c.orientation)) return null;
     if (!isValidRect(c.rect)) return null;
+    if (c.aspect !== undefined && !(Number.isFinite(c.aspect) && c.aspect > 0)) return null;
     return c;
   } catch {
     return null;

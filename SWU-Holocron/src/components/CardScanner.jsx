@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { X, Sparkles, HelpCircle, Crosshair } from 'lucide-react';
-import { clearCalibration, cropFor, guideStyle, loadCalibration, saveCalibration } from '../utils/rigCalibration';
+import { calibratedGuide, clearCalibration, cropFor, loadCalibration, saveCalibration } from '../utils/rigCalibration';
 import RigCalibration from './RigCalibration';
 import { ScanService } from '../services/ScanService';
 import { capturePhoto } from '../utils/frameCapture';
@@ -235,10 +235,18 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
     };
   }, [mode]);
 
-  const takeCalibrationPhoto = useCallback(
-    () => capturePhoto({ track: trackRef.current, video: videoRef.current }),
-    [],
-  );
+  // Never alongside a scan capture: a second takePhoto on a busy track rejects,
+  // the capture falls back to a video frame, and a calibration recorded from a
+  // video frame silently disables cropping for every later photo.
+  const takeCalibrationPhoto = useCallback(async () => {
+    if (capturingRef.current) return { image: null, source: 'video', width: 0, height: 0, cropped: false };
+    capturingRef.current = true;
+    try {
+      return await capturePhoto({ track: trackRef.current, video: videoRef.current });
+    } finally {
+      capturingRef.current = false;
+    }
+  }, []);
 
   const saveRig = useCallback((cal) => {
     const saved = saveCalibration(getStorage(), cal);
@@ -346,9 +354,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
     );
   }
 
-  const calibratedStyle = calibration
-    ? guideStyle(calibration.rect, view.vw, view.vh, view.bw, view.bh)
-    : null;
+  const calibratedStyle = calibratedGuide(calibration, view);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-black text-gray-100">

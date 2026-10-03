@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   RIG_KEY, CROP_MARGIN, MIN_SIZE, boxToRect, defaultRect, withMargin, cropPixels,
-  orientationOf, cropFor, cornerPoint, moveCorner, guideStyle,
+  orientationOf, cropFor, cornerPoint, moveCorner, guideStyle, calibratedGuide,
   saveCalibration, loadCalibration, clearCalibration,
 } from '../../utils/rigCalibration';
 
@@ -72,9 +72,47 @@ describe('geometry', () => {
     expect(s.height).toBeCloseTo(426.67, 1);
   });
 
+  it('maps a 4:3 photo rect onto the narrower 16:9 stream the preview shows', () => {
+    // Portrait 9:16 stream is a centre crop of the 3:4 photo: it shows the
+    // middle 75% of the photo's width. A card at photo x 0.15-0.85 fills
+    // stream x 0.033-0.967; drawing it at 0.15-0.85 was ~25% too narrow.
+    const card = { x: 0.15, y: 0.1, w: 0.7, h: 0.8 };
+    const s = guideStyle(card, 1080, 1920, 450, 800, 3 / 4);
+    expect(s.left).toBeCloseTo(15, 1);
+    expect(s.width).toBeCloseTo(420, 1);
+    expect(s.top).toBeCloseTo(80, 1);
+    expect(s.height).toBeCloseTo(640, 1);
+  });
+
+  it('maps onto a stream that is taller than the photo by cropping height', () => {
+    // Landscape: 4:3 photo, 16:9 stream shows the middle 75% of the height.
+    const card = { x: 0.1, y: 0.15, w: 0.8, h: 0.7 };
+    const s = guideStyle(card, 1920, 1080, 800, 450, 4 / 3);
+    expect(s.top).toBeCloseTo(15, 1);
+    expect(s.height).toBeCloseTo(420, 1);
+    expect(s.left).toBeCloseTo(80, 1);
+  });
+
   it('guideStyle returns null without sizes', () => {
     expect(guideStyle(RECT, 0, 0, 400, 800)).toBeNull();
     expect(guideStyle(RECT, 3024, 4032, 0, 0)).toBeNull();
+  });
+});
+
+describe('calibratedGuide', () => {
+  const view = { vw: 1080, vh: 1920, bw: 450, bh: 800 };
+
+  it('places the guide when the stream matches the calibration orientation', () => {
+    expect(calibratedGuide({ ...CAL, aspect: 0.75 }, view)).toMatchObject({ width: expect.any(Number) });
+  });
+
+  it('falls back (null) when the phone has been rotated since calibrating', () => {
+    expect(calibratedGuide(CAL, { vw: 1920, vh: 1080, bw: 800, bh: 450 })).toBeNull();
+  });
+
+  it('falls back (null) when uncalibrated or sizes are unknown', () => {
+    expect(calibratedGuide(null, view)).toBeNull();
+    expect(calibratedGuide(CAL, { vw: 0, vh: 0, bw: 0, bh: 0 })).toBeNull();
   });
 });
 
@@ -99,8 +137,8 @@ describe('cropFor', () => {
 describe('storage', () => {
   it('round-trips a calibration under the swu-scan-rig key', () => {
     const storage = memoryStorage();
-    const saved = saveCalibration(storage, { rect: RECT, source: 'photo', orientation: 'portrait' });
-    expect(saved).toMatchObject({ version: 1, rect: RECT, source: 'photo', orientation: 'portrait' });
+    const saved = saveCalibration(storage, { rect: RECT, source: 'photo', orientation: 'portrait', aspect: 0.75 });
+    expect(saved).toMatchObject({ version: 1, rect: RECT, source: 'photo', orientation: 'portrait', aspect: 0.75 });
     expect(RIG_KEY).toBe('swu-scan-rig');
     expect(loadCalibration(storage)).toEqual(saved);
   });
@@ -116,6 +154,7 @@ describe('storage', () => {
       JSON.stringify({ version: 1, rect: RECT, source: 'camera', orientation: 'portrait' }),
       JSON.stringify({ version: 1, rect: RECT, source: 'photo', orientation: 'sideways' }),
       JSON.stringify({ version: 1, rect: { x: '0.2', y: 0.1, w: 0.6, h: 0.8 }, source: 'photo', orientation: 'portrait' }),
+      JSON.stringify({ version: 1, rect: RECT, source: 'photo', orientation: 'portrait', aspect: -1 }),
     ]) {
       storage.setItem(RIG_KEY, bad);
       expect(loadCalibration(storage)).toBeNull();

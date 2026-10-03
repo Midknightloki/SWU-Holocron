@@ -92,7 +92,16 @@ describe('RigCalibration', () => {
     await user.click(screen.getByRole('button', { name: 'Take photo' }));
     await screen.findByTestId('calib-rect');
     await user.click(screen.getByRole('button', { name: 'Save' }));
-    expect(onSave).toHaveBeenCalledWith({ rect: { x: 0.2, y: 0.1, w: 0.6, h: 0.8 }, source: 'photo', orientation: 'portrait' });
+    expect(onSave).toHaveBeenCalledWith({ rect: { x: 0.2, y: 0.1, w: 0.6, h: 0.8 }, source: 'photo', orientation: 'portrait', aspect: 0.75 });
+  });
+
+  it('warns when the calibration photo fell back to a video frame', async () => {
+    const user = userEvent.setup();
+    const { onTakePhoto } = renderCal();
+    onTakePhoto.mockResolvedValue({ ...SHOT, source: 'video' });
+    await user.click(screen.getByRole('button', { name: 'Take photo' }));
+    await screen.findByTestId('calib-rect');
+    expect(screen.getByText(/taken from a video frame/i)).toBeInTheDocument();
   });
 
   it('retakes the photo', async () => {
