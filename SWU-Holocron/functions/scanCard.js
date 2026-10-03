@@ -1,6 +1,7 @@
 /**
- * scanCard handler -- entitlement, daily quota and input validation for the
- * card scanner. The Gemini call itself is injected as `readCard`.
+ * scanCard and locateCard handlers -- shared entitlement, daily quota and input
+ * validation for the card scanner. Both are one Gemini call on one photo; the
+ * call itself is injected (`readCard` / `locate`).
  *
  * Everything is injected (Firestore, HttpsError, the reader, the clock) and this
  * file requires no package, so the app's Vitest suite can load it in CI, which
@@ -37,7 +38,7 @@ function sanitizeRead(read) {
   };
 }
 
-function createScanCardHandler({ db, appId, readCard, HttpsError, logger = console, now = () => new Date() }) {
+function createGeminiHandler({ db, appId, run, sanitize, label, failureMessage, HttpsError, logger = console, now = () => new Date() }) {
   const validateImage = (image) => {
     if (typeof image !== "string" || image.length === 0 || !BASE64.test(image)) {
       throw new HttpsError("invalid-argument", "image must be a base64-encoded JPEG.");
@@ -94,16 +95,53 @@ function createScanCardHandler({ db, appId, readCard, HttpsError, logger = conso
       await chargeQuota(uid, now());
     }
 
-    let read;
+    let output;
     try {
-      read = await readCard(image);
+      output = await run(image);
     } catch (err) {
-      logger.error("scanCard recognition failed", { uid, error: err.message });
-      throw new HttpsError("internal", "Card recognition failed.");
+      logger.error(`${label} failed`, { uid, error: err.message });
+      throw new HttpsError("internal", failureMessage);
     }
 
-    return sanitizeRead(read);
+    return sanitize(output);
   };
 }
 
-module.exports = { createScanCardHandler, DEFAULT_SCAN_DAILY_LIMIT };
+const NOT_FOUND = { found: false, box: null };
+
+/** Gemini box_2d is [ymin, xmin, ymax, xmax] on a 0-1000 scale. */
+function sanitizeBox(output) {
+  const box = output?.box_2d;
+  if (output?.found !== true || !Array.isArray(box) || box.length !== 4) return NOT_FOUND;
+  if (!box.every((v) => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1000)) return NOT_FOUND;
+  const [ymin, xmin, ymax, xmax] = box.map(Math.round);
+  if (ymin >= ymax || xmin >= xmax) return NOT_FOUND;
+  return { found: true, box: [ymin, xmin, ymax, xmax] };
+}
+
+/** Reads set, number and name off one card photo. */
+function createScanCardHandler({ readCard, ...deps }) {
+  return createGeminiHandler({
+    ...deps,
+    run: readCard,
+    sanitize: sanitizeRead,
+    label: "scanCard recognition",
+    failureMessage: "Card recognition failed.",
+  });
+}
+
+/**
+ * Finds the card in a calibration photo. Same entitlement and quota as a scan:
+ * it is one Gemini call, made once per rig.
+ */
+function createLocateCardHandler({ locate, ...deps }) {
+  return createGeminiHandler({
+    ...deps,
+    run: locate,
+    sanitize: sanitizeBox,
+    label: "locateCard",
+    failureMessage: "Card location failed.",
+  });
+}
+
+module.exports = { createScanCardHandler, createLocateCardHandler, sanitizeBox, DEFAULT_SCAN_DAILY_LIMIT };

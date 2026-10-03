@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
-const { createScanCardHandler, DEFAULT_SCAN_DAILY_LIMIT } = require('../../../functions/scanCard.js');
+const { createScanCardHandler, createLocateCardHandler, sanitizeBox, DEFAULT_SCAN_DAILY_LIMIT } = require('../../../functions/scanCard.js');
 
 class FakeHttpsError extends Error {
   constructor(code, message, details) {
@@ -155,5 +155,67 @@ describe('scanCard handler', () => {
     const { handler } = setup({ [profilePath('p')]: { isPro: true } }, vi.fn(async () => messy));
     const out = await handler(request('p'));
     expect(out).toEqual({ readable: false, set: 'SOR', number: '', name: 'x'.repeat(100) });
+  });
+});
+
+describe('locateCard handler', () => {
+  const BOX = { found: true, box_2d: [100, 200, 900, 800] };
+  const setupLocate = (docs, locate = vi.fn(async () => BOX)) => {
+    const db = fakeDb(docs);
+    const handler = createLocateCardHandler({ db, appId: APP, locate, HttpsError: FakeHttpsError, now: () => NOW });
+    return { db, handler, locate };
+  };
+
+  it('returns the card box for a Pro user and counts it as a scan', async () => {
+    const { handler, db } = setupLocate({ [profilePath('p')]: { isPro: true } });
+    await expect(handler(request('p'))).resolves.toEqual({ found: true, box: [100, 200, 900, 800] });
+    expect(db.store.get(usagePath('p'))).toEqual({ date: '2026-09-29', count: 1 });
+  });
+
+  it('lets an admin locate without counting it', async () => {
+    const { handler, db } = setupLocate({ [profilePath('a')]: { isAdmin: true } });
+    await expect(handler(request('a'))).resolves.toMatchObject({ found: true });
+    expect(db.store.has(usagePath('a'))).toBe(false);
+  });
+
+  it('applies the same guards as scanCard', async () => {
+    const { handler, locate } = setupLocate({
+      [profilePath('u')]: {},
+      [profilePath('p')]: { isPro: true },
+      [CONFIG_PATH]: { dailyLimit: 1 },
+      [usagePath('p')]: { date: '2026-09-29', count: 1 },
+    });
+    await expectCode(handler(request(null)), 'unauthenticated');
+    await expectCode(handler(request('g', { anonymous: true })), 'permission-denied');
+    await expectCode(handler(request('u')), 'permission-denied');
+    await expectCode(handler(request('p')), 'resource-exhausted');
+    expect(locate).not.toHaveBeenCalled();
+  });
+
+  it('maps a Gemini failure to internal', async () => {
+    const { handler } = setupLocate({ [profilePath('p')]: { isPro: true } }, vi.fn(async () => { throw new Error('down'); }));
+    await expectCode(handler(request('p')), 'internal');
+  });
+});
+
+describe('sanitizeBox', () => {
+  const NOT_FOUND = { found: false, box: null };
+
+  it('keeps a valid box, rounded to integers', () => {
+    expect(sanitizeBox({ found: true, box_2d: [100.4, 200.6, 900, 800] })).toEqual({ found: true, box: [100, 201, 900, 800] });
+  });
+
+  it.each([
+    ['found false', { found: false, box_2d: [1, 2, 3, 4] }],
+    ['missing box', { found: true }],
+    ['wrong length', { found: true, box_2d: [1, 2, 3] }],
+    ['out of range', { found: true, box_2d: [0, 0, 1001, 500] }],
+    ['negative', { found: true, box_2d: [-1, 0, 500, 500] }],
+    ['inverted', { found: true, box_2d: [600, 0, 500, 500] }],
+    ['zero width', { found: true, box_2d: [0, 300, 500, 300] }],
+    ['non-numeric', { found: true, box_2d: ['1', 0, 500, 500] }],
+    ['null output', null],
+  ])('rejects %s', (_label, output) => {
+    expect(sanitizeBox(output)).toEqual(NOT_FOUND);
   });
 });

@@ -83,6 +83,18 @@ export const ScanService = {
     return resolveScan(read, { setCodes, getCards: (code) => (code === set ? cards : null) });
   },
 
+  /** Finds the card in a rig-calibration photo. Never throws. */
+  async locateCard(imageBase64) {
+    if (!isConfigured) return { error: 'unknown' };
+    try {
+      const call = httpsCallable(getFunctions(), 'locateCard');
+      const data = (await call({ image: imageBase64 })).data;
+      return { found: data?.found === true, box: data?.found === true ? data.box ?? null : null };
+    } catch (err) {
+      return mapScanError(err);
+    }
+  },
+
   async commitDraft(draft, collectionRef, { onProgress = () => {} } = {}) {
     if (commitInFlight) {
       throw Object.assign(new Error('A previous save is still in progress.'), { code: 'commit-in-progress' });

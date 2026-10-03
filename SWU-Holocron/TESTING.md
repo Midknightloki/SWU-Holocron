@@ -125,6 +125,10 @@ these on real hardware and record the results in the PR:
 - Close the scanner mid-batch and reopen: rows survive, photos show "Photo lost".
 - Commit, and check collection counts went **up** by the scanned amounts rather
   than being replaced.
+- Rig calibration: calibrate with a card in the rig and check the detected box
+  fits the card; after saving, check the live outline sits over the card (note
+  any offset — it is approximate by design) and the footer shows `· cropped`.
+  Compare the unidentified count on the same stack calibrated vs cleared.
 - Scan entry points: beside the binder search (desktop), beside the Advanced
   Search box, under Import/Export in the Command Center, and a floating button
   on binder and dashboard at phone width. A non-Pro, non-admin account and a

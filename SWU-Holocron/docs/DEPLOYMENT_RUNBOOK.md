@@ -275,8 +275,11 @@ change to `functions/index.js` or `functions/scanCard.js`:
 
 ```bash
 cd SWU-Holocron
-firebase deploy --only functions:scanCard
+firebase deploy --only functions:scanCard,functions:locateCard
 ```
+
+`locateCard` (rig calibration) must be deployed before a web app that uses it
+ships; without it, Calibrate still works but falls back to manual placement.
 
 The rules it depends on (`isPro` protection, `config/**` and `scanUsage/**`
 locked) ship through `deploy-firestore-rules.yml` like any other rules change.

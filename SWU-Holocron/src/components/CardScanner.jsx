@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { X, Sparkles, HelpCircle } from 'lucide-react';
+import { X, Sparkles, HelpCircle, Crosshair } from 'lucide-react';
+import { calibratedGuide, clearCalibration, cropFor, loadCalibration, saveCalibration } from '../utils/rigCalibration';
+import RigCalibration from './RigCalibration';
 import { ScanService } from '../services/ScanService';
 import { capturePhoto } from '../utils/frameCapture';
 import { levelReading } from '../utils/level';
@@ -69,6 +71,12 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
   const [level, setLevel] = useState(null);
   const [committing, setCommitting] = useState(false);
   const [commitError, setCommitError] = useState(null);
+  const [calibration, setCalibration] = useState(() => loadCalibration(getStorage()));
+  const [calibrating, setCalibrating] = useState(false);
+  const [view, setView] = useState({ vw: 0, vh: 0, bw: 0, bh: 0 });
+  const calibratingRef = useRef(false);
+  calibratingRef.current = calibrating;
+  const previewRef = useRef(null);
   const [owner, setOwner] = useState(uid);
   // Mirrors `quota` for the capture guard. State reaches the key listener only
   // after React re-runs its effect, so a press in between would still capture;
@@ -172,13 +180,17 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
   }, [setCodes, signalProblem]);
 
   const capture = useCallback(async () => {
-    if (helpOpenRef.current || quotaRef.current || cameraError || capturingRef.current) return;
+    if (calibratingRef.current || helpOpenRef.current || quotaRef.current || cameraError || capturingRef.current) return;
     capturingRef.current = true;
     // Foil is read at the tap, not after the photo resolves.
     const isFoil = foilStack;
     let shot = null;
     try {
-      shot = await capturePhoto({ track: trackRef.current, video: videoRef.current });
+      shot = await capturePhoto({
+        track: trackRef.current,
+        video: videoRef.current,
+        crop: (source, width, height) => cropFor(calibration, source, width, height),
+      });
     } catch {
       shot = null;
     } finally {
@@ -189,11 +201,11 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
       signalProblem();
       return;
     }
-    setLastCapture({ source: shot.source, width: shot.width, height: shot.height });
+    setLastCapture({ source: shot.source, width: shot.width, height: shot.height, cropped: Boolean(shot.cropped) });
     const id = newId();
     setDraft((d) => addCapture(d, { id, isFoil, photo: shot.image }));
     runScan(id, shot.image);
-  }, [cameraError, foilStack, runScan, signalProblem]);
+  }, [calibration, cameraError, foilStack, runScan, signalProblem]);
 
   useEffect(() => {
     if (mode !== 'camera') return undefined;
@@ -201,6 +213,53 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
     window.addEventListener('deviceorientation', onOrientation);
     return () => window.removeEventListener('deviceorientation', onOrientation);
   }, [mode]);
+
+  useEffect(() => {
+    if (mode !== 'camera') return undefined;
+    const video = videoRef.current;
+    const box = previewRef.current;
+    if (!video || !box) return undefined;
+    const measure = () => {
+      const r = box.getBoundingClientRect();
+      setView({ vw: video.videoWidth, vh: video.videoHeight, bw: r.width, bh: r.height });
+    };
+    video.addEventListener('loadedmetadata', measure);
+    video.addEventListener('resize', measure);
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    observer?.observe(box);
+    measure();
+    return () => {
+      video.removeEventListener('loadedmetadata', measure);
+      video.removeEventListener('resize', measure);
+      observer?.disconnect();
+    };
+  }, [mode]);
+
+  // Never alongside a scan capture: a second takePhoto on a busy track rejects,
+  // the capture falls back to a video frame, and a calibration recorded from a
+  // video frame silently disables cropping for every later photo.
+  const takeCalibrationPhoto = useCallback(async () => {
+    if (capturingRef.current) return { image: null, source: 'video', width: 0, height: 0, cropped: false };
+    capturingRef.current = true;
+    try {
+      return await capturePhoto({ track: trackRef.current, video: videoRef.current });
+    } finally {
+      capturingRef.current = false;
+    }
+  }, []);
+
+  const saveRig = useCallback((cal) => {
+    const saved = saveCalibration(getStorage(), cal);
+    // Storage unavailable: keep it for this session anyway.
+    setCalibration(saved ?? { version: 1, ...cal, savedAt: Date.now() });
+    setCalibrating(false);
+  }, []);
+
+  const clearRig = useCallback(() => {
+    clearCalibration(getStorage());
+    setCalibration(null);
+    setCalibrating(false);
+  }, []);
 
   const dismissHelp = useCallback(() => {
     markHelpSeen();
@@ -210,6 +269,8 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
   useEffect(() => {
     if (mode !== 'camera') return undefined;
     const onKey = (e) => {
+      // Calibration has its own buttons and arrow-key nudging: leave keys alone.
+      if (calibratingRef.current) return;
       if (!CAPTURE_KEYS.has(e.code) && e.key !== ' ' && e.key !== 'Enter') return;
       // Always swallow the key: Space on a focused button would otherwise
       // also toggle it, and a held key would fire a capture per repeat.
@@ -293,9 +354,11 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
     );
   }
 
+  const calibratedStyle = calibratedGuide(calibration, view);
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-black text-gray-100">
-      <div className="flex items-center gap-2 px-4 py-3 bg-gray-900/90 border-b border-gray-800">
+      <div className="flex flex-wrap items-center gap-2 px-4 py-3 bg-gray-900/90 border-b border-gray-800">
         <button
           type="button"
           onClick={onClose}
@@ -328,6 +391,19 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
         </button>
         <button
           type="button"
+          aria-label="Calibrate rig"
+          title="Calibrate for your rig"
+          onClick={() => setCalibrating(true)}
+          className={`p-2 rounded-lg border ${
+            calibration
+              ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300'
+              : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white'
+          }`}
+        >
+          <Crosshair size={18} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
           onClick={() => setMode('review')}
           className="ml-auto px-3 py-2 rounded-lg bg-yellow-500 hover:bg-yellow-400 text-black text-sm font-bold"
         >
@@ -336,6 +412,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
       </div>
 
       <div
+        ref={previewRef}
         data-testid="scan-preview"
         onClick={capture}
         className="relative flex-1 overflow-hidden cursor-pointer select-none"
@@ -349,12 +426,21 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
             - top-right, upright: leaders and bases turned a quarter-turn
               counter-clockwise, which moves their bottom-right number there.
             Sized against the preview in both directions (container units) so
-            it stays card-shaped on a tall phone and a wide laptop alike. */}
+            it stays card-shaped on a tall phone and a wide laptop alike.
+            Calibrated: placed where the rig calibration says the card is.
+            That placement is approximate -- the live stream and the still
+            photo can frame slightly differently -- but the crop is exact,
+            because it is applied to the photo. */}
         <div
           data-testid="card-guide"
+          data-calibrated={String(Boolean(calibration))}
           aria-hidden="true"
-          className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 border-2 border-yellow-500/70 rounded-xl"
-          style={{ width: 'min(96cqw, calc(92cqh * 63 / 88))', aspectRatio: '63 / 88' }}
+          className={`pointer-events-none absolute border-2 border-yellow-500/70 rounded-xl ${
+            calibratedStyle ? '' : 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2'
+          }`}
+          style={calibratedStyle
+            ? { left: calibratedStyle.left, top: calibratedStyle.top, width: calibratedStyle.width, height: calibratedStyle.height }
+            : { width: 'min(96cqw, calc(92cqh * 63 / 88))', aspectRatio: '63 / 88' }}
         >
           <div
             data-testid="collector-guide"
@@ -403,6 +489,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
         >
           <h3 className="font-bold text-white mb-2">How to scan</h3>
           <ol className="list-decimal pl-5 space-y-1">
+            <li>Using a fixed rig? Tap the crosshair once with a card in place to calibrate — every scan is then cropped to the card.</li>
             <li>Hold the phone flat above the table. Wait for the level at the top to turn green.</li>
             <li>Raise or lower the phone until the card fills the yellow outline.</li>
             <li>
@@ -421,10 +508,22 @@ export default function CardScanner({ uid, collectionRef, setCodes, onClose }) {
         </div>
       )}
 
+      {calibrating && (
+        <RigCalibration
+          hasCalibration={Boolean(calibration)}
+          onTakePhoto={takeCalibrationPhoto}
+          onSave={saveRig}
+          onClear={clearRig}
+          onClose={() => setCalibrating(false)}
+        />
+      )}
+
       <div className="flex items-center gap-4 px-4 py-3 bg-gray-900/90 border-t border-gray-800 text-sm text-gray-400">
         <span>{total} scanned</span>
         {lastCapture && (
-          <span className="text-gray-500">{lastCapture.source} {lastCapture.width}×{lastCapture.height}</span>
+          <span className="text-gray-500">
+            {lastCapture.source} {lastCapture.width}×{lastCapture.height} · {lastCapture.cropped ? 'cropped' : 'full frame'}
+          </span>
         )}
         {counts.reading > 0 && <span>{counts.reading} reading…</span>}
         {attention > 0 && <span className="text-red-400">{attention} need attention</span>}

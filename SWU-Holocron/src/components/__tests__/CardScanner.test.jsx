@@ -13,6 +13,24 @@ vi.mock('../../services/ScanService', () => ({
 }));
 vi.mock('../../utils/frameCapture', () => ({ capturePhoto: mocks.capturePhoto }));
 vi.mock('../CardPickerModal', () => ({ default: () => null }));
+vi.mock('../RigCalibration', () => ({
+  default: ({ onSave, onClose, onTakePhoto }) => (
+    <div role="dialog" aria-label="Calibrate rig">
+      <button type="button" onClick={() => onSave({ rect: { x: 0.2, y: 0.1, w: 0.6, h: 0.8 }, source: 'photo', orientation: 'portrait' })}>save-mock</button>
+      <button type="button" onClick={onClose}>close-mock</button>
+      <button
+        type="button"
+        onClick={async (e) => {
+          const target = e.currentTarget;
+          const shot = await onTakePhoto();
+          target.setAttribute('data-image', String(shot.image));
+        }}
+      >
+        take-mock
+      </button>
+    </div>
+  ),
+}));
 
 import CardScanner from '../CardScanner';
 
@@ -41,6 +59,7 @@ const flush = () => act(async () => { await new Promise((r) => setTimeout(r, 0))
 
 // Most tests start with the how-to already seen; the first-use test flips it.
 let helpSeen = true;
+let rigStored = null;
 
 const TRACK = { kind: 'video', stop: vi.fn() };
 const PHOTO = { image: 'IMG', source: 'photo', width: 4080, height: 3072 };
@@ -51,8 +70,13 @@ const pressSpace = (target = window, init = {}) =>
 beforeEach(() => {
   vi.clearAllMocks();
   helpSeen = true;
+  rigStored = null;
   localStorage.getItem.mockReset();
-  localStorage.getItem.mockImplementation((key) => (key === 'swu-scan-help-seen' && helpSeen ? '1' : null));
+  localStorage.getItem.mockImplementation((key) => {
+    if (key === 'swu-scan-help-seen') return helpSeen ? '1' : null;
+    if (key === 'swu-scan-rig') return rigStored;
+    return null;
+  });
   mocks.capturePhoto.mockResolvedValue(PHOTO);
   mocks.scan.mockResolvedValue(LUKE);
   stubCamera(async () => ({ getTracks: () => [TRACK], getVideoTracks: () => [TRACK] }));
@@ -167,7 +191,7 @@ describe('CardScanner', () => {
   it('shows which capture path ran and at what size', async () => {
     renderScanner();
     pressSpace();
-    expect(await screen.findByText('photo 4080×3072')).toBeInTheDocument();
+    expect(await screen.findByText('photo 4080×3072 · full frame')).toBeInTheDocument();
   });
 
   it('marks the collector-number area inside the card guide', () => {
@@ -216,6 +240,62 @@ describe('CardScanner', () => {
     await waitFor(() => expect(screen.getByTestId('level')).toHaveAttribute('data-level', 'true'));
   });
 
+  it('crops captures to the saved calibration', async () => {
+    rigStored = JSON.stringify({ version: 1, rect: { x: 0.2, y: 0.1, w: 0.6, h: 0.8 }, source: 'photo', orientation: 'portrait', savedAt: 1 });
+    mocks.capturePhoto.mockResolvedValue({ ...PHOTO, width: 3024, height: 4032, cropped: true });
+    renderScanner();
+    expect(screen.getByTestId('card-guide')).toHaveAttribute('data-calibrated', 'true');
+    pressSpace();
+    await waitFor(() => expect(mocks.capturePhoto).toHaveBeenCalled());
+    const { crop } = mocks.capturePhoto.mock.calls[0][0];
+    expect(crop('photo', 3024, 4032)).toEqual({ x: 0.176, y: 0.068, w: 0.648, h: 0.864 });
+    expect(crop('video', 3024, 4032)).toBeNull();
+    expect(crop('photo', 4032, 3024)).toBeNull();
+    expect(await screen.findByText('photo 3024×4032 · cropped')).toBeInTheDocument();
+  });
+
+  it('falls back to the centred guide when the preview size is unknown', () => {
+    rigStored = JSON.stringify({ version: 1, rect: { x: 0.2, y: 0.1, w: 0.6, h: 0.8 }, source: 'photo', orientation: 'portrait', savedAt: 1 });
+    renderScanner();
+    // happy-dom has no layout: no video size, so no calibrated position yet.
+    expect(screen.getByTestId('card-guide').className).toContain('left-1/2');
+  });
+
+  it('opens calibration, pauses capture, and saves the rig', async () => {
+    const user = userEvent.setup();
+    renderScanner();
+    expect(screen.getByTestId('card-guide')).toHaveAttribute('data-calibrated', 'false');
+    await user.click(screen.getByRole('button', { name: 'Calibrate rig' }));
+    expect(screen.getByRole('dialog', { name: 'Calibrate rig' })).toBeInTheDocument();
+    pressSpace();
+    await flush();
+    expect(mocks.capturePhoto).not.toHaveBeenCalled();
+    await user.click(screen.getByText('save-mock'));
+    expect(screen.queryByRole('dialog', { name: 'Calibrate rig' })).not.toBeInTheDocument();
+    expect(localStorage.setItem).toHaveBeenCalledWith('swu-scan-rig', expect.stringContaining('"source":"photo"'));
+    expect(screen.getByTestId('card-guide')).toHaveAttribute('data-calibrated', 'true');
+  });
+
+  it('will not take the calibration photo while a scan capture is still running', async () => {
+    const user = userEvent.setup();
+    let finish;
+    mocks.capturePhoto.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    renderScanner();
+    pressSpace();
+    await flush();
+    await user.click(screen.getByRole('button', { name: 'Calibrate rig' }));
+    await user.click(screen.getByText('take-mock'));
+    await waitFor(() => expect(screen.getByText('take-mock')).toHaveAttribute('data-image', 'null'));
+    // A second takePhoto on a busy track is what fell back to a video frame.
+    expect(mocks.capturePhoto).toHaveBeenCalledTimes(1);
+    await act(async () => { finish(PHOTO); });
+  });
+
+  it('mentions calibration in the how-to', () => {
+    helpSeen = false;
+    renderScanner();
+    expect(screen.getByRole('dialog', { name: 'How to scan' })).toHaveTextContent(/calibrate/i);
+  });
   it('persists the batch under the user\'s own key', async () => {
     renderScanner();
     pressSpace();

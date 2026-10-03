@@ -36,7 +36,7 @@ describe('capturePhoto', () => {
     expect(ImageCaptureCtor).toHaveBeenCalledWith(track);
     expect(decodeBlob).toHaveBeenCalledWith(blob);
     expect(encode).toHaveBeenCalledWith(bitmap, { width: 2048, height: 1542 });
-    expect(result).toEqual({ image: 'PHOTO', source: 'photo', width: 4080, height: 3072 });
+    expect(result).toEqual({ image: 'PHOTO', source: 'photo', width: 4080, height: 3072, cropped: false });
   });
 
   it('reports the photo size even though the bitmap is released after encoding', async () => {
@@ -51,7 +51,7 @@ describe('capturePhoto', () => {
     const encode = vi.fn(() => 'FRAME');
     const result = await capturePhoto({ track, video, ImageCaptureCtor: undefined, encode });
     expect(encode).toHaveBeenCalledWith(video, { width: 1280, height: 720 });
-    expect(result).toEqual({ image: 'FRAME', source: 'video', width: 1280, height: 720 });
+    expect(result).toEqual({ image: 'FRAME', source: 'video', width: 1280, height: 720, cropped: false });
   });
 
   it('falls back to a video frame when takePhoto fails', async () => {
@@ -64,7 +64,36 @@ describe('capturePhoto', () => {
   it('returns no image when the video has no frame yet', async () => {
     const encode = vi.fn();
     const result = await capturePhoto({ track: null, video: { videoWidth: 0, videoHeight: 0 }, encode });
-    expect(result).toEqual({ image: null, source: 'video', width: 0, height: 0 });
+    expect(result).toEqual({ image: null, source: 'video', width: 0, height: 0, cropped: false });
     expect(encode).not.toHaveBeenCalled();
+  });
+  it('crops a photo to the calibrated region before scaling', async () => {
+    const bitmap = { width: 3024, height: 4032 };
+    const ImageCaptureCtor = fakeImageCapture(vi.fn(async () => ({})));
+    const encode = vi.fn(() => 'CROPPED');
+    const crop = vi.fn(() => ({ x: 0.2, y: 0.1, w: 0.6, h: 0.8 }));
+
+    const result = await capturePhoto({ track, video, ImageCaptureCtor, decodeBlob: async () => bitmap, encode, crop });
+
+    expect(crop).toHaveBeenCalledWith('photo', 3024, 4032);
+    // Region 1816x3226 scaled so its long edge is 2048.
+    expect(encode).toHaveBeenCalledWith(bitmap, { width: 1153, height: 2048 }, { sx: 604, sy: 403, sw: 1816, sh: 3226 });
+    expect(result).toEqual({ image: 'CROPPED', source: 'photo', width: 3024, height: 4032, cropped: true });
+  });
+
+  it('crops a video-frame fallback with the source it reports', async () => {
+    const encode = vi.fn(() => 'FRAME');
+    const crop = vi.fn((source) => (source === 'video' ? { x: 0, y: 0, w: 0.5, h: 0.5 } : null));
+    const result = await capturePhoto({ track, video, ImageCaptureCtor: undefined, encode, crop });
+    expect(crop).toHaveBeenCalledWith('video', 1280, 720);
+    expect(encode).toHaveBeenCalledWith(video, { width: 640, height: 360 }, { sx: 0, sy: 0, sw: 640, sh: 360 });
+    expect(result).toMatchObject({ cropped: true });
+  });
+
+  it('does not crop when the crop function declines', async () => {
+    const encode = vi.fn(() => 'FRAME');
+    const result = await capturePhoto({ track, video, ImageCaptureCtor: undefined, encode, crop: () => null });
+    expect(encode).toHaveBeenCalledWith(video, { width: 1280, height: 720 });
+    expect(result).toMatchObject({ cropped: false });
   });
 });
