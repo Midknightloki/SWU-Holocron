@@ -5,6 +5,7 @@ import {
   normalizeName,
   namesMatch,
   resolveScan,
+  relatedSetCodes,
 } from '../../utils/scanResolve';
 
 const SET_CODES = ['SOR', 'SHD', 'JTL', 'PROMO'];
@@ -81,6 +82,56 @@ describe('namesMatch', () => {
   it('rejects an empty read', () => {
     expect(namesMatch('', luke)).toBe(false);
     expect(normalizeName(undefined)).toBe('');
+  });
+});
+
+// Promo sets print their parent set's code: an SHDOP card says "SHD" and
+// carries its own promo number, which in SHD is a different card.
+describe('promo sets printed with the parent code', () => {
+  const PROMO_CODES = ['SOR', 'SHD', 'SHDOP', 'SHDPQ', 'SHDPQJ'];
+  const PROMO_CARDS = {
+    SHD: [
+      { Set: 'SHD', Number: '010', Name: 'Cad Bane', Type: 'Leader' },
+    ],
+    SHDOP: [
+      { Set: 'SHDOP', Number: '10', Name: 'Calculated Lethality', Type: 'Event' },
+      { Set: 'SHDOP', Number: '14', Name: 'Cloud-Rider', Type: 'Unit' },
+    ],
+    SHDPQ: [],
+  };
+  const promoCtx = { setCodes: PROMO_CODES, getCards: (code) => PROMO_CARDS[code] ?? null };
+
+  it('lists registered sets that extend a printed code', () => {
+    expect(relatedSetCodes('SHD', PROMO_CODES)).toEqual(['SHDOP', 'SHDPQ', 'SHDPQJ']);
+    expect(relatedSetCodes('SOR', PROMO_CODES)).toEqual([]);
+  });
+
+  it('finds the promo when the number is a different card in the parent set', () => {
+    const read = { readable: true, set: 'SHD', number: '10', name: 'Calculated Lethality' };
+    expect(resolveScan(read, promoCtx)).toEqual({
+      status: 'matched', set: 'SHDOP', number: '010', name: 'Calculated Lethality', type: 'Event',
+    });
+  });
+
+  it('finds the promo when the number does not exist in the parent set', () => {
+    const read = { readable: true, set: 'SHD', number: '14', name: 'Cloud-Rider' };
+    expect(resolveScan(read, promoCtx)).toMatchObject({ status: 'matched', set: 'SHDOP', number: '014' });
+  });
+
+  it('still prefers the parent set when the name matches there', () => {
+    const read = { readable: true, set: 'SHD', number: '10', name: 'Cad Bane' };
+    expect(resolveScan(read, promoCtx)).toMatchObject({ status: 'matched', set: 'SHD' });
+  });
+
+  it('keeps the original reason when no related set has the card either', () => {
+    const read = { readable: true, set: 'SHD', number: '10', name: 'Nobody' };
+    expect(resolveScan(read, promoCtx)).toMatchObject({ status: 'unidentified', reason: 'name-mismatch' });
+  });
+
+  it('skips related sets whose data is not loaded', () => {
+    const read = { readable: true, set: 'SHD', number: '10', name: 'Calculated Lethality' };
+    const onlyParent = { setCodes: PROMO_CODES, getCards: (code) => (code === 'SHD' ? PROMO_CARDS.SHD : null) };
+    expect(resolveScan(read, onlyParent)).toMatchObject({ status: 'unidentified', reason: 'name-mismatch' });
   });
 });
 

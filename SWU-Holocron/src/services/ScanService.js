@@ -2,7 +2,7 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import { doc, increment, writeBatch } from 'firebase/firestore';
 import { db, isConfigured } from '../firebase';
 import { CardService } from './CardService';
-import { normalizeSetCode, resolveScan } from '../utils/scanResolve';
+import { normalizeSetCode, relatedSetCodes, resolveScan } from '../utils/scanResolve';
 import { removeRows, toWrites } from '../utils/scanDraft';
 
 /**
@@ -80,7 +80,21 @@ export const ScanService = {
       }
     }
 
-    return resolveScan(read, { setCodes, getCards: (code) => (code === set ? cards : null) });
+    const loaded = { [set]: cards };
+    const first = resolveScan(read, { setCodes, getCards: (code) => loaded[code] ?? null });
+    const related = set ? relatedSetCodes(set, setCodes) : [];
+    if (first.status !== 'unidentified' || !related.length
+      || !['no-such-card', 'name-mismatch'].includes(first.reason)) {
+      return first;
+    }
+
+    // Promo sets print their parent's code: only now load the sets that
+    // extend it, and resolve again. A set that fails to load is skipped.
+    const results = await Promise.allSettled(related.map((code) => cardsForSet(code)));
+    related.forEach((code, i) => {
+      if (results[i].status === 'fulfilled') loaded[code] = results[i].value;
+    });
+    return resolveScan(read, { setCodes, getCards: (code) => loaded[code] ?? null });
   },
 
   /** Finds the card in a rig-calibration photo. Never throws. */

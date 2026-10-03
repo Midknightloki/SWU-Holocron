@@ -48,6 +48,20 @@ export function namesMatch(readName, card) {
 
 const unidentified = (reason, read) => ({ status: 'unidentified', reason, read: read ?? null });
 
+/**
+ * Registered sets that extend a printed set code. Promo sets print their
+ * parent's code -- an SHDOP card says "SHD" with its own promo number -- so a
+ * read that fails in SHD may be a card in SHDOP, SHDPQ, SHDPQJ, ...
+ * (Prefix, not the registry's parentSetId, which is missing on judge sets.)
+ */
+export function relatedSetCodes(set, setCodes) {
+  return setCodes.filter((code) => code !== set && code.startsWith(set));
+}
+
+const findByNumber = (cards, number) => (cards ?? []).find((c) => normalizeNumber(c.Number) === number);
+
+const matched = (set, number, card) => ({ status: 'matched', set, number, name: card.Name, type: card.Type ?? null });
+
 export function resolveScan(read, { setCodes, getCards }) {
   if (!read || read.readable !== true) return unidentified('unreadable', read);
 
@@ -57,10 +71,16 @@ export function resolveScan(read, { setCodes, getCards }) {
   const number = normalizeNumber(read.number);
   if (!number) return unidentified('unreadable', read);
 
-  const card = (getCards(set) ?? []).find((c) => normalizeNumber(c.Number) === number);
-  if (!card) return unidentified('no-such-card', read);
+  const card = findByNumber(getCards(set), number);
+  if (card && namesMatch(read.name, card)) return matched(set, number, card);
 
-  if (!namesMatch(read.name, card)) return unidentified('name-mismatch', read);
+  // Not this card in the printed set: try the promo sets printed with this
+  // code. The name check still guards every candidate, so a match here is
+  // as trustworthy as one in the printed set.
+  for (const code of relatedSetCodes(set, setCodes)) {
+    const promo = findByNumber(getCards(code), number);
+    if (promo && namesMatch(read.name, promo)) return matched(code, number, promo);
+  }
 
-  return { status: 'matched', set, number, name: card.Name, type: card.Type ?? null };
+  return unidentified(card ? 'name-mismatch' : 'no-such-card', read);
 }

@@ -88,6 +88,39 @@ describe('ScanService.scan', () => {
   });
 });
 
+describe('ScanService.scan with promo sets', () => {
+  const CODES = ['SHD', 'SHDOP'];
+  const DATA = {
+    SHD: [{ Set: 'SHD', Number: '010', Name: 'Cad Bane', Type: 'Leader' }],
+    SHDOP: [{ Set: 'SHDOP', Number: '10', Name: 'Calculated Lethality', Type: 'Event' }],
+  };
+
+  beforeEach(() => {
+    mocks.fetchSetData.mockImplementation(async (code) => ({ data: DATA[code] ?? [] }));
+  });
+
+  it('loads the related promo set only after the parent set fails, and matches there', async () => {
+    mocks.callable.mockResolvedValue({ data: { readable: true, set: 'SHD', number: '10', name: 'Calculated Lethality' } });
+    await expect(ScanService.scan('IMG', CODES)).resolves.toMatchObject({ status: 'matched', set: 'SHDOP', number: '010' });
+    expect(mocks.fetchSetData.mock.calls.map(([c]) => c)).toEqual(['SHD', 'SHDOP']);
+  });
+
+  it('does not touch promo sets when the parent set matches', async () => {
+    mocks.callable.mockResolvedValue({ data: { readable: true, set: 'SHD', number: '10', name: 'Cad Bane' } });
+    await expect(ScanService.scan('IMG', CODES)).resolves.toMatchObject({ status: 'matched', set: 'SHD' });
+    expect(mocks.fetchSetData.mock.calls.map(([c]) => c)).toEqual(['SHD']);
+  });
+
+  it('ignores a related set that fails to load', async () => {
+    mocks.fetchSetData.mockImplementation(async (code) => {
+      if (code === 'SHDOP') throw new Error('offline');
+      return { data: DATA[code] };
+    });
+    mocks.callable.mockResolvedValue({ data: { readable: true, set: 'SHD', number: '10', name: 'Calculated Lethality' } });
+    await expect(ScanService.scan('IMG', CODES)).resolves.toMatchObject({ status: 'unidentified', reason: 'name-mismatch' });
+  });
+});
+
 describe('mapScanError', () => {
   it.each([
     ['permission-denied', { error: 'forbidden' }],
