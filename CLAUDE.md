@@ -144,13 +144,22 @@ first — that is the gate working.
 
 ### Card data: four tiers, and a cache with no expiry
 
-Loading a set goes through **two** layers. `App.jsx#loadSetData()` checks
-localStorage first, and only then calls into the service:
+Loading a set goes through **two** layers. `App.jsx#loadSetData()` calls
+`loadSet()` (`src/services/setLoader.js`), which checks the local cache first and
+only then calls into the service:
 
-1. `localStorage['swu-cards-{SET}']` (`App.jsx:299`) — **no TTL.** Once a set is
-   cached it is served forever until `loadSetData(force = true)`. This is the
-   usual reason a user reports stale card data, and the reason a Firestore
-   re-seed appears not to take effect.
+1. IndexedDB `swu-holocron` → store `cardSets`, keyed by set code
+   (`src/services/cardCache.js`) — **no TTL.** Once a set is cached it is served
+   forever until `loadSetData(force = true)`. This is the usual reason a user
+   reports stale card data, and the reason a Firestore re-seed appears not to
+   take effect.
+
+   It used to be `localStorage['swu-cards-{SET}']`. At ~650 KB per base set that
+   filled the ~5 MB localStorage quota, after which **every** other localStorage
+   write failed silently (rig calibration, scan drafts) and a fresh fetch whose
+   cache write threw fell into the "Network offline" fallback. `App` migrates any
+   leftover `swu-cards-*` keys into IndexedDB at startup and deletes them. Keep
+   bulk data out of localStorage. A failed cache write never fails a load.
 2. `CardService.fetchSetData()`, itself three-tiered:
    - Firestore `cardDatabase` (primary)
    - legacy `public/data/sets/{SET}` cache, if under 7 days old
@@ -164,7 +173,7 @@ are URLs built by `CardService.getCardImage()` — never stored.
 
 The Firestore `cardDatabase` is refreshed weekly by `sync-cards.yml` — see
 Deployment below. Note that the weekly refresh does nothing for a user whose
-`localStorage` already holds the set: that cache has no TTL, so new data waits for
+IndexedDB cache already holds the set: that cache has no TTL, so new data waits for
 `loadSetData(force = true)`.
 
 ### Identity of a card, and set codes
@@ -421,7 +430,7 @@ it is an ESLint *error*, so CI blocks on it.
 - A test file containing JSX must use the `.jsx` extension or Vite/esbuild won't
   parse it. All 35 current test files follow this.
 - `ASPECTS` is an array of objects, not strings — render `aspect.name`.
-- `localStorage` keys are `swu-`-prefixed: `swu-cards-{SET}`, `swu-available-sets`,
+- `localStorage` keys are `swu-`-prefixed: `swu-available-sets`,
   `swu-active-set`, `swu-has-visited`, `swu-sync-code`, `swu-holocron`,
   `swu-scan-draft-{uid}`, `swu-scan-help-seen`, `swu-scan-rig`.
 - Leaders and Bases are horizontal: `aspect-[88/63] col-span-2`. Everything else
