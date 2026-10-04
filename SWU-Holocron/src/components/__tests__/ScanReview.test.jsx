@@ -7,8 +7,8 @@ import userEvent from '@testing-library/user-event';
 import React from 'react';
 
 vi.mock('../CardPickerModal', () => ({
-  default: ({ onSelect }) => (
-    <button type="button" onClick={() => onSelect({ Set: 'SHD', Number: 7, Name: 'Boba Fett' })}>pick-mock</button>
+  default: ({ onSelect, initialSearch }) => (
+    <button type="button" data-initial-search={initialSearch ?? ''} onClick={() => onSelect({ Set: 'SHD', Number: 7, Name: 'Boba Fett' })}>pick-mock</button>
   ),
 }));
 
@@ -106,6 +106,21 @@ describe('ScanReview', () => {
     renderReview(draft);
     await user.click(screen.getByRole('button', { name: 'View photo of Luke Skywalker' }));
     expect(within(screen.getByRole('dialog', { name: 'Photo' })).getByRole('img').getAttribute('src')).toContain('/cards/SOR/012');
+  });
+
+  it('opens the picker searching for the title that was read', async () => {
+    const user = userEvent.setup();
+    const read = { readable: true, set: 'SOR', number: '999', name: 'Han Solo' };
+    renderReview(build([['u', { status: 'unidentified', reason: 'no-such-card', read }]]));
+    await user.click(screen.getByRole('button', { name: 'Pick card' }));
+    expect(screen.getByText('pick-mock')).toHaveAttribute('data-initial-search', 'Han Solo');
+  });
+
+  it('opens the picker with an empty search when nothing was read', async () => {
+    const user = userEvent.setup();
+    renderReview(build([['u', { status: 'unidentified', reason: 'unreadable', read: null }]]));
+    await user.click(screen.getByRole('button', { name: 'Pick card' }));
+    expect(screen.getByText('pick-mock')).toHaveAttribute('data-initial-search', '');
   });
 
   it('says so when a photo was lost to a reload', () => {

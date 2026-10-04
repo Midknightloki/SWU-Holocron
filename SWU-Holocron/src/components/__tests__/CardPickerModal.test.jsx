@@ -51,6 +51,12 @@ describe('CardPickerModal', () => {
     expect(await screen.findByAltText('Death Trooper')).toHaveAttribute('data-orientation', 'vertical');
   });
 
+  it('starts with a pre-filled search when given one', async () => {
+    render(<CardPickerModal collectionData={{}} initialSearch="Death" onSelect={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.getByPlaceholderText(/search/i)).toHaveValue('Death');
+    expect(await screen.findByText('Death Trooper')).toBeInTheDocument();
+  });
+
   it('loads sets from the registry, not the hardcoded fallback', async () => {
     render(<CardPickerModal type="Upgrade" collectionData={{}} onSelect={vi.fn()} onClose={vi.fn()} />);
     expect(await screen.findByText('Death Star Plans')).toBeInTheDocument();

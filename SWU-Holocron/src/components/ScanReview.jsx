@@ -278,6 +278,8 @@ export default function ScanReview({ draft, onChange, onRetry, onBack, onCommit,
       {pickingFor && (
         <CardPickerModal
           collectionData={{}}
+          // Start from the title Gemini read, so confirming the card is one tap.
+          initialSearch={draft.rows.find((r) => r.id === pickingFor)?.read?.name ?? ''}
           onSelect={(card) => {
             onChange(resolveManually(draft, pickingFor, card));
             setPickingFor(null);
