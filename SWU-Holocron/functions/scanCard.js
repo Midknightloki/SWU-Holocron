@@ -35,6 +35,8 @@ function sanitizeRead(read) {
     set: cleanString(read?.set),
     number: cleanString(read?.number),
     name: cleanString(read?.name),
+    // Leaders face up carry no collector number; name + subtitle identifies them.
+    subtitle: cleanString(read?.subtitle),
   };
 }
 
