@@ -6,12 +6,26 @@ import { render, screen, waitFor, fireEvent, act, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import React from 'react';
 
-const mocks = vi.hoisted(() => ({ scan: vi.fn(), commitDraft: vi.fn(), capturePhoto: vi.fn(), prefetchSets: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  scan: vi.fn(), commitDraft: vi.fn(), capturePhoto: vi.fn(), prefetchSets: vi.fn(),
+  captureVideoFrame: vi.fn(), sharpness: 200,
+}));
+// Photos live in the photo store now: an in-memory stand-in.
+const photos = vi.hoisted(() => ({ map: new Map(), remove: vi.fn() }));
+vi.mock('../../services/photoStore', () => ({
+  PhotoStore: {
+    put: vi.fn(async (id, b) => { photos.map.set(id, b); return true; }),
+    get: vi.fn(async (id) => photos.map.get(id) ?? null),
+    remove: (ids) => { photos.remove(ids); ids.forEach((id) => photos.map.delete(id)); return Promise.resolve(); },
+    clear: vi.fn(async () => { photos.map.clear(); }),
+  },
+}));
+vi.mock('../../utils/sharpness', () => ({ laplacianVariance: () => mocks.sharpness }));
 
 vi.mock('../../services/ScanService', () => ({
   ScanService: { scan: mocks.scan, commitDraft: mocks.commitDraft, prefetchSets: mocks.prefetchSets },
 }));
-vi.mock('../../utils/frameCapture', () => ({ capturePhoto: mocks.capturePhoto }));
+vi.mock('../../utils/frameCapture', () => ({ capturePhoto: mocks.capturePhoto, captureVideoFrame: mocks.captureVideoFrame }));
 vi.mock('../CardPickerModal', () => ({ default: () => null }));
 const sampler = vi.hoisted(() => ({ queue: [], fn: null }));
 vi.mock('../../utils/frameSampler', () => ({
@@ -91,6 +105,10 @@ beforeEach(() => {
     return null;
   });
   mocks.capturePhoto.mockResolvedValue(PHOTO);
+  mocks.captureVideoFrame.mockReturnValue(null);
+  mocks.sharpness = 200;
+  photos.map.clear();
+  photos.remove.mockClear();
   mocks.scan.mockResolvedValue(LUKE);
   stubCamera(async () => ({ getTracks: () => [TRACK], getVideoTracks: () => [TRACK] }));
 });
@@ -146,11 +164,42 @@ describe('CardScanner', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Foil' })).toHaveAttribute('aria-pressed', 'true'));
   });
 
-  it('flashes when a card cannot be identified', async () => {
+  it('stays silent when a card cannot be identified, and the badge counts it', async () => {
+    // Recognition runs in the background now; only the badge reports it.
     mocks.scan.mockResolvedValue({ status: 'unidentified', reason: 'unreadable', read: null });
     renderScanner();
     pressSpace();
-    expect(await screen.findByTestId('scan-flash')).toHaveAttribute('data-kind', 'error');
+    expect(await screen.findByTestId('review-badge')).toHaveTextContent('1');
+    expect(screen.queryByTestId('scan-flash')).not.toBeInTheDocument();
+  });
+
+  it('stores each capture as a photo and reads it through the queue', async () => {
+    renderScanner();
+    pressSpace();
+    await waitFor(() => expect(mocks.scan).toHaveBeenCalledWith('IMG', ['SOR'], { hintSets: [], baseSets: [] }));
+    expect([...photos.map.values()]).toEqual(['IMG']);
+  });
+
+  it('re-queues cards still reading when the scanner reopens', async () => {
+    const saved = JSON.stringify({ rows: [{ id: 'old', status: 'reading', isFoil: false, qty: 1, hasPhoto: true }] });
+    localStorage.getItem.mockImplementation((key) => {
+      if (key === 'swu-scan-help-seen') return '1';
+      return key === 'swu-scan-draft-uid-1' ? saved : null;
+    });
+    photos.map.set('old', 'OLDIMG');
+    renderScanner();
+    await waitFor(() => expect(mocks.scan).toHaveBeenCalledWith('OLDIMG', ['SOR'], expect.any(Object)));
+  });
+
+  it('marks a card still reading at reopen as failed when its photo is gone', async () => {
+    const saved = JSON.stringify({ rows: [{ id: 'old', status: 'reading', isFoil: false, qty: 1, hasPhoto: true }] });
+    localStorage.getItem.mockImplementation((key) => {
+      if (key === 'swu-scan-help-seen') return '1';
+      return key === 'swu-scan-draft-uid-1' ? saved : null;
+    });
+    renderScanner();
+    expect(await screen.findByTestId('review-badge')).toHaveTextContent('1');
+    expect(mocks.scan).not.toHaveBeenCalled();
   });
 
   it('flashes when the frame cannot be captured, without calling the function', async () => {
@@ -226,22 +275,6 @@ describe('CardScanner', () => {
     expect(await screen.findByTestId('review-badge')).toHaveTextContent('1');
   });
 
-  it('never lets a green flash cover a pending red one', async () => {
-    // Results arrive out of order at hand speed: an unreadable card's red flash
-    // must not be replaced by the next card's green one.
-    mocks.scan
-      .mockResolvedValueOnce({ status: 'unidentified', reason: 'unreadable', read: null })
-      .mockResolvedValueOnce(LUKE);
-    renderScanner();
-    pressSpace();
-    await flush();
-    pressSpace();
-    await flush();
-    await waitFor(() => expect(mocks.scan).toHaveBeenCalledTimes(2));
-    await flush();
-    expect(screen.getByTestId('scan-flash')).toHaveAttribute('data-kind', 'error');
-  });
-
   it('turns the calibrate button amber when a calibrated rig capture was not cropped', async () => {
     rigStored = JSON.stringify({ version: 1, rect: { x: 0.2, y: 0.1, w: 0.6, h: 0.8 }, source: 'photo', orientation: 'portrait', savedAt: 1 });
     mocks.capturePhoto.mockResolvedValue({ ...PHOTO, source: 'video', cropped: false });
@@ -275,10 +308,12 @@ describe('CardScanner', () => {
     expect(screen.getByRole('button', { name: 'Calibrate rig' })).not.toHaveAttribute('data-crop', 'missed');
   });
 
-  it('flashes green when a card is read', async () => {
+  it('no flash on a good read', async () => {
     renderScanner();
     pressSpace();
-    expect(await screen.findByTestId('scan-flash')).toHaveAttribute('data-kind', 'success');
+    await waitFor(() => expect(mocks.scan).toHaveBeenCalled());
+    await flush();
+    expect(screen.queryByTestId('scan-flash')).not.toBeInTheDocument();
   });
 
   it('marks the collector-number area inside the card guide', () => {
@@ -553,6 +588,30 @@ describe('CardScanner', () => {
       expect(screen.getByTestId('auto-status')).toHaveTextContent(/tap here if the rig is empty/i);
     });
 
+    it('uses an instant video frame when it is sharp enough', async () => {
+      rigStored = CAL;
+      mocks.captureVideoFrame.mockReturnValue({ image: 'FRAME', gray: new Uint8Array(9), grayWidth: 3, grayHeight: 3, source: 'video', width: 2160, height: 3840, cropped: true });
+      mocks.sharpness = 200;
+      renderScanner();
+      await enableAndLearn();
+      sampler.queue.push(...handFrames(3), ...many(8, 200));
+      await tick(11);
+      expect(mocks.capturePhoto).not.toHaveBeenCalled();
+      await act(async () => {});
+      expect(mocks.scan).toHaveBeenCalledWith('FRAME', expect.any(Array), expect.any(Object));
+    });
+
+    it('falls back to a full photo when the frame is blurry', async () => {
+      rigStored = CAL;
+      mocks.captureVideoFrame.mockReturnValue({ image: 'FRAME', gray: new Uint8Array(9), grayWidth: 3, grayHeight: 3, source: 'video', width: 2160, height: 3840, cropped: true });
+      mocks.sharpness = 5;
+      renderScanner();
+      await enableAndLearn();
+      sampler.queue.push(...handFrames(3), ...many(8, 200));
+      await tick(11);
+      expect(mocks.capturePhoto).toHaveBeenCalledTimes(1);
+    });
+
     it('turning Auto off stops sampling', async () => {
       rigStored = CAL;
       renderScanner();
@@ -665,6 +724,16 @@ describe('CardScanner', () => {
       expect(calls.length).toBeGreaterThan(0);
       expect(JSON.parse(calls.at(-1)[1]).rows).toHaveLength(1);
     });
+  });
+
+  it('deletes photos of rows that leave the batch', async () => {
+    const user = userEvent.setup();
+    mocks.commitDraft.mockImplementation(async () => ({ rows: [] }));
+    renderScanner();
+    pressSpace();
+    await user.click(await screen.findByRole('button', { name: 'Review (1)' }));
+    await user.click(await screen.findByRole('button', { name: 'Add 1 card to collection' }));
+    await waitFor(() => expect(photos.remove).toHaveBeenCalled());
   });
 
   it('commits from review, saving progress as it goes, and closes when empty', async () => {

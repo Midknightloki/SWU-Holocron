@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { X, Sparkles, HelpCircle, Crosshair, ScanLine as AutoIcon } from 'lucide-react';
-import { calibratedGuide, clampRect, clearCalibration, cropFor, loadCalibration, orientationOf, saveCalibration, toStreamRect } from '../utils/rigCalibration';
+import { calibratedGuide, clampRect, clearCalibration, cropFor, loadCalibration, orientationOf, saveCalibration, toStreamRect, videoCropFor } from '../utils/rigCalibration';
 import { initialAutoState, loadAutoSettings, saveAutoSettings, stepAuto } from '../utils/autoCapture';
 import { createFrameSampler } from '../utils/frameSampler';
 import AutoSettings from './AutoSettings';
@@ -8,10 +8,13 @@ import RigCalibration from './RigCalibration';
 import ScanSetPicker from './ScanSetPicker';
 import { ScanService } from '../services/ScanService';
 import { getCardQuantities } from '../utils/collectionHelpers';
-import { capturePhoto } from '../utils/frameCapture';
+import { capturePhoto, captureVideoFrame } from '../utils/frameCapture';
+import { laplacianVariance } from '../utils/sharpness';
+import { PhotoStore } from '../services/photoStore';
+import { createScanQueue } from '../services/scanQueue';
 import { levelReading } from '../utils/level';
 import {
-  addCapture, applyResult, clearDraft, countByStatus, emptyDraft, loadDraft, markReading, saveDraft,
+  addCapture, applyResult, clearDraft, countByStatus, emptyDraft, loadDraft, markReading, markWaiting, saveDraft,
 } from '../utils/scanDraft';
 import ScanReview from './ScanReview';
 
@@ -257,10 +260,10 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
     }, kind === 'error' ? 600 : 400);
   }, []);
 
-  const runScan = useCallback(async (id, image) => {
-    const result = await ScanService.scan(image, setCodes, { hintSets: pickedSets, baseSets });
+  // Each capture's result, whenever the background queue gets to it. No
+  // flash: recognition problems show only as the Review badge.
+  const handleResult = useCallback((id, result) => {
     if (!mountedRef.current) return;
-    signal(result.status === 'matched' ? 'success' : 'error');
     // A card not owned in any finish, and its first copy in this batch: a gap
     // closed. A little celebration.
     if (result.status === 'matched'
@@ -271,12 +274,33 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
       clearTimeout(newCardTimer.current);
       newCardTimer.current = setTimeout(() => { if (mountedRef.current) setNewCard(null); }, 1500);
     }
-    if (result.error === 'quota') {
-      quotaRef.current = { limit: result.limit, resetsAt: result.resetsAt };
-      setQuota(quotaRef.current);
-    }
     setDraft((d) => applyResult(d, id, result));
-  }, [setCodes, pickedSets, baseSets, signal]);
+  }, []);
+  const handleResultRef = useRef(handleResult);
+  handleResultRef.current = handleResult;
+
+  // Background recognition: captures are read a few at a time, so capturing
+  // never waits on Gemini. Created once; reads current options through a ref.
+  const scanOptionsRef = useRef(null);
+  scanOptionsRef.current = { setCodes, hintSets: pickedSets, baseSets };
+  const queueRef = useRef(null);
+  if (!queueRef.current) {
+    queueRef.current = createScanQueue({
+      scan: async (image) => {
+        const { setCodes: codes, hintSets, baseSets: bases } = scanOptionsRef.current;
+        const result = await ScanService.scan(image, codes, { hintSets, baseSets: bases });
+        if (result.error === 'quota') quotaRef.current = { limit: result.limit, resetsAt: result.resetsAt };
+        return result;
+      },
+      getImage: (id) => PhotoStore.get(id),
+      onResult: (id, result) => handleResultRef.current(id, result),
+      onPause: (reason, ids) => {
+        if (!mountedRef.current) return;
+        if (reason === 'quota') setQuota(quotaRef.current ?? { limit: null, resetsAt: null });
+        setDraft((d) => markWaiting(d, ids, reason));
+      },
+    });
+  }
 
   const capture = useCallback(async (options) => {
     if (showAutoSettingsRef.current || pickingSetsRef.current || calibratingRef.current || helpOpenRef.current || quotaRef.current || cameraError || capturingRef.current) return;
@@ -292,11 +316,25 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
     const isFoil = foilStack;
     let shot = null;
     try {
-      shot = await capturePhoto({
-        track: trackRef.current,
-        video: videoRef.current,
-        crop: (source, width, height) => cropFor(calibration, source, width, height),
-      });
+      // Auto: an instant frame of the live stream, if it is sharp enough --
+      // no shutter wait, the card can be pulled straight away. Blurry, or
+      // "Always use full photos": a full photo as before. Taps use photos.
+      if (options?.auto === true && !autoSettingsRef.current.fullPhotos) {
+        const frame = captureVideoFrame({
+          video: videoRef.current,
+          crop: (source, width, height) => videoCropFor(calibration, width, height),
+        });
+        if (frame && laplacianVariance(frame.gray, frame.grayWidth, frame.grayHeight) >= autoSettingsRef.current.sharpness) {
+          shot = frame;
+        }
+      }
+      if (!shot) {
+        shot = await capturePhoto({
+          track: trackRef.current,
+          video: videoRef.current,
+          crop: (source, width, height) => cropFor(calibration, source, width, height),
+        });
+      }
     } catch {
       shot = null;
     } finally {
@@ -304,14 +342,17 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
     }
     if (!mountedRef.current) return;
     if (!shot?.image) {
+      // The only live warning left: nothing usable was captured.
       signal('error');
       return;
     }
     setLastCropped(Boolean(shot.cropped));
     const id = newId();
-    setDraft((d) => addCapture(d, { id, isFoil, photo: shot.image }));
-    runScan(id, shot.image);
-  }, [calibration, cameraError, foilStack, runScan, signal]);
+    await PhotoStore.put(id, shot.image);
+    if (!mountedRef.current) return;
+    setDraft((d) => addCapture(d, { id, isFoil }));
+    queueRef.current.enqueue(id);
+  }, [calibration, cameraError, foilStack, signal]);
   captureRef.current = capture;
 
   // Hands-free capture: sample the calibrated card area ~10x a second and let
@@ -472,11 +513,48 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
   }, [mode, capture, dismissHelp]);
 
   const retry = useCallback((id) => {
-    const row = draft.rows.find((r) => r.id === id);
-    if (!row?.photo || quotaRef.current) return;
+    const row = draftRef.current.rows.find((r) => r.id === id);
+    if (!row?.hasPhoto) return;
+    // A retry also lifts a daily-limit pause (the limit may have reset).
+    if (quotaRef.current) {
+      quotaRef.current = null;
+      setQuota(null);
+    }
     setDraft((d) => markReading(d, id));
-    runScan(id, row.photo);
-  }, [draft, runScan]);
+    queueRef.current.resume();
+    queueRef.current.enqueue(id);
+  }, []);
+
+  // On open: cards still reading from a previous session go back in the queue
+  // if their photo survived; otherwise they can't be read any more.
+  useEffect(() => {
+    let cancelled = false;
+    const reading = draftRef.current.rows.filter((r) => r.status === 'reading');
+    reading.forEach(async (row) => {
+      const photo = row.hasPhoto ? await PhotoStore.get(row.id) : null;
+      if (cancelled || !mountedRef.current) return;
+      if (photo) queueRef.current.enqueue(row.id);
+      else setDraft((d) => applyResult(d, row.id, { status: 'failed', error: 'interrupted' }));
+    });
+    const onOnline = () => queueRef.current.resume();
+    window.addEventListener('online', onOnline);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('online', onOnline);
+    };
+  }, []);
+
+  // Rows that leave the batch (added, removed, collapsed, discarded) take
+  // their photos with them, so the store doesn't grow forever.
+  const prevIdsRef = useRef(null);
+  useEffect(() => {
+    const ids = new Set(draft.rows.map((r) => r.id));
+    const prev = prevIdsRef.current;
+    prevIdsRef.current = ids;
+    if (!prev) return;
+    const gone = [...prev].filter((id) => !ids.has(id));
+    if (gone.length) PhotoStore.remove(gone);
+  }, [draft]);
 
   const commit = useCallback(async () => {
     if (!collectionRef) {
@@ -514,6 +592,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
 
   const discard = useCallback(() => {
     clearDraft(getStorage(), uid);
+    PhotoStore.clear();
     setDraft(emptyDraft());
     setMode('camera');
   }, [uid]);
@@ -733,6 +812,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
           className="relative ml-auto px-3 py-2 rounded-lg bg-yellow-500 hover:bg-yellow-400 text-black text-sm font-bold"
         >
           Review ({total})
+          {counts.reading > 0 && <span className="ml-1 text-xs font-normal">· reading {counts.reading}</span>}
           {attention > 0 && (
             <span
               data-testid="review-badge"

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   emptyDraft, draftKey, addCapture, applyResult, markReading, resolveManually,
-  setFoil, removeRows, groupRows, setGroupQuantity, toWrites, countByStatus,
+  setFoil, removeRows, groupRows, setGroupQuantity, toWrites, countByStatus, markWaiting,
   saveDraft, loadDraft, clearDraft,
 } from '../../utils/scanDraft';
 
@@ -21,13 +21,14 @@ const throwingStorage = {
 
 const LUKE = { status: 'matched', set: 'SOR', number: '012', name: 'Luke Skywalker' };
 
-const capture = (draft, id, isFoil = false) => addCapture(draft, { id, isFoil, photo: `photo-${id}` });
+// Photos live in the photo store now; a row only records that it has one.
+const capture = (draft, id, isFoil = false) => addCapture(draft, { id, isFoil });
 const matched = (draft, id, isFoil = false, result = LUKE) => applyResult(capture(draft, id, isFoil), id, result);
 
 describe('adding and resolving captures', () => {
-  it('adds a capture as a reading row with its photo', () => {
+  it('adds a capture as a reading row that has a stored photo', () => {
     const d = capture(emptyDraft(), 'a', true);
-    expect(d.rows).toEqual([{ id: 'a', status: 'reading', isFoil: true, qty: 1, photo: 'photo-a' }]);
+    expect(d.rows).toEqual([{ id: 'a', status: 'reading', isFoil: true, qty: 1, hasPhoto: true }]);
   });
 
   it('keeps the card type from a match and from a manual pick', () => {
@@ -52,7 +53,7 @@ describe('adding and resolving captures', () => {
   it('applies an unidentified result and keeps what was read', () => {
     const read = { readable: true, set: 'SOR', number: '999', name: 'Nobody' };
     const d = applyResult(capture(emptyDraft(), 'a'), 'a', { status: 'unidentified', reason: 'no-such-card', read });
-    expect(d.rows[0]).toMatchObject({ status: 'unidentified', reason: 'no-such-card', read, photo: 'photo-a' });
+    expect(d.rows[0]).toMatchObject({ status: 'unidentified', reason: 'no-such-card', read, hasPhoto: true });
   });
 
   it('applies a failure with its error as the reason', () => {
@@ -126,7 +127,7 @@ describe('grouping and editing', () => {
   it('counts rows by status, summing quantity', () => {
     let d = setGroupQuantity(matched(emptyDraft(), 'a'), 'SOR_012_std', 3);
     d = capture(d, 'b');
-    expect(countByStatus(d)).toEqual({ reading: 1, matched: 3, unidentified: 0, failed: 0 });
+    expect(countByStatus(d)).toEqual({ reading: 1, matched: 3, unidentified: 0, failed: 0, waiting: 0 });
   });
 });
 
@@ -148,18 +149,29 @@ describe('toWrites', () => {
 });
 
 describe('persistence', () => {
-  it('round-trips a draft without its photos', () => {
+  it('round-trips a draft', () => {
     const storage = memoryStorage();
     const d = matched(emptyDraft(), 'a');
     expect(saveDraft(storage, 'uid-1', d)).toBe(true);
-    const loaded = loadDraft(storage, 'uid-1');
-    expect(loaded.rows[0]).toMatchObject({ id: 'a', status: 'matched', photo: null, hadPhoto: true });
+    expect(loadDraft(storage, 'uid-1').rows[0]).toMatchObject({ id: 'a', status: 'matched', hasPhoto: true });
   });
 
-  it('turns a row still reading at reload into an interrupted failure', () => {
+  it('keeps a row still reading at reload, for the scanner to queue again', () => {
     const storage = memoryStorage();
     saveDraft(storage, 'uid-1', capture(emptyDraft(), 'a'));
-    expect(loadDraft(storage, 'uid-1').rows[0]).toMatchObject({ status: 'failed', reason: 'interrupted', photo: null });
+    expect(loadDraft(storage, 'uid-1').rows[0]).toMatchObject({ status: 'reading', hasPhoto: true });
+  });
+
+  it('drops a legacy in-row photo when loading', () => {
+    const storage = memoryStorage();
+    storage.setItem(draftKey('uid-1'), JSON.stringify({ rows: [{ id: 'a', status: 'matched', isFoil: false, qty: 1, photo: 'BIG' }] }));
+    expect(loadDraft(storage, 'uid-1').rows[0].photo).toBeUndefined();
+  });
+
+  it('marks rows waiting with a reason, and counts them', () => {
+    const d = markWaiting(capture(capture(emptyDraft(), 'a'), 'b'), ['a'], 'quota');
+    expect(d.rows[0]).toMatchObject({ status: 'waiting', reason: 'quota' });
+    expect(countByStatus(d)).toEqual({ reading: 1, matched: 0, unidentified: 0, failed: 0, waiting: 1 });
   });
 
   it('keeps each user\'s draft separate', () => {
