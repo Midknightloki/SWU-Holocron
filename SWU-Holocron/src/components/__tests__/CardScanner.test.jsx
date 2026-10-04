@@ -100,7 +100,7 @@ describe('CardScanner', () => {
     renderScanner();
     await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
     pressSpace();
-    await waitFor(() => expect(mocks.scan).toHaveBeenCalledWith('IMG', ['SOR'], { hintSets: [] }));
+    await waitFor(() => expect(mocks.scan).toHaveBeenCalledWith('IMG', ['SOR'], { hintSets: [], baseSets: [] }));
     expect(await screen.findByRole('button', { name: 'Review (1)' })).toBeInTheDocument();
   });
 
@@ -579,7 +579,7 @@ describe('CardScanner', () => {
       renderWithSets();
       expect(screen.getByRole('button', { name: 'Choose sets' })).toHaveTextContent('Any set');
       pressSpace();
-      await waitFor(() => expect(mocks.scan).toHaveBeenCalledWith('IMG', ['SOR', 'SHD', 'SHDOP'], { hintSets: [] }));
+      await waitFor(() => expect(mocks.scan).toHaveBeenCalledWith('IMG', ['SOR', 'SHD', 'SHDOP'], { hintSets: [], baseSets: ['SOR', 'SHD'] }));
     });
 
     it('picks a set as a hint, remembers it, and warms its card data', async () => {
@@ -593,7 +593,7 @@ describe('CardScanner', () => {
       expect(localStorage.setItem).toHaveBeenCalledWith('swu-scan-sets', '["SHD"]');
       expect(mocks.prefetchSets).toHaveBeenCalledWith(['SHD']);
       pressSpace();
-      await waitFor(() => expect(mocks.scan).toHaveBeenCalledWith('IMG', ['SOR', 'SHD', 'SHDOP'], { hintSets: ['SHD'] }));
+      await waitFor(() => expect(mocks.scan).toHaveBeenCalledWith('IMG', ['SOR', 'SHD', 'SHDOP'], { hintSets: ['SHD'], baseSets: ['SOR', 'SHD'] }));
     });
 
     it('restores the picked sets and prefetches them on open', () => {
@@ -627,6 +627,28 @@ describe('CardScanner', () => {
       pressSpace();
       await flush();
       expect(mocks.capturePhoto).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('new cards', () => {
+    it('pops up NEW for the first copy of a card not in the collection, only once', async () => {
+      renderScanner({ collectionData: {} });
+      pressSpace();
+      expect(await screen.findByTestId('new-card-toast')).toHaveTextContent('Luke Skywalker');
+      await act(async () => { await new Promise((r) => setTimeout(r, 1700)); });
+      expect(screen.queryByTestId('new-card-toast')).not.toBeInTheDocument();
+      pressSpace();
+      await waitFor(() => expect(mocks.scan).toHaveBeenCalledTimes(2));
+      await flush();
+      expect(screen.queryByTestId('new-card-toast')).not.toBeInTheDocument();
+    });
+
+    it('does not pop up for a card already owned, even only as a foil', async () => {
+      renderScanner({ collectionData: { SOR_012_foil: { quantity: 1 } } });
+      pressSpace();
+      await waitFor(() => expect(mocks.scan).toHaveBeenCalled());
+      await flush();
+      expect(screen.queryByTestId('new-card-toast')).not.toBeInTheDocument();
     });
   });
 

@@ -123,6 +123,26 @@ describe('ScanReview', () => {
     expect(screen.getByText('pick-mock')).toHaveAttribute('data-initial-search', '');
   });
 
+  it('badges cards that are new to the collection', () => {
+    renderReview(
+      build([['a', LUKE], ['b', { status: 'matched', set: 'SOR', number: '045', name: 'Admiral Ackbar', type: 'Unit' }]]),
+      { collectionData: { SOR_045_std: { quantity: 2 } } },
+    );
+    expect(within(screen.getByTestId('group-SOR_012_std')).getByText('NEW')).toBeInTheDocument();
+    expect(within(screen.getByTestId('group-SOR_045_std')).queryByText('NEW')).not.toBeInTheDocument();
+  });
+
+  it('counts a foil-only card as already owned', () => {
+    renderReview(build([['a', LUKE]]), { collectionData: { SOR_012_foil: { quantity: 1 } } });
+    expect(screen.queryByText('NEW')).not.toBeInTheDocument();
+  });
+
+  it('explains a card whose name was read but not its number', () => {
+    const read = { readable: true, set: '', number: '', name: 'Han Solo', subtitle: 'Worth the Risk' };
+    renderReview(build([['u', { status: 'unidentified', reason: 'no-number', read }]]));
+    expect(screen.getByText(/no card number/i)).toBeInTheDocument();
+  });
+
   it('says so when a photo was lost to a reload', () => {
     const draft = { rows: [{ id: 'u', status: 'unidentified', reason: 'unreadable', read: null, isFoil: false, qty: 1, photo: null, hadPhoto: true }] };
     renderReview(draft);

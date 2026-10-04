@@ -62,8 +62,10 @@ export const ScanService = {
   /**
    * @param {string[]} [options.hintSets] sets picked in the scanner, tried when
    *   the printed set code was misread or illegible
+   * @param {string[]} [options.baseSets] base sets, searched for a face-up
+   *   leader (no collector number) after the hints; loaded only when needed
    */
-  async scan(imageBase64, setCodes, { hintSets = [] } = {}) {
+  async scan(imageBase64, setCodes, { hintSets = [], baseSets = [] } = {}) {
     if (!isConfigured) return { status: 'failed', error: 'unknown' };
 
     let read;
@@ -86,10 +88,11 @@ export const ScanService = {
 
     const loaded = set ? { [set]: cards } : {};
     const hints = hintSets.filter((code) => setCodes.includes(code));
-    const resolve = () => resolveScan(read, { setCodes, getCards: (code) => loaded[code] ?? null, hintSets: hints });
+    const bases = baseSets.filter((code) => setCodes.includes(code));
+    const resolve = () => resolveScan(read, { setCodes, getCards: (code) => loaded[code] ?? null, hintSets: hints, baseSets: bases });
 
     const first = resolve();
-    if (first.status !== 'unidentified' || !['no-such-card', 'name-mismatch', 'unknown-set'].includes(first.reason)) {
+    if (first.status !== 'unidentified' || !['no-such-card', 'name-mismatch', 'unknown-set', 'no-number'].includes(first.reason)) {
       return first;
     }
 
@@ -97,6 +100,8 @@ export const ScanService = {
     // code, and the picked sets with their promo sets. A set that fails to
     // load is skipped.
     const extra = new Set(set ? relatedSetCodes(set, setCodes) : []);
+    // A face-up leader (no number) is looked up by name in the base sets too.
+    if (first.reason === 'no-number') bases.forEach((code) => extra.add(code));
     for (const code of hints) {
       extra.add(code);
       relatedSetCodes(code, setCodes).forEach((c) => extra.add(c));

@@ -161,6 +161,30 @@ describe('ScanService.scan with picked sets', () => {
   });
 });
 
+describe('ScanService.scan with a face-up leader', () => {
+  const CODES = ['SOR', 'SHD', 'SHDOP'];
+  const DATA = {
+    SOR: [{ Set: 'SOR', Number: '017', Name: 'Han Solo', Subtitle: 'Audacious Smuggler', Type: 'Leader' }],
+    SHD: [{ Set: 'SHD', Number: '012', Name: 'Han Solo', Subtitle: 'Worth the Risk', Type: 'Leader' }],
+  };
+  beforeEach(() => {
+    mocks.fetchSetData.mockImplementation(async (code) => ({ data: DATA[code] ?? [] }));
+  });
+
+  it('loads the base sets only for a card with no number, and matches by name and subtitle', async () => {
+    mocks.callable.mockResolvedValue({ data: { readable: true, set: '', number: '', name: 'Han Solo', subtitle: 'Worth the Risk' } });
+    await expect(ScanService.scan('IMG', CODES, { baseSets: ['SOR', 'SHD'] }))
+      .resolves.toMatchObject({ status: 'matched', set: 'SHD', number: '012' });
+    expect(mocks.fetchSetData.mock.calls.map(([c]) => c).sort()).toEqual(['SHD', 'SOR']);
+  });
+
+  it('reports no-number when no leader matches', async () => {
+    mocks.callable.mockResolvedValue({ data: { readable: true, set: '', number: '', name: 'Nobody', subtitle: 'Nowhere' } });
+    await expect(ScanService.scan('IMG', CODES, { baseSets: ['SOR', 'SHD'] }))
+      .resolves.toMatchObject({ status: 'unidentified', reason: 'no-number' });
+  });
+});
+
 describe('mapScanError', () => {
   it.each([
     ['permission-denied', { error: 'forbidden' }],

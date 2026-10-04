@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { X, Sparkles, HelpCircle, Crosshair, ScanLine as AutoIcon } from 'lucide-react';
 import { calibratedGuide, clampRect, clearCalibration, cropFor, loadCalibration, orientationOf, saveCalibration, toStreamRect } from '../utils/rigCalibration';
 import { initialAutoState, loadAutoSettings, saveAutoSettings, stepAuto } from '../utils/autoCapture';
@@ -7,6 +7,7 @@ import AutoSettings from './AutoSettings';
 import RigCalibration from './RigCalibration';
 import ScanSetPicker from './ScanSetPicker';
 import { ScanService } from '../services/ScanService';
+import { getCardQuantities } from '../utils/collectionHelpers';
 import { capturePhoto } from '../utils/frameCapture';
 import { levelReading } from '../utils/level';
 import {
@@ -105,8 +106,19 @@ const formatReset = (iso) => {
   return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 };
 
-export default function CardScanner({ uid, collectionRef, setCodes, setOptions, onClose }) {
+export default function CardScanner({ uid, collectionRef, setCodes, setOptions, collectionData = {}, onClose }) {
   const [draft, setDraft] = useState(() => loadDraft(getStorage(), uid));
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const collectionRefData = useRef(collectionData);
+  collectionRefData.current = collectionData;
+  const [newCard, setNewCard] = useState(null);
+  const newCardTimer = useRef(null);
+  // Base sets, searched for a face-up leader that has no collector number.
+  const baseSets = useMemo(
+    () => (setOptions ?? []).filter((o) => o.isBaseSet).map((o) => o.code),
+    [setOptions],
+  );
   const [mode, setMode] = useState('camera');
   const [foilStack, setFoilStack] = useState(false);
   const [showHelp, setShowHelp] = useState(() => !readHelpSeen());
@@ -178,6 +190,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
     return () => {
       mountedRef.current = false;
       clearTimeout(flashTimer.current);
+      clearTimeout(newCardTimer.current);
     };
   }, []);
 
@@ -245,15 +258,25 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
   }, []);
 
   const runScan = useCallback(async (id, image) => {
-    const result = await ScanService.scan(image, setCodes, { hintSets: pickedSets });
+    const result = await ScanService.scan(image, setCodes, { hintSets: pickedSets, baseSets });
     if (!mountedRef.current) return;
     signal(result.status === 'matched' ? 'success' : 'error');
+    // A card not owned in any finish, and its first copy in this batch: a gap
+    // closed. A little celebration.
+    if (result.status === 'matched'
+      && getCardQuantities(collectionRefData.current, result.set, result.number).total === 0
+      && !draftRef.current.rows.some((r) => r.id !== id && r.status === 'matched'
+        && r.set === result.set && r.number === result.number)) {
+      setNewCard(result.name);
+      clearTimeout(newCardTimer.current);
+      newCardTimer.current = setTimeout(() => { if (mountedRef.current) setNewCard(null); }, 1500);
+    }
     if (result.error === 'quota') {
       quotaRef.current = { limit: result.limit, resetsAt: result.resetsAt };
       setQuota(quotaRef.current);
     }
     setDraft((d) => applyResult(d, id, result));
-  }, [setCodes, pickedSets, signal]);
+  }, [setCodes, pickedSets, baseSets, signal]);
 
   const capture = useCallback(async (options) => {
     if (showAutoSettingsRef.current || pickingSetsRef.current || calibratingRef.current || helpOpenRef.current || quotaRef.current || cameraError || capturingRef.current) return;
@@ -505,6 +528,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
         <ScanReview
           draft={draft}
           onChange={setDraft}
+          collectionData={collectionData}
           onRetry={retry}
           onBack={() => setMode('camera')}
           onCommit={commit}
@@ -592,6 +616,15 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
               className={`absolute left-1/2 top-1/2 w-3 h-3 -ml-1.5 -mt-1.5 rounded-full ${level.isLevel ? 'bg-green-400' : 'bg-yellow-400'}`}
               style={{ transform: `translate(${level.x * 16}px, ${level.y * 16}px)` }}
             />
+          </div>
+        )}
+        {newCard && (
+          <div
+            data-testid="new-card-toast"
+            role="status"
+            className="pointer-events-none absolute left-1/2 top-1/3 -translate-x-1/2 px-4 py-2 rounded-2xl bg-green-500 text-black font-black shadow-xl shadow-green-500/40 animate-bounce"
+          >
+            ✨ NEW: {newCard}
           </div>
         )}
         {flash && (
