@@ -60,6 +60,16 @@ export function cropFor(calibration, source, width, height) {
   return withMargin(calibration.rect);
 }
 
+/**
+ * Crop for a frame of the live video stream. The calibration's fractions are
+ * of the still photo; the stream is usually a centre crop of it (16:9 of a
+ * 4:3 sensor), so the margined rect is converted to stream fractions.
+ */
+export function videoCropFor(calibration, width, height) {
+  if (!calibration || calibration.orientation !== orientationOf(width, height)) return null;
+  return clampRect(toStreamRect(withMargin(calibration.rect), width / height, calibration.aspect));
+}
+
 export function cornerPoint(rect, corner) {
   return {
     x: r4(corner.includes('l') ? rect.x : rect.x + rect.w),
