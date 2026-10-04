@@ -282,6 +282,14 @@ that cross-check is what keeps a misread number from adding the wrong card.
   array that slowly follows lighting drift — whole numbers would round the
   blend away. Tunable per device in `localStorage['swu-scan-auto']`. Auto pauses
   while any overlay is open, at the daily limit, and during a capture.
+- **Face-up leaders** carry no collector number. `scanCard` also reads the
+  subtitle and returns an empty number rather than giving up; `resolveScan` then
+  matches an exact name + subtitle among Leaders (picked sets, then base sets —
+  loaded only for such a read), preferring the lowest number (the standard
+  printing). Unmatched, the card is reason `no-number` and Pick card opens
+  pre-searched with the title.
+- **NEW badge:** review marks cards not owned in any finish, and the scanner
+  pops up "NEW: <card>" for the first copy of one in a batch.
 - The batch lives in `localStorage['swu-scan-draft-{uid}']` until the user
   approves it (`src/utils/scanDraft.js`). The key is per uid on purpose: a
   shared key would let one account's batch land in another's collection.
