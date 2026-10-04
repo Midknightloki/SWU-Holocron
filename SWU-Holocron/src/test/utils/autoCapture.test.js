@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   DEFAULT_AUTO_SETTINGS, AUTO_KEY, frameDiff, shapeDiff, initialAutoState, stepAuto,
-  loadAutoSettings, saveAutoSettings,
+  loadAutoSettings, saveAutoSettings, REARM_MS,
 } from '../../utils/autoCapture';
 
 // Frames need structure: presence ignores overall brightness (a light switched
@@ -19,7 +19,11 @@ const scene = (kind, offset = 0) => Uint8Array.from(SCENES[kind], (v) => clamp(v
 const EMPTY = 'empty';
 const CARD = 'card';
 
-function run(frames, { state = initialAutoState(), start = 0, settings } = {}) {
+// The timing tests below were written against a 600 ms settle; keep them on
+// it explicitly. The 350 ms default has its own test.
+const S600 = { ...DEFAULT_AUTO_SETTINGS, settleMs: 600 };
+
+function run(frames, { state = initialAutoState(), start = 0, settings = S600 } = {}) {
   const events = [];
   let s = state;
   let t = start;
@@ -129,6 +133,23 @@ describe('stepAuto', () => {
     expect(state.capturedAt).toBe(1000); // hand 0-200, card from 300, still from 400, +600
   });
 
+  it('re-arms after a brief empty glimpse, so a quick swap is caught', () => {
+    // Review of the first full box: the rig was empty only for a moment while
+    // the hand swapped cards, so the 600 ms still-empty rule never re-armed.
+    const first = run([...hand(3), ...times(8, CARD)], { state: learned().state });
+    const swap = [...hand(2), ...times(3, EMPTY), ...hand(2), ...times(8, CARD)];
+    const { events } = run(swap, { state: first.state, start: first.t });
+    expect(events.map((e) => e.event)).toEqual(['capture']);
+    expect(REARM_MS).toBe(200);
+  });
+
+  it('settles in 350 ms by default', () => {
+    const learnedDefault = run(times(6, EMPTY), { settings: DEFAULT_AUTO_SETTINGS });
+    // 1 moving + still clock start + 350 ms (reached on the 400 ms tick) -> the 6th card frame.
+    const { events } = run([...hand(3), ...times(6, CARD)], { state: learnedDefault.state, settings: DEFAULT_AUTO_SETTINGS });
+    expect(events.map((e) => e.event)).toEqual(['capture']);
+  });
+
   it('starts over from learning', () => {
     expect(initialAutoState().phase).toBe('learning');
   });
@@ -149,15 +170,20 @@ describe('settings storage', () => {
 
   it('defaults when nothing is stored', () => {
     expect(loadAutoSettings(memory())).toEqual(DEFAULT_AUTO_SETTINGS);
-    expect(DEFAULT_AUTO_SETTINGS).toEqual({ presence: 0.08, stillness: 0.02, settleMs: 600 });
+    expect(DEFAULT_AUTO_SETTINGS).toEqual({ presence: 0.08, stillness: 0.02, settleMs: 350, sharpness: 60, fullPhotos: false });
   });
 
   it('round-trips and clamps to sane ranges', () => {
     const storage = memory();
-    expect(saveAutoSettings(storage, { presence: 5, stillness: -1, settleMs: 50 }))
-      .toEqual({ presence: 0.5, stillness: 0.005, settleMs: 200 });
-    expect(loadAutoSettings(storage)).toEqual({ presence: 0.5, stillness: 0.005, settleMs: 200 });
+    expect(saveAutoSettings(storage, { presence: 5, stillness: -1, settleMs: 50, sharpness: 9999, fullPhotos: 'yes' }))
+      .toEqual({ presence: 0.5, stillness: 0.005, settleMs: 200, sharpness: 300, fullPhotos: false });
+    expect(loadAutoSettings(storage)).toEqual({ presence: 0.5, stillness: 0.005, settleMs: 200, sharpness: 300, fullPhotos: false });
     expect(AUTO_KEY).toBe('swu-scan-auto');
+  });
+
+  it('loads settings saved before sharpness/fullPhotos existed with the new defaults', () => {
+    const storage = { getItem: () => JSON.stringify({ presence: 0.1, stillness: 0.03, settleMs: 500 }) };
+    expect(loadAutoSettings(storage)).toEqual({ presence: 0.1, stillness: 0.03, settleMs: 500, sharpness: 60, fullPhotos: false });
   });
 
   it('never throws', () => {
