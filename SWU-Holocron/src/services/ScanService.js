@@ -101,7 +101,9 @@ export const ScanService = {
     // load is skipped.
     const extra = new Set(set ? relatedSetCodes(set, setCodes) : []);
     // A face-up leader (no number) is looked up by name in the base sets too.
-    if (first.reason === 'no-number') bases.forEach((code) => extra.add(code));
+    // Only with a subtitle: without one, matchLeader can't match anything, and
+    // the base sets are ~7 MB of downloads for nothing.
+    if (first.reason === 'no-number' && String(read?.subtitle ?? '').trim()) bases.forEach((code) => extra.add(code));
     for (const code of hints) {
       extra.add(code);
       relatedSetCodes(code, setCodes).forEach((c) => extra.add(c));

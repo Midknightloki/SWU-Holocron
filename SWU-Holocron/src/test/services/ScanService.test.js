@@ -178,6 +178,13 @@ describe('ScanService.scan with a face-up leader', () => {
     expect(mocks.fetchSetData.mock.calls.map(([c]) => c).sort()).toEqual(['SHD', 'SOR']);
   });
 
+  it('does not download the base sets for a no-number read with no subtitle (it cannot be a leader match)', async () => {
+    mocks.callable.mockResolvedValue({ data: { readable: true, set: '', number: '', name: 'Battlefield Medic', subtitle: '' } });
+    await expect(ScanService.scan('IMG', CODES, { baseSets: ['SOR', 'SHD'] }))
+      .resolves.toMatchObject({ status: 'unidentified', reason: 'no-number' });
+    expect(mocks.fetchSetData).not.toHaveBeenCalled();
+  });
+
   it('reports no-number when no leader matches', async () => {
     mocks.callable.mockResolvedValue({ data: { readable: true, set: '', number: '', name: 'Nobody', subtitle: 'Nowhere' } });
     await expect(ScanService.scan('IMG', CODES, { baseSets: ['SOR', 'SHD'] }))

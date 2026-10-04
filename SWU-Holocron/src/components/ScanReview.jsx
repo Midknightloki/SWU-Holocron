@@ -119,6 +119,9 @@ export default function ScanReview({ draft, onChange, onRetry, onBack, onCommit,
                     )}
                   </p>
                   <p className="text-xs text-gray-500">{group.set} {group.number}</p>
+                  {group.via === 'name' && (
+                    <p className="text-xs text-amber-300">Matched by name — check it&apos;s this printing, not a variant</p>
+                  )}
                 </div>
                 <button
                   type="button"

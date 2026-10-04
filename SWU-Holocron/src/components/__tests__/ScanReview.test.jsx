@@ -123,6 +123,11 @@ describe('ScanReview', () => {
     expect(screen.getByText('pick-mock')).toHaveAttribute('data-initial-search', '');
   });
 
+  it('asks to check the printing of a leader matched by name only', () => {
+    renderReview(build([['a', { ...LUKE, type: 'Leader', via: 'name' }]]));
+    expect(within(screen.getByTestId('group-SOR_012_std')).getByText(/matched by name/i)).toBeInTheDocument();
+  });
+
   it('badges cards that are new to the collection', () => {
     renderReview(
       build([['a', LUKE], ['b', { status: 'matched', set: 'SOR', number: '045', name: 'Admiral Ackbar', type: 'Unit' }]]),

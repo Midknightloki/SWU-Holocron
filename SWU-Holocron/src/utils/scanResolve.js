@@ -87,7 +87,9 @@ function matchLeader(read, codes, getCards) {
       && normalizeName(c.Name) === name && normalizeName(c.Subtitle) === subtitle);
     if (leaders.length) {
       const standard = leaders.reduce((a, b) => (normalizeNumber(b.Number) < normalizeNumber(a.Number) ? b : a));
-      return matched(code, normalizeNumber(standard.Number), standard);
+      // Marked: matched by name, so review asks the user to check the printing
+      // (a hyperspace or showcase leader would otherwise pass as the standard).
+      return { ...matched(code, normalizeNumber(standard.Number), standard), via: 'name' };
     }
   }
   return null;

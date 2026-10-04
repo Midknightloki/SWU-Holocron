@@ -205,7 +205,7 @@ describe('face-up leaders with no collector number', () => {
 
   it('matches a leader by name and subtitle when there is no number', () => {
     expect(resolveScan(faceUp('Worth the Risk'), leaderCtx())).toEqual({
-      status: 'matched', set: 'SHD', number: '012', name: 'Han Solo', type: 'Leader',
+      status: 'matched', set: 'SHD', number: '012', name: 'Han Solo', type: 'Leader', via: 'name',
     });
   });
 
