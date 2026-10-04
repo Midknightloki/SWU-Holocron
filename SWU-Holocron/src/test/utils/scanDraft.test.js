@@ -38,6 +38,12 @@ describe('adding and resolving captures', () => {
     expect(groupRows(picked)[0].type).toBe('Base');
   });
 
+  it('keeps a name-only (no number) match marked, so review can ask to check the printing', () => {
+    const d = applyResult(capture(emptyDraft(), 'a'), 'a', { ...LUKE, type: 'Leader', via: 'name' });
+    expect(groupRows(d)[0].via).toBe('name');
+    expect(groupRows(applyResult(capture(emptyDraft(), 'b'), 'b', LUKE))[0].via).toBeNull();
+  });
+
   it('applies a matched result', () => {
     const d = matched(emptyDraft(), 'a');
     expect(d.rows[0]).toMatchObject({ status: 'matched', set: 'SOR', number: '012', name: 'Luke Skywalker' });

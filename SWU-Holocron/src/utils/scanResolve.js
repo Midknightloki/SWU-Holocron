@@ -74,19 +74,46 @@ function matchIn(codes, setCodes, getCards, number, name) {
   return null;
 }
 
+// A leader shown face up has no collector number. Leaders aren't reprinted,
+// so an exact name + subtitle match among Leaders identifies it; the lowest
+// number in the first set that has one is the standard printing (hyperspace
+// and showcase variants are numbered after it).
+function matchLeader(read, codes, getCards) {
+  const name = normalizeName(read.name);
+  const subtitle = normalizeName(read.subtitle);
+  if (!name || !subtitle) return null;
+  for (const code of [...new Set(codes)]) {
+    const leaders = (getCards(code) ?? []).filter((c) => c.Type === 'Leader'
+      && normalizeName(c.Name) === name && normalizeName(c.Subtitle) === subtitle);
+    if (leaders.length) {
+      const standard = leaders.reduce((a, b) => (normalizeNumber(b.Number) < normalizeNumber(a.Number) ? b : a));
+      // Marked: matched by name, so review asks the user to check the printing
+      // (a hyperspace or showcase leader would otherwise pass as the standard).
+      return { ...matched(code, normalizeNumber(standard.Number), standard), via: 'name' };
+    }
+  }
+  return null;
+}
+
 /**
- * @param {object} read  what Gemini read: { readable, set, number, name }
+ * @param {object} read  what Gemini read: { readable, set, number, name, subtitle }
  * @param {object} ctx
  * @param {string[]} ctx.setCodes  registered set codes
  * @param {(code: string) => object[]|null} ctx.getCards  loaded card data, or null if not loaded
  * @param {string[]} [ctx.hintSets]  sets picked in the scanner: fallbacks when the
  *   printed set code was misread or unreadable. Never override a match on the printed set.
+ * @param {string[]} [ctx.baseSets]  base set codes, searched after the hints for a
+ *   face-up leader that has no collector number
  */
-export function resolveScan(read, { setCodes, getCards, hintSets = [] }) {
+export function resolveScan(read, { setCodes, getCards, hintSets = [], baseSets = [] }) {
   if (!read || read.readable !== true) return unidentified('unreadable', read);
 
   const number = normalizeNumber(read.number);
-  if (!number) return unidentified('unreadable', read);
+  if (!number) {
+    const leader = matchLeader(read, [...hintSets, ...baseSets], getCards);
+    if (leader) return leader;
+    return unidentified(normalizeName(read.name) ? 'no-number' : 'unreadable', read);
+  }
 
   const set = normalizeSetCode(read.set, setCodes);
   let reason = 'unknown-set';

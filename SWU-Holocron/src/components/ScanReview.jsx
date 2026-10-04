@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ArrowLeft, Minus, Plus, Sparkles, Trash2, RotateCcw, Loader2, Search, X } from 'lucide-react';
 import CardPickerModal from './CardPickerModal';
 import { CardService } from '../services/CardService';
-import { isHorizontalCard } from '../utils/collectionHelpers';
+import { getCardQuantities, isHorizontalCard } from '../utils/collectionHelpers';
 import {
   countByStatus, groupRows, removeRows, resolveManually, setFoil, setGroupQuantity,
 } from '../utils/scanDraft';
@@ -19,6 +19,7 @@ const REASON_TEXT = {
   unreadable: "Couldn't read this card",
   'unknown-set': 'Set not recognised',
   'no-such-card': 'No card with that number',
+  'no-number': 'No card number read — check the name',
   'name-mismatch': "Name didn't match the number",
   interrupted: 'Scan was interrupted',
   quota: 'Daily scan limit reached',
@@ -50,7 +51,7 @@ function Photo({ group, onView }) {
   );
 }
 
-export default function ScanReview({ draft, onChange, onRetry, onBack, onCommit, onDiscard, committing, commitError }) {
+export default function ScanReview({ draft, onChange, onRetry, onBack, onCommit, onDiscard, committing, commitError, collectionData = {} }) {
   const [pickingFor, setPickingFor] = useState(null);
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const [viewing, setViewing] = useState(null);
@@ -110,8 +111,17 @@ export default function ScanReview({ draft, onChange, onRetry, onBack, onCommit,
                   />
                 </button>
                 <div className="flex-1 min-w-0">
-                  <p className="font-bold text-white truncate">{group.name}</p>
+                  <p className="font-bold text-white truncate">
+                    {group.name}
+                    {/* Not owned in any finish: this batch closes a gap. */}
+                    {getCardQuantities(collectionData, group.set, group.number).total === 0 && (
+                      <span className="ml-2 align-middle px-1.5 py-0.5 rounded bg-green-500 text-black text-[10px] font-black">NEW</span>
+                    )}
+                  </p>
                   <p className="text-xs text-gray-500">{group.set} {group.number}</p>
+                  {group.via === 'name' && (
+                    <p className="text-xs text-amber-300">Matched by name — check it&apos;s this printing, not a variant</p>
+                  )}
                 </div>
                 <button
                   type="button"
@@ -278,6 +288,8 @@ export default function ScanReview({ draft, onChange, onRetry, onBack, onCommit,
       {pickingFor && (
         <CardPickerModal
           collectionData={{}}
+          // Start from the title Gemini read, so confirming the card is one tap.
+          initialSearch={draft.rows.find((r) => r.id === pickingFor)?.read?.name ?? ''}
           onSelect={(card) => {
             onChange(resolveManually(draft, pickingFor, card));
             setPickingFor(null);

@@ -7,8 +7,8 @@ import userEvent from '@testing-library/user-event';
 import React from 'react';
 
 vi.mock('../CardPickerModal', () => ({
-  default: ({ onSelect }) => (
-    <button type="button" onClick={() => onSelect({ Set: 'SHD', Number: 7, Name: 'Boba Fett' })}>pick-mock</button>
+  default: ({ onSelect, initialSearch }) => (
+    <button type="button" data-initial-search={initialSearch ?? ''} onClick={() => onSelect({ Set: 'SHD', Number: 7, Name: 'Boba Fett' })}>pick-mock</button>
   ),
 }));
 
@@ -106,6 +106,46 @@ describe('ScanReview', () => {
     renderReview(draft);
     await user.click(screen.getByRole('button', { name: 'View photo of Luke Skywalker' }));
     expect(within(screen.getByRole('dialog', { name: 'Photo' })).getByRole('img').getAttribute('src')).toContain('/cards/SOR/012');
+  });
+
+  it('opens the picker searching for the title that was read', async () => {
+    const user = userEvent.setup();
+    const read = { readable: true, set: 'SOR', number: '999', name: 'Han Solo' };
+    renderReview(build([['u', { status: 'unidentified', reason: 'no-such-card', read }]]));
+    await user.click(screen.getByRole('button', { name: 'Pick card' }));
+    expect(screen.getByText('pick-mock')).toHaveAttribute('data-initial-search', 'Han Solo');
+  });
+
+  it('opens the picker with an empty search when nothing was read', async () => {
+    const user = userEvent.setup();
+    renderReview(build([['u', { status: 'unidentified', reason: 'unreadable', read: null }]]));
+    await user.click(screen.getByRole('button', { name: 'Pick card' }));
+    expect(screen.getByText('pick-mock')).toHaveAttribute('data-initial-search', '');
+  });
+
+  it('asks to check the printing of a leader matched by name only', () => {
+    renderReview(build([['a', { ...LUKE, type: 'Leader', via: 'name' }]]));
+    expect(within(screen.getByTestId('group-SOR_012_std')).getByText(/matched by name/i)).toBeInTheDocument();
+  });
+
+  it('badges cards that are new to the collection', () => {
+    renderReview(
+      build([['a', LUKE], ['b', { status: 'matched', set: 'SOR', number: '045', name: 'Admiral Ackbar', type: 'Unit' }]]),
+      { collectionData: { SOR_045_std: { quantity: 2 } } },
+    );
+    expect(within(screen.getByTestId('group-SOR_012_std')).getByText('NEW')).toBeInTheDocument();
+    expect(within(screen.getByTestId('group-SOR_045_std')).queryByText('NEW')).not.toBeInTheDocument();
+  });
+
+  it('counts a foil-only card as already owned', () => {
+    renderReview(build([['a', LUKE]]), { collectionData: { SOR_012_foil: { quantity: 1 } } });
+    expect(screen.queryByText('NEW')).not.toBeInTheDocument();
+  });
+
+  it('explains a card whose name was read but not its number', () => {
+    const read = { readable: true, set: '', number: '', name: 'Han Solo', subtitle: 'Worth the Risk' };
+    renderReview(build([['u', { status: 'unidentified', reason: 'no-number', read }]]));
+    expect(screen.getByText(/no card number/i)).toBeInTheDocument();
   });
 
   it('says so when a photo was lost to a reload', () => {

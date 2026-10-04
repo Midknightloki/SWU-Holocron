@@ -32,7 +32,7 @@ function fakeDb(docs = {}) {
 }
 
 const IMAGE = Buffer.from('fake-jpeg-bytes').toString('base64');
-const READ = { readable: true, set: 'SOR', number: '012', name: 'Luke Skywalker' };
+const READ = { readable: true, set: 'SOR', number: '012', name: 'Luke Skywalker', subtitle: 'Faithful Friend' };
 const NOW = new Date('2026-09-29T15:00:00Z');
 
 const request = (uid, { anonymous = false, image = IMAGE } = {}) => ({
@@ -154,7 +154,13 @@ describe('scanCard handler', () => {
     const messy = { readable: 'yes', set: '  SOR ', number: 12, name: 'x'.repeat(500), extra: 'dropped' };
     const { handler } = setup({ [profilePath('p')]: { isPro: true } }, vi.fn(async () => messy));
     const out = await handler(request('p'));
-    expect(out).toEqual({ readable: false, set: 'SOR', number: '', name: 'x'.repeat(100) });
+    expect(out).toEqual({ readable: false, set: 'SOR', number: '', name: 'x'.repeat(100), subtitle: '' });
+  });
+
+  it('passes the subtitle through, so a face-up leader with no number can be matched', async () => {
+    const leader = { readable: true, set: '', number: '', name: 'Han Solo', subtitle: 'Worth the Risk' };
+    const { handler } = setup({ [profilePath('p')]: { isPro: true } }, vi.fn(async () => leader));
+    await expect(handler(request('p'))).resolves.toEqual(leader);
   });
 });
 

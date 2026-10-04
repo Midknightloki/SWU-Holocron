@@ -13,18 +13,19 @@ import { getCardQuantities, isHorizontalCard } from '../utils/collectionHelpers'
 const MIN_QUERY = 2;
 const MAX_UNTYPED_RESULTS = 100;
 
-export default function CardPickerModal({ type, collectionData, onSelect, onClose }) {
+export default function CardPickerModal({ type, collectionData, onSelect, onClose, initialSearch = '' }) {
   const safeCollection = collectionData ?? {};
   const [cards, setCards] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(initialSearch);
   const [collectionOnly, setCollectionOnly] = useState(false);
 
-  // Reset filters when switching between Leader and Base pickers
+  // Reset filters when switching between Leader and Base pickers. This also
+  // runs on mount, so it restores the pre-filled search rather than clearing it.
   useEffect(() => {
-    setSearch('');
+    setSearch(initialSearch);
     setCollectionOnly(false);
-  }, [type]);
+  }, [type]); // eslint-disable-line react-hooks/exhaustive-deps -- reset on type change only
 
   // Load all cards of this type (or every card) from every registered set
   useEffect(() => {

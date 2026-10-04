@@ -178,9 +178,54 @@ describe('set hints from the scanner picker', () => {
     expect(resolveScan(read, ctx2(['SHD']))).toMatchObject({ status: 'unidentified', reason: 'name-mismatch' });
   });
 
-  it('still needs a readable number', () => {
+  it('still needs a readable number (unless it is a face-up leader)', () => {
     const read = { readable: true, set: '', number: '', name: 'Cad Bane' };
-    expect(resolveScan(read, ctx2(['SHD']))).toMatchObject({ status: 'unidentified', reason: 'unreadable' });
+    expect(resolveScan(read, ctx2(['SHD']))).toMatchObject({ status: 'unidentified', reason: 'no-number' });
+  });
+});
+
+// A leader scanned face up shows no collector line. Leaders aren't reprinted,
+// so name + subtitle identifies one; the subtitle is required because several
+// leaders share a name (there are many Han Solos).
+describe('face-up leaders with no collector number', () => {
+  const CODES = ['SOR', 'SHD', 'LAW'];
+  const DATA = {
+    SOR: [
+      { Set: 'SOR', Number: '200', Name: 'Han Solo', Subtitle: 'Audacious Smuggler', Type: 'Leader' }, // hyperspace variant
+      { Set: 'SOR', Number: '017', Name: 'Han Solo', Subtitle: 'Audacious Smuggler', Type: 'Leader' },
+    ],
+    SHD: [
+      { Set: 'SHD', Number: '012', Name: 'Han Solo', Subtitle: 'Worth the Risk', Type: 'Leader' },
+      { Set: 'SHD', Number: '100', Name: 'Han Solo', Subtitle: 'Never Tell Me the Odds', Type: 'Unit' },
+    ],
+    LAW: [{ Set: 'LAW', Number: '005', Name: 'Han Solo', Subtitle: 'Worth the Risk', Type: 'Leader' }],
+  };
+  const leaderCtx = (hintSets = []) => ({ setCodes: CODES, getCards: (c) => DATA[c] ?? null, hintSets, baseSets: ['SOR', 'SHD'] });
+  const faceUp = (subtitle) => ({ readable: true, set: '', number: '', name: 'Han Solo', subtitle });
+
+  it('matches a leader by name and subtitle when there is no number', () => {
+    expect(resolveScan(faceUp('Worth the Risk'), leaderCtx())).toEqual({
+      status: 'matched', set: 'SHD', number: '012', name: 'Han Solo', type: 'Leader', via: 'name',
+    });
+  });
+
+  it('prefers the standard printing over a later-numbered variant', () => {
+    expect(resolveScan(faceUp('Audacious Smuggler'), leaderCtx())).toMatchObject({ set: 'SOR', number: '017' });
+  });
+
+  it('searches the picked sets before the base sets', () => {
+    expect(resolveScan(faceUp('Worth the Risk'), leaderCtx(['LAW']))).toMatchObject({ set: 'LAW', number: '005' });
+  });
+
+  it('only matches leaders, and needs the subtitle to agree', () => {
+    expect(resolveScan(faceUp('Never Tell Me the Odds'), leaderCtx())).toMatchObject({ status: 'unidentified', reason: 'no-number' });
+    expect(resolveScan(faceUp('Wrong Subtitle'), leaderCtx())).toMatchObject({ status: 'unidentified', reason: 'no-number' });
+    expect(resolveScan(faceUp(''), leaderCtx())).toMatchObject({ status: 'unidentified', reason: 'no-number' });
+  });
+
+  it('is unreadable when there is neither a number nor a name', () => {
+    expect(resolveScan({ readable: true, set: '', number: '', name: '', subtitle: '' }, leaderCtx()))
+      .toMatchObject({ status: 'unidentified', reason: 'unreadable' });
   });
 });
 
@@ -205,9 +250,9 @@ describe('resolveScan', () => {
     expect(resolveScan(read, ctx)).toEqual({ status: 'unidentified', reason: 'unreadable', read });
   });
 
-  it('treats readable-but-empty number as unreadable', () => {
+  it('treats readable-but-empty number as no-number (the name was read)', () => {
     const read = { readable: true, set: 'SOR', number: '', name: 'Luke Skywalker' };
-    expect(resolveScan(read, ctx)).toMatchObject({ status: 'unidentified', reason: 'unreadable' });
+    expect(resolveScan(read, ctx)).toMatchObject({ status: 'unidentified', reason: 'no-number' });
   });
 
   it('treats a missing read as unreadable', () => {

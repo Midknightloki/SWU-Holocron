@@ -197,11 +197,12 @@ Rules recap: use only IDs from the list above, respect the deck's aspects, and k
 // failed the name check against the wrong set. An empty set lets the client
 // fall back to the sets the user picked in the scanner instead.
 const SCAN_PROMPT = `This is a photo of a Star Wars: Unlimited trading card. The card may be rotated.
-Read three things from it:
+Read four things from it:
 - set: the set code printed in the collector line along the card's bottom edge, just before the language code (as in "XXX • EN"). Copy it letter by letter exactly as printed. If you cannot read the set code with confidence, leave set empty -- do not guess, and do not substitute a different or more common set.
-- number: the collector number from that same line, without any "/total" part.
+- number: the collector number from that same line, without any "/total" part. Some cards (a leader shown face up) have no collector line: then leave set and number empty.
 - name: the card's title as printed, without its subtitle.
-If there is no card in the photo, or you cannot read the number or the name with confidence, set readable to false and leave the other fields empty.`;
+- subtitle: the smaller line printed directly under the title, if there is one; otherwise empty.
+If there is no card in the photo, or you cannot read the name with confidence, set readable to false and leave the other fields empty. If you can read the name but not the number, set readable to true, leave number empty, and still fill in name and subtitle.`;
 
 const SCAN_SCHEMA = {
   type: "object",
@@ -210,8 +211,9 @@ const SCAN_SCHEMA = {
     set: { type: "string" },
     number: { type: "string" },
     name: { type: "string" },
+    subtitle: { type: "string" },
   },
-  required: ["readable", "set", "number", "name"],
+  required: ["readable", "set", "number", "name", "subtitle"],
 };
 
 // One image, one prompt, schema-constrained JSON out. Shared by scanCard and
