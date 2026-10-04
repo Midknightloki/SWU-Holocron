@@ -118,6 +118,11 @@ these on real hardware and record the results in the PR:
   button carries a red badge with the number needing attention. Controls sit
   in the bottom bar. Tapping a review thumbnail opens the photo full size.
 - First open shows the "How to scan" steps; after "Got it" they stay closed.
+- Whole box in one batch: no mid-stream saves, no slowdown late in the box.
+  Kill the app mid-batch and reopen: rows and photos are back and unread cards
+  resume reading. Note the share of Auto captures that used an instant frame
+  (vs. fell back to a full photo) and compare read accuracy against a run with
+  "Always use full photos" on.
 - Auto mode on the rig: switched on with the rig empty, the chip reaches
   "Ready". A full stack gives exactly one capture per card — count captures vs
   cards, and expect zero captures of the empty rig and zero double scans of a
