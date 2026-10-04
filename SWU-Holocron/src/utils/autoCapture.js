@@ -9,11 +9,15 @@
  * @environment:web-localstorage (load/save settings only)
  */
 export const AUTO_KEY = 'swu-scan-auto';
-export const DEFAULT_AUTO_SETTINGS = { presence: 0.08, stillness: 0.02, settleMs: 600 };
+export const DEFAULT_AUTO_SETTINGS = { presence: 0.08, stillness: 0.02, settleMs: 350, sharpness: 60, fullPhotos: false };
+// Re-arm after the rig has looked empty this long, moving or not: a quick swap
+// shows the empty rig only for a moment while the hand is still in motion.
+export const REARM_MS = 200;
 const LIMITS = {
   presence: [0.02, 0.5],
   stillness: [0.005, 0.1],
   settleMs: [200, 3000],
+  sharpness: [10, 300],
 };
 // How fast the empty-rig baseline follows slow light changes, per still tick.
 const BASELINE_BLEND = 0.05;
@@ -57,7 +61,7 @@ const blend = (base, frame) => {
 };
 
 export const initialAutoState = () => ({
-  phase: 'learning', baseline: null, previous: null, anchor: null, stillSince: null, capturedAt: null,
+  phase: 'learning', baseline: null, previous: null, anchor: null, stillSince: null, capturedAt: null, emptySince: null,
 });
 
 export function stepAuto(state, frame, now, settings = DEFAULT_AUTO_SETTINGS) {
@@ -93,11 +97,15 @@ export function stepAuto(state, frame, now, settings = DEFAULT_AUTO_SETTINGS) {
         ? { state: { ...next, phase: 'captured', capturedAt: now }, event: 'capture' }
         : { state: { ...next, phase: 'empty' }, event: null };
 
-    case 'captured':
-      // One capture per card: re-arm only once the rig is empty and still.
-      return settled && !present()
-        ? { state: { ...next, phase: 'empty' }, event: null }
-        : { state: next, event: null };
+    case 'captured': {
+      // One capture per card: re-arm once the rig has looked empty for
+      // REARM_MS, moving or not.
+      if (present()) return { state: { ...next, emptySince: null }, event: null };
+      const emptySince = state.emptySince ?? now;
+      return now - emptySince >= REARM_MS
+        ? { state: { ...next, phase: 'empty', emptySince: null }, event: null }
+        : { state: { ...next, emptySince }, event: null };
+    }
 
     default:
       return { state: initialAutoState(), event: null };
@@ -114,6 +122,8 @@ const normalise = (s) => ({
   presence: clampSetting('presence', s?.presence),
   stillness: clampSetting('stillness', s?.stillness),
   settleMs: Math.round(clampSetting('settleMs', s?.settleMs)),
+  sharpness: Math.round(clampSetting('sharpness', s?.sharpness)),
+  fullPhotos: s?.fullPhotos === true,
 });
 
 export function loadAutoSettings(storage) {

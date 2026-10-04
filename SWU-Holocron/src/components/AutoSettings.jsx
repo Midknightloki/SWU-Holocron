@@ -16,7 +16,11 @@ const SLIDERS = [
     show: (v) => v.toFixed(3) },
   { key: 'settleMs', label: 'Settle time', min: 200, max: 3000, step: 100,
     help: 'How long a card must be still before it is scanned.',
-    show: (v) => `${(v / 1000).toFixed(1)} s` },
+    // Math.round, not toFixed: (0.35).toFixed(1) is "0.3" in binary floating point.
+    show: (v) => `${Math.round(v / 100) / 10} s` },
+  { key: 'sharpness', label: 'Sharpness', min: 10, max: 300, step: 5,
+    help: 'How crisp an instant frame must be; blurrier frames fall back to a full photo. Raise it if reads suffer.',
+    show: (v) => String(Math.round(v)) },
 ];
 
 export default function AutoSettings({ settings, onChange, onRelearn, onClose }) {
@@ -46,6 +50,16 @@ export default function AutoSettings({ settings, onChange, onRelearn, onClose })
             <p className="text-xs text-gray-500">{help}</p>
           </div>
         ))}
+        <label className="flex items-center gap-3 text-sm">
+          <input
+            type="checkbox"
+            checked={settings.fullPhotos}
+            onChange={(e) => onChange({ ...settings, fullPhotos: e.target.checked })}
+            className="w-5 h-5 accent-yellow-500"
+          />
+          Always use full photos
+        </label>
+        <p className="text-xs text-gray-500 -mt-3">Slower (hold still for each photo), for rigs where instant frames read poorly.</p>
         <div className="flex gap-2 pt-2">
           <button type="button" onClick={onRelearn} className="flex-1 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-sm">
             Re-learn empty rig

@@ -23,10 +23,17 @@ const mapRows = (draft, ids, fn) => {
   return { rows: draft.rows.map((row) => (wanted.has(row.id) ? fn(row) : row)) };
 };
 
-export function addCapture(draft, { id, isFoil, photo }) {
+// The photo itself lives in the photo store (IndexedDB), keyed by row id; a
+// row only records that it has one, so a whole box never sits in memory.
+export function addCapture(draft, { id, isFoil }) {
   return {
-    rows: [...draft.rows, { id, status: 'reading', isFoil: Boolean(isFoil), qty: 1, photo: photo ?? null }],
+    rows: [...draft.rows, { id, status: 'reading', isFoil: Boolean(isFoil), qty: 1, hasPhoto: true }],
   };
+}
+
+/** Rows the reading queue has paused (daily limit, offline): kept, not committed. */
+export function markWaiting(draft, ids, reason) {
+  return mapRows(draft, ids, (row) => ({ ...row, status: 'waiting', reason }));
 }
 
 export function applyResult(draft, id, result) {
@@ -90,8 +97,7 @@ export function groupRows(draft) {
         type: row.type ?? null,
         via: row.via ?? null,
         isFoil: row.isFoil,
-        photo: row.photo,
-        hadPhoto: Boolean(row.hadPhoto),
+        hasPhoto: Boolean(row.hasPhoto),
         read: row.read ?? null,
         reason: row.reason ?? null,
       });
@@ -128,15 +134,16 @@ export function toWrites(draft) {
 }
 
 export function countByStatus(draft) {
-  const counts = { reading: 0, matched: 0, unidentified: 0, failed: 0 };
-  for (const row of draft.rows) counts[row.status] += row.qty;
+  const counts = { reading: 0, matched: 0, unidentified: 0, failed: 0, waiting: 0 };
+  for (const row of draft.rows) {
+    if (row.status in counts) counts[row.status] += row.qty;
+  }
   return counts;
 }
 
 export function saveDraft(storage, uid, draft) {
   try {
-    const rows = draft.rows.map(({ photo, ...row }) => ({ ...row, hadPhoto: Boolean(photo) || Boolean(row.hadPhoto) }));
-    storage.setItem(draftKey(uid), JSON.stringify({ rows }));
+    storage.setItem(draftKey(uid), JSON.stringify({ rows: draft.rows }));
     return true;
   } catch {
     return false;
@@ -149,14 +156,13 @@ export function loadDraft(storage, uid) {
     if (!raw) return emptyDraft();
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed?.rows)) return emptyDraft();
+    // Rows still reading stay reading: the scanner queues them again if their
+    // photo is in the store. Drafts from before the photo store carried the
+    // image inline -- drop it rather than hold it in memory.
     return {
       rows: parsed.rows
         .filter((row) => row && typeof row.id === 'string')
-        .map((row) => ({
-          ...row,
-          photo: null,
-          ...(row.status === 'reading' ? { status: 'failed', reason: 'interrupted' } : {}),
-        })),
+        .map(({ photo, hadPhoto, ...row }) => ({ ...row, hasPhoto: Boolean(row.hasPhoto) })),
     };
   } catch {
     return emptyDraft();

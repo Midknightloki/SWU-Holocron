@@ -2,7 +2,7 @@
  * @vitest-environment happy-dom
  */
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
 
@@ -13,12 +13,13 @@ vi.mock('../CardPickerModal', () => ({
 }));
 
 import ScanReview from '../ScanReview';
-import { emptyDraft, addCapture, applyResult, groupRows } from '../../utils/scanDraft';
+import { emptyDraft, addCapture, applyResult, groupRows, markWaiting } from '../../utils/scanDraft';
 
 const LUKE = { status: 'matched', set: 'SOR', number: '012', name: 'Luke Skywalker' };
 
-const build = (specs) => specs.reduce((d, [id, result, { isFoil = false, photo = `p-${id}` } = {}]) => {
-  const next = addCapture(d, { id, isFoil, photo });
+// Photos come from the photo store; the test store returns "p-<id>".
+const build = (specs) => specs.reduce((d, [id, result, { isFoil = false } = {}]) => {
+  const next = addCapture(d, { id, isFoil });
   return result ? applyResult(next, id, result) : next;
 }, emptyDraft());
 
@@ -26,7 +27,8 @@ const renderReview = (draft, props = {}) => {
   const handlers = {
     onChange: vi.fn(), onRetry: vi.fn(), onBack: vi.fn(), onCommit: vi.fn(), onDiscard: vi.fn(),
   };
-  render(<ScanReview draft={draft} committing={false} commitError={null} {...handlers} {...props} />);
+  const getPhoto = (id) => Promise.resolve(`p-${id}`);
+  render(<ScanReview draft={draft} committing={false} commitError={null} getPhoto={getPhoto} {...handlers} {...props} />);
   return handlers;
 };
 
@@ -77,7 +79,7 @@ describe('ScanReview', () => {
     const read = { readable: true, set: 'SOR', number: '999', name: 'Nobody' };
     const { onChange } = renderReview(build([['u', { status: 'unidentified', reason: 'no-such-card', read }]]));
     expect(screen.getByText('Read as SOR 999 · Nobody')).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: 'Captured photo' })).toHaveAttribute('src', 'data:image/jpeg;base64,p-u');
+    expect(await screen.findByRole('img', { name: 'Captured photo' })).toHaveAttribute('src', 'data:image/jpeg;base64,p-u');
     await user.click(screen.getByRole('button', { name: 'Pick card' }));
     await user.click(screen.getByText('pick-mock'));
     expect(onChange.mock.calls[0][0].rows[0]).toMatchObject({ status: 'matched', set: 'SHD', number: '007' });
@@ -86,7 +88,7 @@ describe('ScanReview', () => {
   it('opens a captured photo full size and closes it again', async () => {
     const user = userEvent.setup();
     renderReview(build([['u', { status: 'unidentified', reason: 'unreadable', read: null }]]));
-    await user.click(screen.getByRole('button', { name: 'View photo' }));
+    await user.click(await screen.findByRole('button', { name: 'View photo' }));
     const viewer = screen.getByRole('dialog', { name: 'Photo' });
     expect(within(viewer).getByRole('img')).toHaveAttribute('src', 'data:image/jpeg;base64,p-u');
     await user.click(within(viewer).getByRole('button', { name: 'Close photo' }));
@@ -97,15 +99,15 @@ describe('ScanReview', () => {
     const user = userEvent.setup();
     renderReview(build([['a', LUKE]]));
     await user.click(screen.getByRole('button', { name: 'View photo of Luke Skywalker' }));
-    expect(within(screen.getByRole('dialog', { name: 'Photo' })).getByRole('img')).toHaveAttribute('src', 'data:image/jpeg;base64,p-a');
+    expect(within(await screen.findByRole('dialog', { name: 'Photo' })).getByRole('img')).toHaveAttribute('src', 'data:image/jpeg;base64,p-a');
   });
 
   it('falls back to the card image when the photo was not kept', async () => {
     const user = userEvent.setup();
-    const draft = { rows: [{ id: 'a', status: 'matched', set: 'SOR', number: '012', name: 'Luke Skywalker', isFoil: false, qty: 1, photo: null, hadPhoto: true }] };
-    renderReview(draft);
+    const draft = { rows: [{ id: 'a', status: 'matched', set: 'SOR', number: '012', name: 'Luke Skywalker', isFoil: false, qty: 1, hasPhoto: true }] };
+    renderReview(draft, { getPhoto: () => Promise.resolve(null) });
     await user.click(screen.getByRole('button', { name: 'View photo of Luke Skywalker' }));
-    expect(within(screen.getByRole('dialog', { name: 'Photo' })).getByRole('img').getAttribute('src')).toContain('/cards/SOR/012');
+    expect(within(await screen.findByRole('dialog', { name: 'Photo' })).getByRole('img').getAttribute('src')).toContain('/cards/SOR/012');
   });
 
   it('opens the picker searching for the title that was read', async () => {
@@ -148,10 +150,30 @@ describe('ScanReview', () => {
     expect(screen.getByText(/no card number/i)).toBeInTheDocument();
   });
 
-  it('says so when a photo was lost to a reload', () => {
-    const draft = { rows: [{ id: 'u', status: 'unidentified', reason: 'unreadable', read: null, isFoil: false, qty: 1, photo: null, hadPhoto: true }] };
-    renderReview(draft);
-    expect(screen.getByText('Photo lost')).toBeInTheDocument();
+  it('loads a photo only once its row scrolls into view', async () => {
+    // Review finding: a mid-box review loaded every full-size photo at once.
+    let trigger;
+    const observe = vi.fn();
+    globalThis.IntersectionObserver = class {
+      constructor(cb) { trigger = cb; }
+      observe(el) { observe(el); }
+      disconnect() {}
+    };
+    try {
+      const getPhoto = vi.fn((id) => Promise.resolve(`p-${id}`));
+      renderReview(build([['u', { status: 'unidentified', reason: 'unreadable', read: null }]]), { getPhoto });
+      expect(observe).toHaveBeenCalled();
+      expect(getPhoto).not.toHaveBeenCalled();
+      await act(async () => { trigger([{ isIntersecting: true }]); });
+      expect(await screen.findByRole('img', { name: 'Captured photo' })).toHaveAttribute('src', 'data:image/jpeg;base64,p-u');
+    } finally {
+      delete globalThis.IntersectionObserver;
+    }
+  });
+
+  it('shows No photo when the store has none', async () => {
+    renderReview(build([['u', { status: 'unidentified', reason: 'unreadable', read: null }]]), { getPhoto: () => Promise.resolve(null) });
+    expect(await screen.findByText('No photo')).toBeInTheDocument();
     expect(screen.getByText("Couldn't read this card")).toBeInTheDocument();
   });
 
@@ -175,9 +197,19 @@ describe('ScanReview', () => {
     expect(screen.getByText(/1 card needs attention and will stay in the batch/)).toBeInTheDocument();
   });
 
-  it('disables commit while any card is still reading', () => {
-    renderReview(build([['a', LUKE], ['r', null]]));
-    expect(screen.getByRole('button', { name: /Add 1 card to collection/ })).toBeDisabled();
+  it('Add works while cards are reading or waiting, and says they stay', () => {
+    const d = markWaiting(build([['a', LUKE], ['r', null], ['w', null]]), ['w'], 'quota');
+    renderReview(d);
+    expect(screen.getByRole('button', { name: 'Add 1 card to collection' })).toBeEnabled();
+    expect(screen.getByText(/1 still reading will stay in the batch/)).toBeInTheDocument();
+    expect(screen.getByText(/waiting: daily limit/i)).toBeInTheDocument();
+  });
+
+  it('offers retry for a row waiting on the daily limit', async () => {
+    const user = userEvent.setup();
+    const { onRetry } = renderReview(markWaiting(build([['w', null]]), ['w'], 'quota'));
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(onRetry).toHaveBeenCalledWith('w');
   });
 
   it('disables commit while committing and shows the error', () => {

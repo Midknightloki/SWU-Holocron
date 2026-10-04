@@ -14,13 +14,11 @@
  *
  * @environment:web-indexeddb @environment:web-localstorage (migration only)
  */
+import { createDbOpener, STORES } from './appDb';
+
 export const LEGACY_PREFIX = 'swu-cards-';
-const DB_NAME = 'swu-holocron';
-const DB_VERSION = 1;
-const STORE = 'cardSets';
-// IndexedDB can hang without ever firing success/error/blocked (WebKit has
-// shipped this). Give up quickly: the app just fetches the set instead.
-const OPEN_TIMEOUT_MS = 2000;
+const STORE = STORES.cardSets;
+// Reads can hang too; give up and fetch instead.
 const READ_TIMEOUT_MS = 2000;
 
 const defaultLocalStorage = () => {
@@ -44,61 +42,11 @@ const withTimeout = (promise, ms, fallback) => new Promise((resolve) => {
   );
 });
 
-export function createCardCache({ indexedDB = globalThis.indexedDB, openTimeoutMs = OPEN_TIMEOUT_MS } = {}) {
-  let dbPromise = null;
-
-  const openOnce = () => new Promise((resolve) => {
-    let settled = false;
-    const done = (db) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve(db);
-    };
-    const timer = setTimeout(() => done(null), openTimeoutMs);
-    let req;
-    try {
-      req = indexedDB.open(DB_NAME, DB_VERSION);
-    } catch {
-      done(null);
-      return;
-    }
-    req.onupgradeneeded = () => {
-      if (!req.result.objectStoreNames.contains(STORE)) {
-        req.result.createObjectStore(STORE, { keyPath: 'setCode' });
-      }
-    };
-    req.onsuccess = () => {
-      const db = req.result;
-      // A late success after the timeout: don't leak the connection.
-      if (settled) {
-        db.close();
-        return;
-      }
-      // iOS drops connections when a PWA is backgrounded; a version bump in
-      // another tab must not be blocked by this one. Either way, forget the
-      // connection so the next call reopens.
-      db.onclose = () => { dbPromise = null; };
-      db.onversionchange = () => {
-        try { db.close(); } catch { /* already closed */ }
-        dbPromise = null;
-      };
-      done(db);
-    };
-    req.onerror = () => done(null);
-    req.onblocked = () => done(null);
-  });
-
-  const open = () => {
-    if (!indexedDB) return Promise.resolve(null);
-    if (!dbPromise) {
-      const attempt = openOnce();
-      dbPromise = attempt;
-      // A failed or timed-out open is not cached for the whole session.
-      attempt.then((db) => { if (!db && dbPromise === attempt) dbPromise = null; });
-    }
-    return dbPromise;
-  };
+export function createCardCache({ indexedDB = globalThis.indexedDB, openTimeoutMs } = {}) {
+  // Shared opener: timeouts, reconnect after close/versionchange, no cached
+  // failures. All stores are created there, so versions can't drift apart.
+  const opener = createDbOpener({ indexedDB, openTimeoutMs });
+  const open = () => opener.open();
 
   const put = async (setCode, cards) => {
     const db = await open();

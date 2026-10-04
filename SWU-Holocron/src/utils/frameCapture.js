@@ -49,6 +49,47 @@ function encodeWithCrop(source, width, height, crop, sourceKind, encode) {
   return { image: encode(source, fitWithin(region.sw, region.sh, CAPTURE_MAX_EDGE), region), cropped: true };
 }
 
+/** Draw the region of a source at the given size and return grayscale pixels. */
+export function grayscaleOf(source, { width, height }, region) {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(source, region.sx, region.sy, region.sw, region.sh, 0, 0, width, height);
+  const { data } = ctx.getImageData(0, 0, width, height);
+  const out = new Uint8Array(width * height);
+  for (let i = 0; i < out.length; i += 1) {
+    out[i] = Math.round(data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114);
+  }
+  return out;
+}
+
+// Near native resolution for a 4K stream's card crop: a heavier downscale
+// averages away the 2-3 px smear that makes collector digits unreadable.
+const SHARPNESS_EDGE = 1600;
+
+/**
+ * An instant capture: the current frame of the live stream, cropped to the
+ * card at full stream resolution, plus a small grayscale copy for the
+ * sharpness check. No shutter wait -- the card can be pulled immediately.
+ */
+export function captureVideoFrame({ video, crop = () => null, encode = encodeJpeg, toGray = grayscaleOf }) {
+  const width = video?.videoWidth ?? 0;
+  const height = video?.videoHeight ?? 0;
+  if (!width || !height) return null;
+  try {
+    const rect = crop('video', width, height);
+    const region = rect ? cropPixels(rect, width, height) : { sx: 0, sy: 0, sw: width, sh: height };
+    const image = encode(video, fitWithin(region.sw, region.sh, CAPTURE_MAX_EDGE), region);
+    const graySize = fitWithin(region.sw, region.sh, SHARPNESS_EDGE);
+    const gray = toGray(video, graySize, region);
+    if (!image || !gray) return null;
+    return { image, gray, grayWidth: graySize.width, grayHeight: graySize.height, source: 'video', width, height, cropped: Boolean(rect) };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * @returns {Promise<{ image: string|null, source: 'photo'|'video', width: number, height: number, cropped: boolean }>}
  *   width/height are the camera's native size; `cropped` drives the scanner's

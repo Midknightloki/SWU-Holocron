@@ -293,6 +293,25 @@ that cross-check is what keeps a misread number from adding the wrong card.
 - The batch lives in `localStorage['swu-scan-draft-{uid}']` until the user
   approves it (`src/utils/scanDraft.js`). The key is per uid on purpose: a
   shared key would let one account's batch land in another's collection.
+  Rows only record `hasPhoto`; the photos themselves are in IndexedDB
+  (`photoStore.js`, store `scanPhotos`), keyed by row id, and are deleted when
+  a row leaves the batch (added, removed, collapsed, discarded).
+- **Whole-box pipeline.** Capture never waits on recognition. Each capture is
+  stored and queued (`scanQueue.js`): up to 3 reads in flight, network
+  failures retried with backoff (1 s → 16 s), the daily limit and going
+  offline pause the queue (pending rows become `waiting`), and rows still
+  reading are re-queued when the scanner reopens. In Auto, the capture is an
+  instant frame of the live stream (`captureVideoFrame`, cropped through
+  `videoCropFor`) when it passes the sharpness check
+  (`laplacianVariance ≥ settings.sharpness`), else a full photo; manual taps
+  always take a full photo. Live feedback is deliberately minimal: no flash on
+  success or recognition, a red flash only when nothing usable was captured,
+  and unrecognised cards just raise the Review badge. Add commits the matched
+  cards even while others are still reading or waiting.
+- **One IndexedDB opener.** `appDb.js` opens `swu-holocron` (version 2) and
+  creates every store (`cardSets`, `scanPhotos`). A store must never be
+  created elsewhere: a module asking for a lower version than another has
+  already opened fails with VersionError.
 - Commits are **additive** (`increment`), unlike CSV import, which overwrites.
   Committed rows leave the draft after each 400-op chunk, so a retry after a
   mid-commit failure never double-counts.

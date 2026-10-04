@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Minus, Plus, Sparkles, Trash2, RotateCcw, Loader2, Search, X } from 'lucide-react';
 import CardPickerModal from './CardPickerModal';
 import { CardService } from '../services/CardService';
+import { PhotoStore } from '../services/photoStore';
 import { getCardQuantities, isHorizontalCard } from '../utils/collectionHelpers';
 import {
   countByStatus, groupRows, removeRows, resolveManually, setFoil, setGroupQuantity,
@@ -22,7 +23,8 @@ const REASON_TEXT = {
   'no-number': 'No card number read — check the name',
   'name-mismatch': "Name didn't match the number",
   interrupted: 'Scan was interrupted',
-  quota: 'Daily scan limit reached',
+  quota: 'Waiting: daily limit',
+  offline: 'Waiting: offline',
   network: 'Network error',
   forbidden: 'Scanning not allowed',
   unknown: 'Something went wrong',
@@ -32,12 +34,49 @@ const plural = (n) => `${n} card${n === 1 ? '' : 's'}`;
 
 const photoSrc = (photo) => `data:image/jpeg;base64,${photo}`;
 
-function Photo({ group, onView }) {
-  if (group.photo) {
+// Load only once the row is on screen: a whole box can leave hundreds of
+// unread or unidentified rows, and every photo at once could exhaust memory.
+// Without IntersectionObserver, load straight away.
+function useOnScreen(ref) {
+  const [visible, setVisible] = useState(typeof IntersectionObserver === 'undefined');
+  useEffect(() => {
+    if (visible || !ref.current || typeof IntersectionObserver === 'undefined') return undefined;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) setVisible(true);
+    }, { rootMargin: '200px' });
+    observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, [ref, visible]);
+  return visible;
+}
+
+// A row's photo from the photo store: undefined while loading, null if none.
+function useStoredPhoto(id, hasPhoto, getPhoto, visible) {
+  const [photo, setPhoto] = useState(hasPhoto ? undefined : null);
+  useEffect(() => {
+    if (!visible) return undefined;
+    if (!hasPhoto) {
+      setPhoto(null);
+      return undefined;
+    }
+    let cancelled = false;
+    Promise.resolve(getPhoto(id))
+      .then((value) => { if (!cancelled) setPhoto(value ?? null); })
+      .catch(() => { if (!cancelled) setPhoto(null); });
+    return () => { cancelled = true; };
+  }, [id, hasPhoto, getPhoto, visible]);
+  return photo;
+}
+
+function Photo({ id, hasPhoto, getPhoto, onView }) {
+  const boxRef = useRef(null);
+  const visible = useOnScreen(boxRef);
+  const photo = useStoredPhoto(id, hasPhoto, getPhoto, visible);
+  if (photo) {
     return (
-      <button type="button" aria-label="View photo" onClick={() => onView(photoSrc(group.photo))} className="flex-shrink-0">
+      <button type="button" aria-label="View photo" onClick={() => onView(photoSrc(photo))} className="flex-shrink-0">
         <img
-          src={photoSrc(group.photo)}
+          src={photoSrc(photo)}
           alt="Captured photo"
           className="w-16 h-[88px] object-cover rounded"
         />
@@ -45,22 +84,32 @@ function Photo({ group, onView }) {
     );
   }
   return (
-    <div className="w-16 h-[88px] rounded bg-gray-800 text-[10px] text-gray-500 flex items-center justify-center text-center flex-shrink-0">
-      {group.hadPhoto ? 'Photo lost' : 'No photo'}
+    <div ref={boxRef} className="w-16 h-[88px] rounded bg-gray-800 text-[10px] text-gray-500 flex items-center justify-center text-center flex-shrink-0">
+      {photo === undefined ? '' : 'No photo'}
     </div>
   );
 }
 
-export default function ScanReview({ draft, onChange, onRetry, onBack, onCommit, onDiscard, committing, commitError, collectionData = {} }) {
+export default function ScanReview({
+  draft, onChange, onRetry, onBack, onCommit, onDiscard, committing, commitError,
+  collectionData = {}, getPhoto = PhotoStore.get,
+}) {
   const [pickingFor, setPickingFor] = useState(null);
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const [viewing, setViewing] = useState(null);
 
   const groups = groupRows(draft);
   const counts = countByStatus(draft);
-  const attention = counts.unidentified + counts.failed;
+  const attention = counts.unidentified + counts.failed + counts.waiting;
   const total = counts.reading + counts.matched + attention;
-  const canCommit = counts.matched > 0 && counts.reading === 0 && !committing;
+  // Cards still reading (or waiting on the daily limit) don't block Add: it
+  // commits the matched ones and leaves the rest in the batch.
+  const canCommit = counts.matched > 0 && !committing;
+
+  const viewMatched = async (group) => {
+    const photo = group.hasPhoto ? await getPhoto(group.rows[0].id) : null;
+    setViewing(photo ? photoSrc(photo) : CardService.getCardImage(group.set, group.number));
+  };
 
   return (
     <div className="flex flex-col h-full bg-gray-950 text-gray-100">
@@ -99,7 +148,7 @@ export default function ScanReview({ draft, onChange, onRetry, onBack, onCommit,
                 <button
                   type="button"
                   aria-label={`View photo of ${group.name}`}
-                  onClick={() => setViewing(group.photo ? photoSrc(group.photo) : CardService.getCardImage(group.set, group.number))}
+                  onClick={() => viewMatched(group)}
                   className="flex-shrink-0"
                 >
                   <img
@@ -164,7 +213,7 @@ export default function ScanReview({ draft, onChange, onRetry, onBack, onCommit,
           if (group.status === 'reading') {
             return (
               <div key={group.key} className="flex items-center gap-3 p-3 bg-gray-900 border border-gray-800 rounded-xl text-gray-400">
-                <Photo group={group} onView={setViewing} />
+                <Photo id={group.rows[0].id} hasPhoto={group.hasPhoto} getPhoto={getPhoto} onView={setViewing} />
                 <Loader2 size={16} className="animate-spin" />
                 <span>Reading…</span>
               </div>
@@ -178,14 +227,14 @@ export default function ScanReview({ draft, onChange, onRetry, onBack, onCommit,
 
           return (
             <div key={group.key} className="flex items-center gap-3 p-3 bg-gray-900 border border-red-500/40 rounded-xl">
-              <Photo group={group} onView={setViewing} />
+              <Photo id={group.rows[0].id} hasPhoto={group.hasPhoto} getPhoto={getPhoto} onView={setViewing} />
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-red-300">{detail}</p>
                 {read && read.readable && (
                   <p className="text-xs text-gray-500">{REASON_TEXT[group.reason] ?? ''}</p>
                 )}
               </div>
-              {group.status === 'failed' && group.photo && (
+              {((group.status === 'failed' && group.hasPhoto) || group.status === 'waiting') && (
                 <button
                   type="button"
                   disabled={committing}
@@ -224,6 +273,9 @@ export default function ScanReview({ draft, onChange, onRetry, onBack, onCommit,
           <p className="text-xs text-gray-400">
             {plural(attention)} {attention === 1 ? 'needs' : 'need'} attention and will stay in the batch.
           </p>
+        )}
+        {counts.reading > 0 && (
+          <p className="text-xs text-gray-400">{counts.reading} still reading will stay in the batch.</p>
         )}
         {confirmingDiscard ? (
           <div className="flex gap-2">

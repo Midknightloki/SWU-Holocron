@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   RIG_KEY, CROP_MARGIN, MIN_SIZE, boxToRect, defaultRect, withMargin, cropPixels,
-  orientationOf, cropFor, cornerPoint, moveCorner, guideStyle, calibratedGuide, toStreamRect, clampRect,
+  orientationOf, cropFor, cornerPoint, moveCorner, guideStyle, calibratedGuide, toStreamRect, clampRect, videoCropFor,
   saveCalibration, loadCalibration, clearCalibration,
 } from '../../utils/rigCalibration';
 
@@ -144,6 +144,19 @@ describe('cropFor', () => {
 
   it('skips a capture whose orientation differs', () => {
     expect(cropFor(CAL, 'photo', 4032, 3024)).toBeNull();
+  });
+
+  it('videoCropFor maps the margined calibration onto the stream', () => {
+    const r = videoCropFor({ ...CAL, aspect: 0.75 }, 1080, 1920);
+    // withMargin(RECT) then a 9:16 stream showing the middle 75% of the width.
+    expect(r.x).toBeCloseTo(0.068, 2);
+    expect(r.w).toBeCloseTo(0.864, 2);
+    expect(r).toMatchObject({ y: 0.068, h: 0.864 });
+  });
+
+  it('videoCropFor skips a rotated stream and an uncalibrated rig', () => {
+    expect(videoCropFor({ ...CAL, aspect: 0.75 }, 1920, 1080)).toBeNull();
+    expect(videoCropFor(null, 1080, 1920)).toBeNull();
   });
 
   it('skips when uncalibrated', () => {
