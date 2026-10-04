@@ -18,6 +18,9 @@ export function createScanQueue({
   const pending = [];
   const active = new Set();
   let paused = null;
+  // Stopped for good (the scanner closed): nothing is read or reported after
+  // this, or the next session's queue would read the same cards again.
+  let stopped = false;
 
   const pause = (reason) => {
     if (paused) return;
@@ -34,6 +37,7 @@ export function createScanQueue({
 
   async function run(id) {
     const image = await getImage(id);
+    if (stopped) return;
     if (!image) {
       onResult(id, { status: 'failed', error: 'interrupted' });
       return;
@@ -46,6 +50,7 @@ export function createScanQueue({
       }
       // eslint-disable-next-line no-await-in-loop
       const result = await scan(image);
+      if (stopped) return;
       if (result.status !== 'failed') {
         onResult(id, result);
         return;
@@ -61,11 +66,12 @@ export function createScanQueue({
       }
       // eslint-disable-next-line no-await-in-loop
       await wait(RETRY_DELAYS_MS[attempt]);
+      if (stopped) return;
     }
   }
 
   const pump = () => {
-    while (!paused && active.size < concurrency && pending.length) {
+    while (!stopped && !paused && active.size < concurrency && pending.length) {
       const id = pending.shift();
       active.add(id);
       run(id).finally(() => {
@@ -85,6 +91,10 @@ export function createScanQueue({
       pump();
     },
     pause,
+    stop() {
+      stopped = true;
+      pending.length = 0;
+    },
     size: () => pending.length + active.size,
     pendingIds: () => [...pending, ...active],
   };

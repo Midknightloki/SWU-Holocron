@@ -105,8 +105,10 @@ describe('captureVideoFrame', () => {
     const video4k = { videoWidth: 2160, videoHeight: 3840 };
     const out = captureVideoFrame({ video: video4k, crop: () => ({ x: 0.25, y: 0.25, w: 0.5, h: 0.5 }), encode, toGray });
     expect(encode).toHaveBeenCalledWith(video4k, { width: 1080, height: 1920 }, { sx: 540, sy: 960, sw: 1080, sh: 1920 });
-    expect(toGray).toHaveBeenCalledWith(video4k, { width: 288, height: 512 }, { sx: 540, sy: 960, sw: 1080, sh: 1920 });
-    expect(out).toMatchObject({ image: 'FRAME', grayWidth: 288, grayHeight: 512, source: 'video', width: 2160, height: 3840, cropped: true });
+    // Sharpness is judged near native resolution: a 512 px downscale hid the
+    // 2-3 px smear that wrecks the collector digits (review finding).
+    expect(toGray).toHaveBeenCalledWith(video4k, { width: 900, height: 1600 }, { sx: 540, sy: 960, sw: 1080, sh: 1920 });
+    expect(out).toMatchObject({ image: 'FRAME', grayWidth: 900, grayHeight: 1600, source: 'video', width: 2160, height: 3840, cropped: true });
   });
 
   it('returns null when the video has no frame', () => {

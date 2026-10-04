@@ -14,7 +14,7 @@ import { PhotoStore } from '../services/photoStore';
 import { createScanQueue } from '../services/scanQueue';
 import { levelReading } from '../utils/level';
 import {
-  addCapture, applyResult, clearDraft, countByStatus, emptyDraft, loadDraft, markReading, markWaiting, saveDraft,
+  addCapture, applyResult, clearDraft, countByStatus, emptyDraft, loadDraft, markReading, markWaiting, removeRows, saveDraft,
 } from '../utils/scanDraft';
 import ScanReview from './ScanReview';
 
@@ -194,6 +194,9 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
       mountedRef.current = false;
       clearTimeout(flashTimer.current);
       clearTimeout(newCardTimer.current);
+      // Closed: stop reading. The saved batch keeps these rows as reading, and
+      // the next session's queue reads them -- once, not twice.
+      queueRef.current?.stop();
     };
   }, []);
 
@@ -529,11 +532,15 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
   // if their photo survived; otherwise they can't be read any more.
   useEffect(() => {
     let cancelled = false;
-    const reading = draftRef.current.rows.filter((r) => r.status === 'reading');
-    reading.forEach(async (row) => {
+    // Waiting rows too: a daily-limit pause lasts until a new session.
+    const unread = draftRef.current.rows.filter((r) => r.status === 'reading' || r.status === 'waiting');
+    unread.forEach(async (row) => {
       const photo = row.hasPhoto ? await PhotoStore.get(row.id) : null;
       if (cancelled || !mountedRef.current) return;
-      if (photo) queueRef.current.enqueue(row.id);
+      if (photo) {
+        if (row.status === 'waiting') setDraft((d) => markReading(d, row.id));
+        queueRef.current.enqueue(row.id);
+      }
       else setDraft((d) => applyResult(d, row.id, { status: 'failed', error: 'interrupted' }));
     });
     const onOnline = () => queueRef.current.resume();
@@ -563,18 +570,28 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
     }
     setCommitting(true);
     setCommitError(null);
+    // Cards keep reading (and captures keep landing) while Add saves, so take
+    // out only the rows that were committed. Replacing the batch with the
+    // snapshot this save started from would revert anything that arrived
+    // meanwhile -- a card matched mid-save went back to "reading" for good.
+    const snapshotIds = draft.rows.map((r) => r.id);
+    const dropCommitted = (next) => {
+      const kept = new Set(next.rows.map((r) => r.id));
+      const committed = snapshotIds.filter((id) => !kept.has(id));
+      const live = removeRows(draftRef.current, committed);
+      // Persist synchronously: if the overlay closes mid-commit, the saved
+      // batch must not still hold rows that were already added.
+      saveDraft(getStorage(), uid, live);
+      if (mountedRef.current) setDraft((d) => removeRows(d, committed));
+      return live;
+    };
     try {
       const rest = await ScanService.commitDraft(draft, collectionRef, {
-        onProgress: (next) => {
-          // Persist synchronously: if the overlay closes mid-commit, the saved
-          // batch must not still hold rows that were already added.
-          saveDraft(getStorage(), uid, next);
-          if (mountedRef.current) setDraft(next);
-        },
+        onProgress: (next) => { dropCommitted(next); },
       });
       if (!mountedRef.current) return;
-      setDraft(rest);
-      if (rest.rows.length === 0) {
+      const live = dropCommitted(rest);
+      if (live.rows.length === 0) {
         clearDraft(getStorage(), uid);
         onClose();
       }
@@ -591,8 +608,9 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
   }, [collectionRef, draft, uid, onClose]);
 
   const discard = useCallback(() => {
+    // This batch's photos go with its rows (the cleanup effect below); never
+    // PhotoStore.clear(), which would take other accounts' batches too.
     clearDraft(getStorage(), uid);
-    PhotoStore.clear();
     setDraft(emptyDraft());
     setMode('camera');
   }, [uid]);

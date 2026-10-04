@@ -2,7 +2,7 @@
  * @vitest-environment happy-dom
  */
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
 
@@ -148,6 +148,27 @@ describe('ScanReview', () => {
     const read = { readable: true, set: '', number: '', name: 'Han Solo', subtitle: 'Worth the Risk' };
     renderReview(build([['u', { status: 'unidentified', reason: 'no-number', read }]]));
     expect(screen.getByText(/no card number/i)).toBeInTheDocument();
+  });
+
+  it('loads a photo only once its row scrolls into view', async () => {
+    // Review finding: a mid-box review loaded every full-size photo at once.
+    let trigger;
+    const observe = vi.fn();
+    globalThis.IntersectionObserver = class {
+      constructor(cb) { trigger = cb; }
+      observe(el) { observe(el); }
+      disconnect() {}
+    };
+    try {
+      const getPhoto = vi.fn((id) => Promise.resolve(`p-${id}`));
+      renderReview(build([['u', { status: 'unidentified', reason: 'unreadable', read: null }]]), { getPhoto });
+      expect(observe).toHaveBeenCalled();
+      expect(getPhoto).not.toHaveBeenCalled();
+      await act(async () => { trigger([{ isIntersecting: true }]); });
+      expect(await screen.findByRole('img', { name: 'Captured photo' })).toHaveAttribute('src', 'data:image/jpeg;base64,p-u');
+    } finally {
+      delete globalThis.IntersectionObserver;
+    }
   });
 
   it('shows No photo when the store has none', async () => {

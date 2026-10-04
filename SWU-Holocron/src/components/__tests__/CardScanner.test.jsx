@@ -11,13 +11,13 @@ const mocks = vi.hoisted(() => ({
   captureVideoFrame: vi.fn(), sharpness: 200,
 }));
 // Photos live in the photo store now: an in-memory stand-in.
-const photos = vi.hoisted(() => ({ map: new Map(), remove: vi.fn() }));
+const photos = vi.hoisted(() => ({ map: new Map(), remove: vi.fn(), clear: vi.fn() }));
 vi.mock('../../services/photoStore', () => ({
   PhotoStore: {
     put: vi.fn(async (id, b) => { photos.map.set(id, b); return true; }),
     get: vi.fn(async (id) => photos.map.get(id) ?? null),
     remove: (ids) => { photos.remove(ids); ids.forEach((id) => photos.map.delete(id)); return Promise.resolve(); },
-    clear: vi.fn(async () => { photos.map.clear(); }),
+    clear: async () => { photos.clear(); photos.map.clear(); },
   },
 }));
 vi.mock('../../utils/sharpness', () => ({ laplacianVariance: () => mocks.sharpness }));
@@ -109,6 +109,7 @@ beforeEach(() => {
   mocks.sharpness = 200;
   photos.map.clear();
   photos.remove.mockClear();
+  photos.clear.mockClear();
   mocks.scan.mockResolvedValue(LUKE);
   stubCamera(async () => ({ getTracks: () => [TRACK], getVideoTracks: () => [TRACK] }));
 });
@@ -724,6 +725,74 @@ describe('CardScanner', () => {
       expect(calls.length).toBeGreaterThan(0);
       expect(JSON.parse(calls.at(-1)[1]).rows).toHaveLength(1);
     });
+  });
+
+  it('stops reading when the scanner closes, so nothing is read twice', async () => {
+    const gates = [];
+    mocks.scan.mockImplementation(() => new Promise((resolve) => { gates.push(() => resolve(LUKE)); }));
+    const { unmount } = renderScanner();
+    for (let i = 0; i < 4; i += 1) {
+      pressSpace();
+      await flush(); // eslint-disable-line no-await-in-loop
+    }
+    await waitFor(() => expect(mocks.scan).toHaveBeenCalledTimes(3));
+    unmount();
+    await act(async () => { gates.forEach((g) => g()); });
+    await flush();
+    expect(mocks.scan).toHaveBeenCalledTimes(3);
+  });
+
+  it('keeps results that arrive while Add is saving', async () => {
+    // Review finding: the save replaced the batch with its snapshot, so a card
+    // matched mid-save went back to "reading" for good.
+    const user = userEvent.setup();
+    const ACKBAR = { status: 'matched', set: 'SOR', number: '045', name: 'Admiral Ackbar', type: 'Unit' };
+    let releaseB;
+    mocks.scan
+      .mockResolvedValueOnce(LUKE)
+      .mockImplementationOnce(() => new Promise((resolve) => { releaseB = () => resolve(ACKBAR); }));
+    let releaseCommit;
+    mocks.commitDraft.mockImplementation(async (draft, ref, { onProgress }) => {
+      await new Promise((r) => { releaseCommit = r; });
+      const rest = { rows: draft.rows.filter((r) => r.status !== 'matched') };
+      onProgress(rest);
+      return rest;
+    });
+    renderScanner();
+    pressSpace();
+    await flush();
+    pressSpace();
+    await waitFor(() => expect(mocks.scan).toHaveBeenCalledTimes(2));
+    await user.click(await screen.findByRole('button', { name: 'Review (2)' }));
+    await user.click(await screen.findByRole('button', { name: 'Add 1 card to collection' }));
+    await act(async () => { releaseB(); });
+    await act(async () => { releaseCommit(); });
+    expect(await screen.findByRole('button', { name: 'Add 1 card to collection' })).toBeEnabled();
+    expect(screen.getByText('Admiral Ackbar')).toBeInTheDocument();
+  });
+
+  it('resumes cards waiting on the daily limit when the scanner reopens', async () => {
+    const saved = JSON.stringify({ rows: [{ id: 'w', status: 'waiting', reason: 'quota', isFoil: false, qty: 1, hasPhoto: true }] });
+    localStorage.getItem.mockImplementation((key) => {
+      if (key === 'swu-scan-help-seen') return '1';
+      return key === 'swu-scan-draft-uid-1' ? saved : null;
+    });
+    photos.map.set('w', 'WIMG');
+    renderScanner();
+    await waitFor(() => expect(mocks.scan).toHaveBeenCalledWith('WIMG', ['SOR'], expect.any(Object)));
+  });
+
+  it("discarding deletes only this batch's photos, not the whole device's", async () => {
+    const user = userEvent.setup();
+    photos.map.set('someone-else', 'OTHER');
+    renderScanner();
+    pressSpace();
+    await user.click(await screen.findByRole('button', { name: 'Review (1)' }));
+    await user.click(screen.getByRole('button', { name: 'Discard batch' }));
+    await user.click(screen.getByRole('button', { name: 'Discard 1 card' }));
+    await waitFor(() => expect(photos.remove).toHaveBeenCalled());
+    expect(photos.clear).not.toHaveBeenCalled();
+    expect(photos.map.get('someone-else')).toBe('OTHER');
   });
 
   it('deletes photos of rows that leave the batch', async () => {

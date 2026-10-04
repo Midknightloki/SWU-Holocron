@@ -64,7 +64,9 @@ export function grayscaleOf(source, { width, height }, region) {
   return out;
 }
 
-const SHARPNESS_EDGE = 512;
+// Near native resolution for a 4K stream's card crop: a heavier downscale
+// averages away the 2-3 px smear that makes collector digits unreadable.
+const SHARPNESS_EDGE = 1600;
 
 /**
  * An instant capture: the current frame of the live stream, cropped to the

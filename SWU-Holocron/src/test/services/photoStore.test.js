@@ -35,4 +35,26 @@ describe('photoStore', () => {
     await expect(store.get('a')).resolves.toBe('AAA');
     await expect(store.remove(['x'])).resolves.toBeUndefined();
   });
+
+  it('times out a hung transaction: put falls back to memory, get returns null', async () => {
+    // Review finding: only the open had a timeout; a hung put dropped the card
+    // silently and a hung get held a queue slot forever.
+    const hangingDb = {
+      objectStoreNames: { contains: () => true },
+      transaction: () => ({ objectStore: () => ({ put() {}, get() { return {}; }, delete() {}, clear() {} }) }),
+      close() {},
+    };
+    const factory = {
+      open: () => {
+        const req = {};
+        setTimeout(() => { req.result = hangingDb; req.onsuccess?.(); }, 0);
+        return req;
+      },
+    };
+    const store = createPhotoStore({ indexedDB: factory, txTimeoutMs: 20 });
+    await expect(store.put('a', 'AAA')).resolves.toBe(true);
+    await expect(store.get('a')).resolves.toBe('AAA');
+    await expect(store.get('missing')).resolves.toBeNull();
+    await expect(store.remove(['a'])).resolves.toBeUndefined();
+  });
 });

@@ -105,4 +105,23 @@ describe('scanQueue', () => {
     expect(waits).toEqual([]);
     expect(results).toEqual([['a', { status: 'failed', error: 'forbidden' }]]);
   });
+
+  it('stop() drops pending reads and ignores results that arrive afterwards', async () => {
+    // Review finding: closing the scanner left the queue pumping, so every
+    // pending card was read again by the next session's queue.
+    const gates = [];
+    const scan = vi.fn(() => new Promise((resolve) => { gates.push(() => resolve(ok('x'))); }));
+    const { queue, results } = setup({ scan });
+    ['a', 'b', 'c', 'd'].forEach((id) => queue.enqueue(id));
+    await flush();
+    expect(scan).toHaveBeenCalledTimes(3);
+    queue.stop();
+    gates.forEach((g) => g());
+    await flush(); await flush();
+    expect(scan).toHaveBeenCalledTimes(3);
+    expect(results).toEqual([]);
+    queue.enqueue('e');
+    await flush();
+    expect(scan).toHaveBeenCalledTimes(3);
+  });
 });

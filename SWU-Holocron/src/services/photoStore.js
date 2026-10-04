@@ -11,6 +11,18 @@ import { createDbOpener, STORES } from './appDb';
  * @environment:web-indexeddb
  */
 const STORE = STORES.scanPhotos;
+// Transactions can hang too (WebKit), not just the open: give up and use
+// memory rather than drop a card or freeze a reading slot.
+const TX_TIMEOUT_MS = 2000;
+const TIMED_OUT = Symbol('timed out');
+
+const withTimeout = (promise, ms) => new Promise((resolve, reject) => {
+  const timer = setTimeout(() => resolve(TIMED_OUT), ms);
+  promise.then(
+    (value) => { clearTimeout(timer); resolve(value); },
+    (err) => { clearTimeout(timer); reject(err); },
+  );
+});
 
 const done = (tx) => new Promise((resolve, reject) => {
   tx.oncomplete = () => resolve();
@@ -18,7 +30,7 @@ const done = (tx) => new Promise((resolve, reject) => {
   tx.onabort = () => reject(tx.error);
 });
 
-export function createPhotoStore({ indexedDB = globalThis.indexedDB, openTimeoutMs } = {}) {
+export function createPhotoStore({ indexedDB = globalThis.indexedDB, openTimeoutMs, txTimeoutMs = TX_TIMEOUT_MS } = {}) {
   const opener = createDbOpener({ indexedDB, openTimeoutMs });
   const memory = new Map();
 
@@ -29,8 +41,7 @@ export function createPhotoStore({ indexedDB = globalThis.indexedDB, openTimeout
         try {
           const tx = db.transaction(STORE, 'readwrite');
           tx.objectStore(STORE).put(base64, id);
-          await done(tx);
-          return true;
+          if (await withTimeout(done(tx), txTimeoutMs) !== TIMED_OUT) return true;
         } catch {
           // fall through to memory
         }
@@ -44,11 +55,11 @@ export function createPhotoStore({ indexedDB = globalThis.indexedDB, openTimeout
       const db = await opener.open();
       if (!db) return null;
       try {
-        const value = await new Promise((resolve, reject) => {
+        const value = await withTimeout(new Promise((resolve, reject) => {
           const req = db.transaction(STORE, 'readonly').objectStore(STORE).get(id);
           req.onsuccess = () => resolve(req.result);
           req.onerror = () => reject(req.error);
-        });
+        }), txTimeoutMs);
         return typeof value === 'string' ? value : null;
       } catch {
         return null;
@@ -62,7 +73,7 @@ export function createPhotoStore({ indexedDB = globalThis.indexedDB, openTimeout
       try {
         const tx = db.transaction(STORE, 'readwrite');
         ids.forEach((id) => tx.objectStore(STORE).delete(id));
-        await done(tx);
+        await withTimeout(done(tx), txTimeoutMs);
       } catch {
         // best effort
       }
@@ -75,7 +86,7 @@ export function createPhotoStore({ indexedDB = globalThis.indexedDB, openTimeout
       try {
         const tx = db.transaction(STORE, 'readwrite');
         tx.objectStore(STORE).clear();
-        await done(tx);
+        await withTimeout(done(tx), txTimeoutMs);
       } catch {
         // best effort
       }

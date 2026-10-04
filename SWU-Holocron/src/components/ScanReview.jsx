@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Minus, Plus, Sparkles, Trash2, RotateCcw, Loader2, Search, X } from 'lucide-react';
 import CardPickerModal from './CardPickerModal';
 import { CardService } from '../services/CardService';
@@ -34,10 +34,27 @@ const plural = (n) => `${n} card${n === 1 ? '' : 's'}`;
 
 const photoSrc = (photo) => `data:image/jpeg;base64,${photo}`;
 
+// Load only once the row is on screen: a whole box can leave hundreds of
+// unread or unidentified rows, and every photo at once could exhaust memory.
+// Without IntersectionObserver, load straight away.
+function useOnScreen(ref) {
+  const [visible, setVisible] = useState(typeof IntersectionObserver === 'undefined');
+  useEffect(() => {
+    if (visible || !ref.current || typeof IntersectionObserver === 'undefined') return undefined;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) setVisible(true);
+    }, { rootMargin: '200px' });
+    observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, [ref, visible]);
+  return visible;
+}
+
 // A row's photo from the photo store: undefined while loading, null if none.
-function useStoredPhoto(id, hasPhoto, getPhoto) {
+function useStoredPhoto(id, hasPhoto, getPhoto, visible) {
   const [photo, setPhoto] = useState(hasPhoto ? undefined : null);
   useEffect(() => {
+    if (!visible) return undefined;
     if (!hasPhoto) {
       setPhoto(null);
       return undefined;
@@ -47,12 +64,14 @@ function useStoredPhoto(id, hasPhoto, getPhoto) {
       .then((value) => { if (!cancelled) setPhoto(value ?? null); })
       .catch(() => { if (!cancelled) setPhoto(null); });
     return () => { cancelled = true; };
-  }, [id, hasPhoto, getPhoto]);
+  }, [id, hasPhoto, getPhoto, visible]);
   return photo;
 }
 
 function Photo({ id, hasPhoto, getPhoto, onView }) {
-  const photo = useStoredPhoto(id, hasPhoto, getPhoto);
+  const boxRef = useRef(null);
+  const visible = useOnScreen(boxRef);
+  const photo = useStoredPhoto(id, hasPhoto, getPhoto, visible);
   if (photo) {
     return (
       <button type="button" aria-label="View photo" onClick={() => onView(photoSrc(photo))} className="flex-shrink-0">
@@ -65,7 +84,7 @@ function Photo({ id, hasPhoto, getPhoto, onView }) {
     );
   }
   return (
-    <div className="w-16 h-[88px] rounded bg-gray-800 text-[10px] text-gray-500 flex items-center justify-center text-center flex-shrink-0">
+    <div ref={boxRef} className="w-16 h-[88px] rounded bg-gray-800 text-[10px] text-gray-500 flex items-center justify-center text-center flex-shrink-0">
       {photo === undefined ? '' : 'No photo'}
     </div>
   );
