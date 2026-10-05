@@ -35,7 +35,7 @@ describe('BatchReport', () => {
     expect(await screen.findByRole('heading', { name: 'eBay SOR box' })).toBeInTheDocument();
     expect(screen.getByTestId('value-at-add')).toHaveTextContent('$80.00');
     expect(screen.getByTestId('net')).toHaveTextContent('-$20.00');
-    expect(await screen.findByTestId('value-now')).toHaveTextContent('$90.00');
+    await waitFor(() => expect(screen.getByTestId('value-now')).toHaveTextContent('$90.00'));
     expect(screen.getByTestId('top-pulls')).toHaveTextContent('Darth Vader');
     expect(screen.getByTestId('new-cards')).toHaveTextContent('Darth Vader');
     expect(screen.getByTestId('unpriced')).toHaveTextContent('Battle Droid');
@@ -74,6 +74,6 @@ describe('BatchReport', () => {
   it('says so when value now cannot be loaded', async () => {
     m.getBulkPrices.mockRejectedValue(new Error('offline'));
     renderReport();
-    expect(await screen.findByTestId('value-now')).toHaveTextContent('unavailable');
+    await waitFor(() => expect(screen.getByTestId('value-now')).toHaveTextContent('unavailable'));
   });
 });
