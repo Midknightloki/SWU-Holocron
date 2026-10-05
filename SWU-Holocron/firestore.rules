@@ -79,6 +79,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Prebuilt (precon) decks: written by the weekly sync (Admin SDK) and
+    // reviewed/published by admins in the admin console.
+    match /artifacts/{appId}/public/data/prebuiltDecks/{deckId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin(appId);
+    }
+
     // ---------------------------------------------------------------------
     // Public deck sharing.
     //

@@ -109,6 +109,22 @@ describe('card database', () => {
   });
 });
 
+describe('prebuilt decks', () => {
+  beforeEach(async () => {
+    await seedDoc(p('public', 'data', 'prebuiltDecks', '151901'), { status: 'published', name: 'X' });
+  });
+
+  it('is readable by any signed-in user, not by a signed-out visitor', async () => {
+    await assertSucceeds(getDoc(doc(asUser('plain-uid'), p('public', 'data', 'prebuiltDecks', '151901'))));
+    await assertFails(getDoc(doc(asGuest(), p('public', 'data', 'prebuiltDecks', '151901'))));
+  });
+
+  it('is writable by an admin only', async () => {
+    await assertSucceeds(setDoc(doc(asUser('admin-uid'), p('public', 'data', 'prebuiltDecks', '1')), { status: 'review' }));
+    await assertFails(setDoc(doc(asUser('plain-uid'), p('public', 'data', 'prebuiltDecks', '1')), { status: 'review' }));
+  });
+});
+
 describe('public decks', () => {
   it('lets the owner publish their own deck', async () => {
     const db = asUser('plain-uid');
