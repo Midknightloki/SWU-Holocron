@@ -108,6 +108,7 @@ artifacts/{APP_ID}/users/{uid}/decks/{deckId}                 + /versions, /game
 artifacts/{APP_ID}/users/{uid}/batches/{batchId}              scanner batch reports (one per box/pre-release)
 artifacts/{APP_ID}/submissions, /shells, /packets, /contributorInvites
 artifacts/{APP_ID}/admin/sync/logs
+artifacts/{APP_ID}/admin/audit/roleChanges/{auto}              role grants/revokes from the Users tab (functions write)
 artifacts/{APP_ID}/config/scanner                             { dailyLimit } for the card scanner (function-only)
 artifacts/{APP_ID}/scanUsage/{uid}                            per-user daily scan counter (function-only)
 artifacts/{APP_ID}/public/data/prebuiltDecks/{sourceId}       precon decks (sync writes; admins publish)
@@ -241,10 +242,20 @@ Signing in with Google afterwards does not rescue it. `loginWithGoogle` calls
 a collection and then signs in properly finds it empty.
 
 `isPro` is a third profile flag, protected in `firestore.rules` exactly like
-`isAdmin`/`isContributor` and granted by hand in the Firebase console for now
-(Patreon is the planned automatic source). `AuthContext` exposes it with a
-derived `canScan = isAdmin || isPro`; the `scanCard` function enforces the same
-rule server-side.
+`isAdmin`/`isContributor` (Patreon is the planned automatic source).
+`AuthContext` exposes it with a derived `canScan = isAdmin || isPro`; the
+`scanCard` function enforces the same rule server-side.
+
+**User management.** Admins grant and revoke **Pro** and **Contributor** from
+the admin console's **Users** tab, which also lists users and shows each one's
+activity (collection size, batches, decks, last scan day). It runs through
+three admin-only callables in `functions/adminUsers.js` (handlers, injected
+and package-free so CI tests them) and `functions/adminUsersStore.js`
+(Firestore, count/sum aggregations). **Admin is deliberately not settable
+there** -- it stays a Firebase-console change, so an app session can never mint
+admins. Every change is audited at `admin/audit/roleChanges`. Roles are read
+at sign-in, so a user sees a change on their next app load; server checks
+(the scanner's Pro gate) apply immediately.
 
 Roles are never read for anonymous users (`if (u && !u.isAnonymous)`), and
 `redeemInviteCode` rejects them outright, so a guest cannot be a contributor or
@@ -345,7 +356,10 @@ that cross-check is what keeps a misread number from adding the wrong card.
   `functions/node_modules` and still has to test it
   (`src/test/functions/scanCard.test.js`).
 - Functions are deployed by hand
-  (`firebase deploy --only functions:scanCard,functions:locateCard`); no
+  (`firebase deploy --only functions:scanCard,functions:locateCard`, and
+  `functions:adminListUsers,functions:adminGetUserDetail,functions:adminSetRole`
+  for user management, whose runtime account also needs
+  `roles/firebaseauth.viewer` -- see `docs/FUNCTIONS-RUNTIME-SA.md`); no
   workflow deploys them.
 - **Rig calibration.** Users with a fixed scanning rig calibrate once:
   `locateCard` (same pipeline, entitlement and quota as `scanCard`, shared in

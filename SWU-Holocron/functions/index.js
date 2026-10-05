@@ -288,6 +288,26 @@ const locateCardHandler = createLocateCardHandler({
 exports.locateCard = onCall({ maxInstances: 5 }, locateCardHandler);
 
 /**
+ * User management (admin console). Admin-only: each handler checks the
+ * caller's profile. Pro and Contributor can be granted or revoked here; Admin
+ * stays a Firebase-console change. Every change is audited at
+ * admin/audit/roleChanges. See functions/adminUsers.js.
+ */
+const { createAdminUsersHandlers } = require("./adminUsers");
+const { createAdminUsersStore } = require("./adminUsersStore");
+const { AggregateField } = require("firebase-admin/firestore");
+
+const adminUsers = createAdminUsersHandlers({
+  auth: admin.auth(),
+  store: createAdminUsersStore({ db: admin.firestore(), appId: APP_ID, AggregateField }),
+  HttpsError,
+});
+
+exports.adminListUsers = onCall({ maxInstances: 2 }, adminUsers.listUsers);
+exports.adminGetUserDetail = onCall({ maxInstances: 2 }, adminUsers.getUserDetail);
+exports.adminSetRole = onCall({ maxInstances: 2 }, adminUsers.setRole);
+
+/**
  * redeemInviteCode — grants the contributor role in exchange for a valid invite
  * code.
  *

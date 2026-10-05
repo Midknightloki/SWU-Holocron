@@ -4,6 +4,7 @@ import {
   Shield, Plus, Trash2, Edit2, Package, Wand2, Users, Save, X, Mail, Copy, Ticket, Boxes
 } from 'lucide-react';
 import AdminPrebuiltDecks from './AdminPrebuiltDecks';
+import AdminUsers from './AdminUsers';
 import { db, APP_ID } from '../firebase';
 import { SETS } from '../constants';
 import { collection, doc, getDoc, getDocs, query, orderBy, limit } from 'firebase/firestore';
@@ -552,7 +553,8 @@ export default function AdminPanel() {
     ...(isAdmin ? [{ id: 'database', label: 'Card Database', icon: Database }] : []),
     { id: 'shells', label: 'Shells', icon: Wand2 },
     { id: 'packets', label: 'Packets', icon: Package },
-    ...(isAdmin ? [{ id: 'contributors', label: 'Contributors', icon: Users }] : []),
+    ...(isAdmin ? [{ id: 'users', label: 'Users', icon: Users }] : []),
+    ...(isAdmin ? [{ id: 'contributors', label: 'Contributors', icon: Ticket }] : []),
     ...(isAdmin ? [{ id: 'prebuilt', label: 'Prebuilt Decks', icon: Boxes }] : []),
   ];
 
@@ -804,6 +806,8 @@ export default function AdminPanel() {
         )}
 
         {/* ── Contributors Tab (admin only) ── */}
+        {activeTab === 'users' && isAdmin && <AdminUsers />}
+
         {activeTab === 'prebuilt' && isAdmin && <AdminPrebuiltDecks uid={user?.uid} />}
 
         {activeTab === 'contributors' && isAdmin && (

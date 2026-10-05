@@ -201,6 +201,21 @@ describe('admin sync logs', () => {
   });
 });
 
+describe('role-change audit log', () => {
+  beforeEach(async () => {
+    await seedDoc(p('admin', 'audit', 'roleChanges', 'a1'), { uid: 'plain-uid', role: 'isPro' });
+  });
+
+  it('is readable by admins only', async () => {
+    await assertSucceeds(getDoc(doc(asUser('admin-uid'), p('admin', 'audit', 'roleChanges', 'a1'))));
+    await assertFails(getDoc(doc(asUser('plain-uid'), p('admin', 'audit', 'roleChanges', 'a1'))));
+  });
+
+  it('is never writable from a client, even by an admin', async () => {
+    await assertFails(setDoc(doc(asUser('admin-uid'), p('admin', 'audit', 'roleChanges', 'a2')), { uid: 'x' }));
+  });
+});
+
 describe('contributor invites', () => {
   // Redemption happens in a callable Cloud Function using the Admin SDK, so the
   // invitee never reads this collection: they present a code and the server
