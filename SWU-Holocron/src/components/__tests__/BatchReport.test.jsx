@@ -47,6 +47,11 @@ describe('BatchReport', () => {
     expect(screen.getByRole('dialog', { name: 'Batch report' }).parentElement).toBe(document.body);
   });
 
+  it('says how many cards have no current price', async () => {
+    renderReport();
+    await waitFor(() => expect(screen.getByTestId('value-now')).toHaveTextContent('$90.00 (1 unpriced)'));
+  });
+
   it('downloads a CSV', async () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     renderReport();

@@ -125,3 +125,52 @@ describe('scanQueue', () => {
     expect(scan).toHaveBeenCalledTimes(3);
   });
 });
+
+describe('scanQueue pauses', () => {
+  it('coming back online does not lift a daily-limit pause', async () => {
+    const scan = vi.fn(async () => ({ status: 'failed', error: 'quota' }));
+    const { queue } = setup({ scan });
+    queue.enqueue('a');
+    await flush(); await flush();
+    scan.mockClear();
+    queue.resume('offline');
+    queue.enqueue('b');
+    await flush();
+    expect(scan).not.toHaveBeenCalled();
+    queue.resume();
+    await flush(); await flush();
+    expect(scan).toHaveBeenCalled();
+  });
+
+  it('a retry waiting out its backoff does not read while the queue is paused', async () => {
+    let release;
+    const scan = vi.fn(async (img) => {
+      if (img === 'img-b') return { status: 'failed', error: 'quota' };
+      return { status: 'failed', error: 'network' };
+    });
+    const queue = createScanQueue({
+      scan,
+      getImage: async (id) => `img-${id}`,
+      onResult: vi.fn(),
+      onPause: vi.fn(),
+      wait: () => new Promise((r) => { release = r; }),
+      isOnline: () => true,
+    });
+    queue.enqueue('a');
+    await flush(); await flush();
+    queue.enqueue('b');
+    await flush(); await flush();
+    release();
+    await flush(); await flush();
+    expect(scan.mock.calls.filter(([img]) => img === 'img-a')).toHaveLength(1);
+    expect(queue.pendingIds()).toContain('a');
+  });
+
+  it('reports a card queued during a pause as waiting', async () => {
+    const { queue, pauses } = setup({ online: () => false });
+    queue.enqueue('a');
+    await flush(); await flush();
+    queue.enqueue('b');
+    expect(pauses.at(-1)).toEqual(['offline', ['b']]);
+  });
+});

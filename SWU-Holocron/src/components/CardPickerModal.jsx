@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Search, X, Loader2 } from 'lucide-react';
 import { CardService } from '../services/CardService';
 import { getCardQuantities, isHorizontalCard } from '../utils/collectionHelpers';
+import { matchesNumberQuery, parseNumberQuery } from '../utils/cardNumberQuery';
 
 /**
  * CardPickerModal — full-screen overlay for selecting a card.
@@ -54,11 +55,13 @@ export default function CardPickerModal({ type, collectionData, onSelect, onClos
   const needsQuery = !type;
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (needsQuery && q.length < MIN_QUERY) return [];
+    // A collector number is a complete query at any length ("5").
+    if (needsQuery && q.length < MIN_QUERY && !parseNumberQuery(q)) return [];
     const matches = cards
       .filter(card => {
         if (!q) return true;
         return (
+          matchesNumberQuery(card, q) ||
           card.Name?.toLowerCase().includes(q) ||
           card.Subtitle?.toLowerCase().includes(q) ||
           card.Traits?.some(t => t.toLowerCase().includes(q))
@@ -107,7 +110,7 @@ export default function CardPickerModal({ type, collectionData, onSelect, onClos
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder={`Search by name or trait…`}
+              placeholder={`Search by name, trait or number…`}
               className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2 pl-9 pr-4 text-white placeholder:text-gray-500 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
             />
           </div>

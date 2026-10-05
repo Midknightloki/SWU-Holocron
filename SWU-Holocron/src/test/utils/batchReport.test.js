@@ -79,3 +79,17 @@ describe('buildReport', () => {
     expect(empty).toMatchObject({ cards: 0, unique: 0, valueAtAdd: 0, topPulls: [], net: null });
   });
 });
+
+describe('buildReport current prices and new cards', () => {
+  it('counts lines with no current price instead of valuing them at $0', () => {
+    const now = buildReport(BATCH, { SOR_010_std: 6, SOR_200_std: 90 });
+    expect(now.unpricedNow).toBe(3); // foil Luke, Battle Droid, Mystery
+    expect(buildReport(BATCH).unpricedNow).toBeNull();
+  });
+
+  it('lists a card new in both finishes once', () => {
+    const both = buildReport({ ...BATCH, cards: { ...BATCH.cards, SOR_010_foil: { ...BATCH.cards.SOR_010_foil, isNew: true } } });
+    expect(both.newCards.map((l) => `${l.set} ${l.number}`)).toEqual(['SOR 010']);
+    expect(both.newUnique).toBe(1);
+  });
+});

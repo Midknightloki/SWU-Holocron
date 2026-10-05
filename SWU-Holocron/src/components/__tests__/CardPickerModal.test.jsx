@@ -89,6 +89,19 @@ describe('CardPickerModal', () => {
     expect(screen.getByRole('heading', { name: 'Select a card' })).toBeInTheDocument();
   });
 
+  it('finds a card by its number, with or without a set code', async () => {
+    const user = userEvent.setup();
+    render(<CardPickerModal collectionData={{}} onSelect={vi.fn()} onClose={vi.fn()} />);
+    await waitFor(() => expect(mocks.fetchSetData).toHaveBeenCalledTimes(2));
+    const input = screen.getByPlaceholderText(/search/i);
+    await user.type(input, '10');
+    expect(await screen.findByText('Death Star Plans')).toBeInTheDocument();
+    await user.clear(input);
+    await user.type(input, 'SOR 50');
+    expect(await screen.findByText('Death Trooper')).toBeInTheDocument();
+    expect(screen.queryByText('Death Star Plans')).not.toBeInTheDocument();
+  });
+
   it('without a type, searches every type', async () => {
     const user = userEvent.setup();
     const onSelect = vi.fn();

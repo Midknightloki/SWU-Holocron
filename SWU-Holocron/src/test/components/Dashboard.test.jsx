@@ -5,7 +5,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-vi.mock('../../components/BatchesPanel', () => ({ default: ({ uid }) => <div>batches for {uid}</div> }));
+vi.mock('../../components/BatchesPanel', () => ({ default: ({ uid, refreshKey }) => <div>batches for {uid} #{refreshKey}</div> }));
 import Dashboard from '../../components/Dashboard';
 import { mockCards, mockCollectionData } from '../utils/mockData';
 
@@ -41,9 +41,14 @@ describe('Dashboard Component', () => {
 
   it('shows the saved batches for the signed-in user', () => {
     const { rerender } = render(<Dashboard {...defaultProps} uid="u1" />);
-    expect(screen.getByText('batches for u1')).toBeInTheDocument();
+    expect(screen.getByText(/batches for u1/)).toBeInTheDocument();
     rerender(<Dashboard {...defaultProps} />);
     expect(screen.queryByText(/batches for/)).not.toBeInTheDocument();
+  });
+
+  it('passes the refresh key through so the list reloads after scanning', () => {
+    render(<Dashboard {...defaultProps} uid="u1" batchesRefresh={3} />);
+    expect(screen.getByText('batches for u1 #3')).toBeInTheDocument();
   });
   it('shows no scan button without onScan (not Pro, not admin)', () => {
     render(<Dashboard {...defaultProps} />);

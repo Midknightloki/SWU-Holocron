@@ -110,6 +110,25 @@ describe('Advanced Search Integration', () => {
       });
     });
 
+    it('should find a card by its collector number', async () => {
+      const user = userEvent.setup();
+      render(
+        <AdvancedSearch
+          onCardClick={vi.fn()}
+          collectionData={{}}
+          currentSet="SOR"
+        />
+      );
+
+      const searchInput = await screen.findByPlaceholderText(/name, text, traits/i);
+      await user.type(searchInput, 'SHD 23');
+
+      await waitFor(() => {
+        expect(screen.getByText('Lando Calrissian')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('Luke Skywalker')).not.toBeInTheDocument();
+    });
+
     it('should search across card text', async () => {
       const user = userEvent.setup();
       render(
@@ -340,7 +359,7 @@ describe('Advanced Search Integration', () => {
       await user.click(screen.getByText('Clear All Filters'));
       
       await waitFor(() => {
-        expect(screen.getByPlaceholderText('Name, text, traits...')).toHaveValue('');
+        expect(screen.getByPlaceholderText('Name, text, traits, number...')).toHaveValue('');
         expect(screen.queryByText('Clear All Filters')).not.toBeInTheDocument();
       });
     });

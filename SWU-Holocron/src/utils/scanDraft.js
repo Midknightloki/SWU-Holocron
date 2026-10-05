@@ -126,15 +126,31 @@ export function setGroupQuantity(draft, key, qty) {
 export const defaultBatchName = (ms) => `Batch ${new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
 
 export function ensureBatch(draft, now, id) {
-  // A batch whose cards were all added is finished: the next capture starts
-  // the next box, rather than merging two boxes (and two prices) into one.
-  const finished = draft.batch?.appended && draft.rows.length === 0;
-  if (draft.batch && !finished) return draft;
+  if (draft.batch) return draft;
   return { ...draft, batch: { id, name: defaultBatchName(now), pricePaid: null, createdAt: now } };
+}
+
+/** Finish batch: the batch is done; any rows left wait for the next one. */
+export function endBatch(draft) {
+  const { batch, ...rest } = draft;
+  return rest;
 }
 
 export function setBatchName(draft, name) {
   return draft.batch ? { ...draft, batch: { ...draft.batch, name } } : draft;
+}
+
+/**
+ * A typed price: "$40", "1,200.50", "40,00" (decimal comma). Blank is null
+ * (no price); anything unreadable is undefined, so the field can say so.
+ */
+export function parsePricePaid(text) {
+  let s = String(text ?? '').trim().replace(/^\$/, '').replace(/\s/g, '');
+  if (s === '') return null;
+  // A lone comma with one or two digits after it is a decimal comma.
+  s = /^\d+,\d{1,2}$/.test(s) ? s.replace(',', '.') : s.replace(/,/g, '');
+  if (!/^\d+(\.\d+)?$/.test(s)) return undefined;
+  return Number(s);
 }
 
 export function setPricePaid(draft, amount) {

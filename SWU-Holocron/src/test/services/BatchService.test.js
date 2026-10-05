@@ -74,6 +74,20 @@ describe('BatchService', () => {
     expect(await BatchService.getBatch('u1', 'b1')).toBeNull();
   });
 
+  it('keeps a stored rename unless the draft changed the name or price since its last append', async () => {
+    await BatchService.appendToBatch('u1', BATCH, [L()]);
+    await BatchService.renameBatch('u1', 'b1', 'Renamed in the list');
+    await BatchService.appendToBatch('u1', { ...BATCH, syncedName: BATCH.name, syncedPricePaid: 90 }, [L()]);
+    expect(store.docs.get(PATH)).toMatchObject({ name: 'Renamed in the list', pricePaid: 90 });
+    await BatchService.appendToBatch('u1', { ...BATCH, name: 'Typed in Review', syncedName: BATCH.name, pricePaid: 50, syncedPricePaid: 90 }, [L()]);
+    expect(store.docs.get(PATH)).toMatchObject({ name: 'Typed in Review', pricePaid: 50 });
+  });
+
+  it('never saves a blank name', async () => {
+    await BatchService.appendToBatch('u1', { ...BATCH, name: '   ', createdAt: Date.UTC(2026, 9, 5, 12) }, [L()]);
+    expect(store.docs.get(PATH).name).toBe('Batch Oct 5');
+  });
+
   it('returns errors instead of throwing', async () => {
     store.fail = true;
     await expect(BatchService.appendToBatch('u1', BATCH, [L()])).resolves.toEqual({ error: 'offline' });

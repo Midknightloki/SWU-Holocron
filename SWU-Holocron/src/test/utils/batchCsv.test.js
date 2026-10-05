@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { toBatchCsv, batchCsvFilename, BATCH_CSV_HEADER } from '../../utils/batchCsv';
 import { buildReport } from '../../utils/batchReport';
+import { parseCSV } from '../../utils/csvParser';
 
 const batch = {
   name: 'eBay, "SOR" box', createdAt: Date.UTC(2026, 9, 5), pricePaid: 10,
@@ -13,8 +14,16 @@ const batch = {
 describe('toBatchCsv', () => {
   const rows = toBatchCsv(buildReport(batch, { SOR_010_std: 6 })).split('\r\n');
 
-  it('starts with the header', () => {
-    expect(rows[0]).toBe(BATCH_CSV_HEADER.join(','));
+  it('starts with a UTF-8 byte order mark, then the header', () => {
+    expect(rows[0]).toBe(`\uFEFF${BATCH_CSV_HEADER.join(',')}`);
+  });
+
+  it('reads back through the collection CSV importer', () => {
+    const { items } = parseCSV(toBatchCsv(buildReport(batch)));
+    expect(items).toEqual([
+      { set: 'SOR', number: '010', name: 'Luke Skywalker, "Faithful"', quantity: 2, isFoil: false },
+      { set: 'SOR', number: '051', name: 'Mystery', quantity: 1, isFoil: false },
+    ]);
   });
 
   it('quotes fields with commas and doubles quotes', () => {

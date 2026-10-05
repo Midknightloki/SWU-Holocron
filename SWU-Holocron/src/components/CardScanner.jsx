@@ -15,7 +15,7 @@ import { createScanQueue } from '../services/scanQueue';
 import { levelReading } from '../utils/level';
 import {
   addCapture, applyResult, clearDraft, countByStatus, emptyDraft, ensureBatch, loadDraft, markReading, markWaiting, removeRows, saveDraft,
-  setBatchName, setPricePaid, toWrites,
+  endBatch, setBatchName, setPricePaid, toWrites,
 } from '../utils/scanDraft';
 import ScanReview from './ScanReview';
 import BatchReport from './BatchReport';
@@ -331,13 +331,12 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
       // no shutter wait, the card can be pulled straight away. Blurry, or
       // "Always use full photos": a full photo as before. Taps use photos.
       if (options?.auto === true && !autoSettingsRef.current.fullPhotos) {
-        const frame = captureVideoFrame({
+        // Only a sharp frame is kept (and encoded); otherwise a full photo.
+        shot = captureVideoFrame({
           video: videoRef.current,
           crop: (source, width, height) => videoCropFor(calibration, width, height),
+          accept: (gray, width, height) => laplacianVariance(gray, width, height) >= autoSettingsRef.current.sharpness,
         });
-        if (frame && laplacianVariance(frame.gray, frame.grayWidth, frame.grayHeight) >= autoSettingsRef.current.sharpness) {
-          shot = frame;
-        }
       }
       if (!shot) {
         shot = await capturePhoto({
@@ -551,7 +550,13 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
       }
       else setDraft((d) => applyResult(d, row.id, { status: 'failed', error: 'interrupted' }));
     });
-    const onOnline = () => queueRef.current.resume();
+    // Back online: lift an offline pause only -- a daily-limit pause stays
+    // until a Retry or a new session -- and show those cards reading again.
+    const onOnline = () => {
+      const waiting = draftRef.current.rows.filter((r) => r.status === 'waiting' && r.reason === 'offline');
+      queueRef.current.resume('offline');
+      if (waiting.length) setDraft((d) => waiting.reduce((next, row) => markReading(next, row.id), d));
+    };
     window.addEventListener('online', onOnline);
     return () => {
       cancelled = true;
@@ -579,16 +584,49 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
     if (all.length === 0) return true;
     const res = await BatchService.appendToBatch(uid, batch, all);
     const ok = !res?.error;
-    const patch = ok ? { appended: true, pending: [] } : { pending: all };
+    const patch = ok
+      ? { appended: true, pending: [], syncedName: batch.name, syncedPricePaid: batch.pricePaid ?? null }
+      : { pending: all };
     const apply = (d) => (d.batch?.id === batch.id ? { ...d, batch: { ...d.batch, ...patch } } : d);
-    saveDraft(getStorage(), uid, apply(draftRef.current));
+    // Ahead of the re-render, so a Finish straight after sees the result.
+    draftRef.current = apply(draftRef.current);
+    saveDraft(getStorage(), uid, draftRef.current);
     if (mountedRef.current) setDraft(apply);
     return ok;
   }, [uid]);
 
-  const commit = useCallback(async () => {
+  // Finish batch: close the batch and show its report. Lines a failed append
+  // left pending go first; if they still can't be saved the batch stays open.
+  // Rows still in the list (unread, unidentified) wait for the next batch.
+  const finishBatch = useCallback(async () => {
+    let { batch } = draftRef.current;
+    if (!batch) return;
+    if (batch.pending?.length) {
+      if (!(await recordBatch(batch, []))) {
+        if (mountedRef.current) setCommitError(REPORT_FAILED);
+        return;
+      }
+      ({ batch } = draftRef.current);
+    }
+    if (batch.appended) await BatchService.closeBatch(uid, batch.id);
+    if (!mountedRef.current) return;
+    setDraft((d) => endBatch(d));
+    if (batch.appended) setReportBatchId(batch.id);
+  }, [uid, recordBatch]);
+
+  const commit = useCallback(async ({ finish = false } = {}) => {
     if (!collectionRef) {
       setCommitError('Not connected to cloud storage.');
+      return;
+    }
+    if (finish && toWrites(draft).length === 0) {
+      setCommitting(true);
+      setCommitError(null);
+      try {
+        await finishBatch();
+      } finally {
+        if (mountedRef.current) setCommitting(false);
+      }
       return;
     }
     setCommitting(true);
@@ -653,10 +691,20 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
       // emptied batch is finished by the effect below, report and all.
       const reportFailed = batch ? !(await recordBatch(batch, committedLines())) : false;
       if (!mountedRef.current) return;
-      if (reportFailed) setCommitError(REPORT_FAILED);
-      if (live.rows.length === 0 && !batch) {
-        clearDraft(getStorage(), uid);
-        onClose();
+      if (reportFailed) {
+        setCommitError(REPORT_FAILED);
+        return;
+      }
+      if (finish) {
+        await finishBatch();
+      } else if (live.rows.length === 0) {
+        // Only Finish ends a batch: back to scanning the rest of the box.
+        if (batch) {
+          setMode('camera');
+        } else {
+          clearDraft(getStorage(), uid);
+          onClose();
+        }
       }
     } catch (err) {
       console.error('Scan commit failed:', err);
@@ -670,7 +718,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
     } finally {
       if (mountedRef.current) setCommitting(false);
     }
-  }, [collectionRef, draft, uid, onClose, recordBatch]);
+  }, [collectionRef, draft, uid, onClose, recordBatch, finishBatch]);
 
   const retryReport = useCallback(async () => {
     const { batch } = draftRef.current;
@@ -683,19 +731,6 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
     setCommitting(false);
   }, [recordBatch]);
 
-  // A batch is finished once its cards were added and nothing is left in it,
-  // however it emptied: the last Add, or removing the leftovers afterwards.
-  // Close it and show its report; the next capture starts a new batch.
-  useEffect(() => {
-    const { batch } = draft;
-    if (committing || reportBatchId || draft.rows.length > 0) return;
-    if (!batch?.appended || batch.pending?.length) return;
-    clearDraft(getStorage(), uid);
-    setDraft(emptyDraft());
-    setReportBatchId(batch.id);
-    BatchService.closeBatch(uid, batch.id);
-  }, [draft, committing, reportBatchId, uid]);
-
   const discard = useCallback(() => {
     // This batch's photos go with its rows (the cleanup effect below); never
     // PhotoStore.clear(), which would take other accounts' batches too.
@@ -705,7 +740,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
   }, [uid]);
 
   const counts = countByStatus(draft);
-  const total = counts.reading + counts.matched + counts.unidentified + counts.failed;
+  const total = counts.reading + counts.matched + counts.unidentified + counts.failed + counts.waiting;
   const attention = counts.unidentified + counts.failed;
 
   if (reportBatchId) {
@@ -731,7 +766,8 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
           collectionData={collectionData}
           onRetry={retry}
           onBack={() => setMode('camera')}
-          onCommit={commit}
+          onCommit={() => commit()}
+          onFinish={() => commit({ finish: true })}
           onDiscard={discard}
           committing={committing}
           commitError={commitError}

@@ -40,7 +40,8 @@ export function buildReport(batch, currentPrices = null) {
     ? cents(lines.reduce((s, l) => s + (isPriced(l.priceNow) ? l.priceNow * l.qty : 0), 0))
     : null;
   const pricePaid = isPriced(batch.pricePaid) ? batch.pricePaid : null;
-  const newCards = lines.filter((l) => l.isNew);
+  // One entry per card: new in both finishes is still one new card.
+  const newCards = lines.filter((l, i) => l.isNew && lines.findIndex((o) => o.isNew && cardKey(o) === cardKey(l)) === i);
 
   return {
     name: batch.name,
@@ -55,6 +56,9 @@ export function buildReport(batch, currentPrices = null) {
     valueAtAdd,
     valueNow,
     unpriced: lines.filter((l) => !isPriced(l.priceAtAdd)),
+    // Lines left out of valueNow for want of a current price, so a drop in
+    // value can be told apart from missing data.
+    unpricedNow: currentPrices ? lines.filter((l) => !isPriced(l.priceNow)).length : null,
     otherFinish: lines.filter((l) => l.priceIsFallback && isPriced(l.priceAtAdd)),
     net: pricePaid === null ? null : cents(valueAtAdd - pricePaid),
     multiple: pricePaid ? cents(valueAtAdd / pricePaid) : null,

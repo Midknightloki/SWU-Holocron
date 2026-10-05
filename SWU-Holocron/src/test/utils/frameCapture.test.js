@@ -111,6 +111,17 @@ describe('captureVideoFrame', () => {
     expect(out).toMatchObject({ image: 'FRAME', grayWidth: 900, grayHeight: 1600, source: 'video', width: 2160, height: 3840, cropped: true });
   });
 
+  it('checks sharpness before encoding, and skips the encode for a blurry frame', () => {
+    const encode = vi.fn(() => 'FRAME');
+    const gray = new Uint8Array(4);
+    const video = { videoWidth: 100, videoHeight: 100 };
+    const accept = vi.fn(() => false);
+    expect(captureVideoFrame({ video, encode, toGray: () => gray, accept })).toBeNull();
+    expect(accept).toHaveBeenCalledWith(gray, 100, 100);
+    expect(encode).not.toHaveBeenCalled();
+    expect(captureVideoFrame({ video, encode, toGray: () => gray, accept: () => true })).toMatchObject({ image: 'FRAME' });
+  });
+
   it('returns null when the video has no frame', () => {
     expect(captureVideoFrame({ video: { videoWidth: 0, videoHeight: 0 }, encode: vi.fn(), toGray: vi.fn() })).toBeNull();
   });

@@ -73,17 +73,21 @@ const SHARPNESS_EDGE = 1600;
  * card at full stream resolution, plus a small grayscale copy for the
  * sharpness check. No shutter wait -- the card can be pulled immediately.
  */
-export function captureVideoFrame({ video, crop = () => null, encode = encodeJpeg, toGray = grayscaleOf }) {
+// `accept(gray, width, height)` judges the frame (the sharpness check) before
+// it is encoded: a 2048 px JPEG is the expensive part, and wasted on a blurry
+// frame that is about to be thrown away for a full photo.
+export function captureVideoFrame({ video, crop = () => null, encode = encodeJpeg, toGray = grayscaleOf, accept = () => true }) {
   const width = video?.videoWidth ?? 0;
   const height = video?.videoHeight ?? 0;
   if (!width || !height) return null;
   try {
     const rect = crop('video', width, height);
     const region = rect ? cropPixels(rect, width, height) : { sx: 0, sy: 0, sw: width, sh: height };
-    const image = encode(video, fitWithin(region.sw, region.sh, CAPTURE_MAX_EDGE), region);
     const graySize = fitWithin(region.sw, region.sh, SHARPNESS_EDGE);
     const gray = toGray(video, graySize, region);
-    if (!image || !gray) return null;
+    if (!gray || !accept(gray, graySize.width, graySize.height)) return null;
+    const image = encode(video, fitWithin(region.sw, region.sh, CAPTURE_MAX_EDGE), region);
+    if (!image) return null;
     return { image, gray, grayWidth: graySize.width, grayHeight: graySize.height, source: 'video', width, height, cropped: Boolean(rect) };
   } catch {
     return null;

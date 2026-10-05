@@ -7,14 +7,16 @@ import BatchReport from './BatchReport';
 const fmt = (v) => `${v < 0 ? '-' : ''}$${Math.abs(v).toFixed(2)}`;
 const signed = (v) => `${v >= 0 ? '+' : ''}${fmt(v)}`;
 
-export default function BatchesPanel({ uid }) {
+export default function BatchesPanel({ uid, refreshKey = 0 }) {
+  // null while loading, 'error' when the list could not be read.
   const [batches, setBatches] = useState(null);
   const [open, setOpen] = useState(null);
 
   const load = useCallback(() => {
     if (!uid) return;
-    BatchService.listBatches(uid).then((list) => setBatches(Array.isArray(list) ? list : []));
-  }, [uid]);
+    BatchService.listBatches(uid).then((list) => setBatches(Array.isArray(list) ? list : 'error'));
+    // refreshKey changes when the scanner closes, so a batch just finished shows.
+  }, [uid, refreshKey]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -26,8 +28,9 @@ export default function BatchesPanel({ uid }) {
         <Package className="w-5 h-5 text-blue-400" /> Batches
       </h3>
       {batches === null && <p className="text-sm text-gray-500">Loading…</p>}
-      {batches?.length === 0 && <p className="text-sm text-gray-500">No batches yet</p>}
-      {batches?.length > 0 && (
+      {batches === 'error' && <p className="text-sm text-red-400">Couldn&apos;t load your batches. Check your connection and try again.</p>}
+      {Array.isArray(batches) && batches.length === 0 && <p className="text-sm text-gray-500">No batches yet</p>}
+      {Array.isArray(batches) && batches.length > 0 && (
         <ul className="divide-y divide-gray-800">
           {batches.map((b) => {
             const value = b.summary?.valueAtAdd ?? 0;

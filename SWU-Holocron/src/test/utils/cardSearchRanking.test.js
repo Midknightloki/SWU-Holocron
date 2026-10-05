@@ -111,3 +111,13 @@ describe('rankSearchResults', () => {
     expect(rankSearchResults(null, 'x')).toEqual([]);
   });
 });
+
+describe('rankSearchResults with a collector number', () => {
+  it('puts the card with that number first', () => {
+    const cards = [
+      { Set: 'SOR', Number: '050', Name: 'R2-D2 at 12 o’clock' },
+      { Set: 'SOR', Number: '012', Name: 'Zuckuss' },
+    ];
+    expect(rankSearchResults(cards, '12').map((c) => c.Number)).toEqual(['012', '050']);
+  });
+});

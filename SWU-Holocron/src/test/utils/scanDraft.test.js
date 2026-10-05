@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   emptyDraft, draftKey, addCapture, applyResult, markReading, resolveManually,
   setFoil, removeRows, groupRows, setGroupQuantity, toWrites, countByStatus, markWaiting,
-  saveDraft, loadDraft, clearDraft, ensureBatch, setBatchName, setPricePaid, defaultBatchName,
+  saveDraft, loadDraft, clearDraft, ensureBatch, setBatchName, setPricePaid, defaultBatchName, parsePricePaid, endBatch,
 } from '../../utils/scanDraft';
 
 const memoryStorage = () => {
@@ -237,11 +237,26 @@ describe('batch metadata', () => {
     expect(d.batch.id).toBe('b1');
   });
 
-  it('starts a new batch once an added batch has emptied, and keeps an unadded one', () => {
+  it('keeps a batch whose cards were all added: only Finish ends it', () => {
     const added = { ...withBatch(), batch: { ...withBatch().batch, appended: true } };
-    expect(ensureBatch(added, NOW + 1, 'b2').batch.id).toBe('b2');
-    expect(ensureBatch(capture(added, 'a'), NOW + 1, 'b2').batch.id).toBe('b1');
-    expect(ensureBatch(withBatch(), NOW + 1, 'b2').batch.id).toBe('b1');
+    expect(ensureBatch(added, NOW + 1, 'b2').batch.id).toBe('b1');
+  });
+
+  it('ends a batch, keeping the leftover rows for the next one', () => {
+    const ended = endBatch(capture(withBatch(), 'a'));
+    expect(ended.batch).toBeUndefined();
+    expect(ended.rows.map((r) => r.id)).toEqual(['a']);
+    expect(ensureBatch(ended, NOW + 1, 'b2').batch.id).toBe('b2');
+  });
+
+  it('reads prices the way people type them', () => {
+    expect(parsePricePaid('89.99')).toBe(89.99);
+    expect(parsePricePaid('$40')).toBe(40);
+    expect(parsePricePaid(' $1,200.50 ')).toBe(1200.5);
+    expect(parsePricePaid('40,00')).toBe(40);
+    expect(parsePricePaid('')).toBeNull();
+    expect(parsePricePaid('forty')).toBeUndefined();
+    expect(parsePricePaid('-5')).toBeUndefined();
   });
 
   it('round-trips the batch through storage', () => {

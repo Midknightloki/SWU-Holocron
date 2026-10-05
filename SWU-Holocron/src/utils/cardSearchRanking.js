@@ -13,6 +13,7 @@
  *
  * @environment:none — pure functions, safe everywhere
  */
+import { matchesNumberQuery } from './cardNumberQuery';
 
 const S_NAME_EXACT = 1000;
 const S_NAME_PREFIX = 800;
@@ -45,6 +46,7 @@ function hasWordStartingWith(haystack, needle) {
  */
 function scoreCard(card, query) {
   const name = lower(card?.Name);
+  if (matchesNumberQuery(card, query)) return S_NAME_EXACT;
 
   if (name === query) return S_NAME_EXACT;
   if (name.startsWith(query)) return S_NAME_PREFIX;
