@@ -271,6 +271,13 @@ describe('ScanReview', () => {
     expect(price).toHaveAttribute('aria-invalid', 'true');
   });
 
+  it('offers no Retry for a waiting card whose photo is gone', () => {
+    const draft = markWaiting(build([['a']]), ['a'], 'quota');
+    draft.rows[0].hasPhoto = false;
+    renderReview(draft);
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+  });
+
   it('shows no batch fields without a batch', () => {
     renderReview(build([['a', LUKE]]));
     expect(screen.queryByLabelText('Batch name')).not.toBeInTheDocument();

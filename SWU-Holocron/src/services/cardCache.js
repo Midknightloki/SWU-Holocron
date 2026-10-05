@@ -120,16 +120,16 @@ export function createCardCache({ indexedDB = globalThis.indexedDB, openTimeoutM
       return put(setCode, cards);
     },
 
-    /**
-     * Move every legacy `swu-cards-*` entry into IndexedDB, freeing the
-     * localStorage space it held. Run once at startup.
-     * @returns {Promise<number>} how many sets were moved
-     */
     /** Test hook: the current connection promise. */
     _connectionForTests() {
       return open();
     },
 
+    /**
+     * Move every legacy `swu-cards-*` entry into IndexedDB, freeing the
+     * localStorage space it held. Run once at startup.
+     * @returns {Promise<number>} how many sets were moved
+     */
     async migrateFromLocalStorage(storage = defaultLocalStorage()) {
       if (!(await open())) return 0;
       let moved = 0;

@@ -4,7 +4,9 @@
  *
  * - network / unknown failures retry with backoff, then report the failure;
  * - quota pauses the whole queue (pending ids reported, kept for later);
- * - offline pauses until resume() (the scanner calls it on 'online').
+ * - offline pauses until resume('offline') (the scanner calls it on
+ *   'online'), which leaves a daily-limit pause alone;
+ * - a card queued during a pause is reported as waiting straight away.
  * Pure apart from the injected callbacks.
  */
 export const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 16000];
@@ -67,6 +69,12 @@ export function createScanQueue({
       // eslint-disable-next-line no-await-in-loop
       await wait(RETRY_DELAYS_MS[attempt]);
       if (stopped) return;
+      // Paused while backing off (another read hit the limit, or the network
+      // went): wait in line with the rest instead of reading anyway.
+      if (paused) {
+        requeue(id);
+        return;
+      }
     }
   }
 
@@ -84,9 +92,12 @@ export function createScanQueue({
   return {
     enqueue(id) {
       if (!pending.includes(id) && !active.has(id)) pending.push(id);
+      if (paused) onPause(paused, [id]);
       pump();
     },
-    resume() {
+    /** Lift the pause -- or, given a reason, only a pause for that reason. */
+    resume(reason) {
+      if (reason && paused !== reason) return;
       paused = null;
       pump();
     },

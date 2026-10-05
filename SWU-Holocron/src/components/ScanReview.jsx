@@ -260,7 +260,8 @@ export default function ScanReview({
                   <p className="text-xs text-gray-500">{REASON_TEXT[group.reason] ?? ''}</p>
                 )}
               </div>
-              {((group.status === 'failed' && group.hasPhoto) || group.status === 'waiting') && (
+              {/* Retry re-reads the stored photo: without one there is nothing to retry. */}
+              {(group.status === 'failed' || group.status === 'waiting') && group.hasPhoto && (
                 <button
                   type="button"
                   disabled={committing}

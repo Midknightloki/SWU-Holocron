@@ -331,13 +331,12 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
       // no shutter wait, the card can be pulled straight away. Blurry, or
       // "Always use full photos": a full photo as before. Taps use photos.
       if (options?.auto === true && !autoSettingsRef.current.fullPhotos) {
-        const frame = captureVideoFrame({
+        // Only a sharp frame is kept (and encoded); otherwise a full photo.
+        shot = captureVideoFrame({
           video: videoRef.current,
           crop: (source, width, height) => videoCropFor(calibration, width, height),
+          accept: (gray, width, height) => laplacianVariance(gray, width, height) >= autoSettingsRef.current.sharpness,
         });
-        if (frame && laplacianVariance(frame.gray, frame.grayWidth, frame.grayHeight) >= autoSettingsRef.current.sharpness) {
-          shot = frame;
-        }
       }
       if (!shot) {
         shot = await capturePhoto({
@@ -551,7 +550,13 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
       }
       else setDraft((d) => applyResult(d, row.id, { status: 'failed', error: 'interrupted' }));
     });
-    const onOnline = () => queueRef.current.resume();
+    // Back online: lift an offline pause only -- a daily-limit pause stays
+    // until a Retry or a new session -- and show those cards reading again.
+    const onOnline = () => {
+      const waiting = draftRef.current.rows.filter((r) => r.status === 'waiting' && r.reason === 'offline');
+      queueRef.current.resume('offline');
+      if (waiting.length) setDraft((d) => waiting.reduce((next, row) => markReading(next, row.id), d));
+    };
     window.addEventListener('online', onOnline);
     return () => {
       cancelled = true;
@@ -707,7 +712,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
   }, [uid]);
 
   const counts = countByStatus(draft);
-  const total = counts.reading + counts.matched + counts.unidentified + counts.failed;
+  const total = counts.reading + counts.matched + counts.unidentified + counts.failed + counts.waiting;
   const attention = counts.unidentified + counts.failed;
 
   if (reportBatchId) {

@@ -38,7 +38,14 @@ vi.mock('../../utils/sharpness', () => ({ laplacianVariance: () => mocks.sharpne
 vi.mock('../../services/ScanService', () => ({
   ScanService: { scan: mocks.scan, commitDraft: mocks.commitDraft, prefetchSets: mocks.prefetchSets, cardDetails: mocks.cardDetails },
 }));
-vi.mock('../../utils/frameCapture', () => ({ capturePhoto: mocks.capturePhoto, captureVideoFrame: mocks.captureVideoFrame }));
+// The stand-in honours `accept`, as the real one does, so the sharpness gate is exercised.
+vi.mock('../../utils/frameCapture', () => ({
+  capturePhoto: mocks.capturePhoto,
+  captureVideoFrame: (opts) => {
+    const frame = mocks.captureVideoFrame(opts);
+    return frame && (!opts.accept || opts.accept(frame.gray, frame.grayWidth, frame.grayHeight)) ? frame : null;
+  },
+}));
 vi.mock('../CardPickerModal', () => ({ default: () => null }));
 const sampler = vi.hoisted(() => ({ queue: [], fn: null }));
 vi.mock('../../utils/frameSampler', () => ({
@@ -236,6 +243,41 @@ describe('CardScanner', () => {
     pressSpace();
     await flush();
     expect(mocks.scan).toHaveBeenCalledTimes(1);
+  });
+
+  it('counts cards waiting on the daily limit in Review', async () => {
+    mocks.scan.mockResolvedValue({ status: 'failed', error: 'quota', limit: 1000, resetsAt: '2026-09-30T00:00:00.000Z' });
+    renderScanner();
+    pressSpace();
+    expect(await screen.findByRole('button', { name: 'Review (1)' })).toBeInTheDocument();
+  });
+
+  describe('offline', () => {
+    afterEach(() => { Object.defineProperty(navigator, 'onLine', { configurable: true, value: true }); });
+
+    it('shows a card captured offline as waiting, then reads it when back online', async () => {
+      Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+      const user = userEvent.setup();
+      renderScanner();
+      pressSpace(); await flush(); await flush();
+      expect(mocks.scan).not.toHaveBeenCalled();
+      await user.click(await screen.findByRole('button', { name: 'Review (1)' }));
+      expect(screen.queryByText('Reading…')).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Back to camera' }));
+      Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+      await act(async () => { window.dispatchEvent(new Event('online')); });
+      await waitFor(() => expect(mocks.scan).toHaveBeenCalledTimes(1));
+    });
+
+    it('coming back online leaves a daily-limit pause in place', async () => {
+      mocks.scan.mockResolvedValue({ status: 'failed', error: 'quota', limit: 1000, resetsAt: '2026-09-30T00:00:00.000Z' });
+      renderScanner();
+      pressSpace();
+      await screen.findByText(/Daily scan limit of 1000 reached/);
+      await act(async () => { window.dispatchEvent(new Event('online')); });
+      await flush();
+      expect(mocks.scan).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('explains a denied camera and does not capture', async () => {
