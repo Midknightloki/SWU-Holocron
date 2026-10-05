@@ -5,6 +5,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+vi.mock('../../components/PrebuiltDecksPanel', () => ({ default: ({ uid, collectionRef }) => <div>prebuilt for {uid} {collectionRef?.id}</div> }));
 vi.mock('../../components/BatchesPanel', () => ({ default: ({ uid, refreshKey }) => <div>batches for {uid} #{refreshKey}</div> }));
 import Dashboard from '../../components/Dashboard';
 import { mockCards, mockCollectionData } from '../utils/mockData';
@@ -44,6 +45,11 @@ describe('Dashboard Component', () => {
     expect(screen.getByText(/batches for u1/)).toBeInTheDocument();
     rerender(<Dashboard {...defaultProps} />);
     expect(screen.queryByText(/batches for/)).not.toBeInTheDocument();
+  });
+
+  it('shows prebuilt decks for the signed-in user, with the collection to add to', () => {
+    render(<Dashboard {...defaultProps} uid="u1" collectionRef={{ id: 'ref' }} />);
+    expect(screen.getByText('prebuilt for u1 ref')).toBeInTheDocument();
   });
 
   it('passes the refresh key through so the list reloads after scanning', () => {

@@ -155,6 +155,17 @@ these on real hardware and record the results in the PR:
   on binder and dashboard at phone width. A non-Pro, non-admin account and a
   guest see none of them.
 
+## Prebuilt decks — manual checks
+
+- Run **Sync Card Database** with `workflow_dispatch`; the sync summary shows
+  `Prebuilt decks: OK (+N for review)`, and the admin **Prebuilt Decks** tab
+  lists the 2026 precons with their suggested products.
+- Publish one, mark a personal deck "Not a precon", and backfill an older
+  Spotlight by pasting its sw-unlimited-db link.
+- On the phone, add the published deck from the Command Center: collection
+  counts go **up**, the batch report opens, and the deck shows "Added".
+- The rules tests need Java 21 for the emulator; CI runs them.
+
 ## Skipped suites, and why
 
 Read this before "fixing" a skip. Each one was examined and left off

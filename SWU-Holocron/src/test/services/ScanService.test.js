@@ -290,7 +290,7 @@ describe('ScanService.locateCard', () => {
 describe('ScanService.cardDetails', () => {
   it('returns type, rarity, aspects and variant from the cached set data', async () => {
     mocks.fetchSetData.mockResolvedValue({ data: [{ Set: 'SOR', Number: '010', Name: 'Luke', Type: 'Leader', Rarity: 'Rare', Aspects: ['Vigilance'], VariantType: 'Normal' }] });
-    await expect(ScanService.cardDetails('SOR', '10')).resolves.toEqual({ type: 'Leader', rarity: 'Rare', aspects: ['Vigilance'], variant: 'Normal' });
+    await expect(ScanService.cardDetails('SOR', '10')).resolves.toEqual({ name: 'Luke', type: 'Leader', rarity: 'Rare', aspects: ['Vigilance'], variant: 'Normal' });
     await expect(ScanService.cardDetails('SOR', '999')).resolves.toBeNull();
   });
 

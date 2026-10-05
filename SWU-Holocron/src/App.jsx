@@ -964,6 +964,7 @@ export default function App() {
                 onScan={openScanner}
                 uid={user?.uid}
                 batchesRefresh={batchesRefresh}
+                collectionRef={getCollectionRef(user, legacySyncCode, useLegacyPath)}
               />
               ) : view === 'decks' ? (
                 <DeckManager

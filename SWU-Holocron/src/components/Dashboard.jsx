@@ -1,12 +1,15 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Database, Upload, Download, Loader2, CheckCircle2, Layers, Trophy, AlertCircle, Plus } from 'lucide-react';
 import { SETS } from '../constants';
 import { calculateStats, calculateGlobalSummary } from '../utils/statsCalculator';
 import { generateMissingCardsCSV } from '../utils/csvParser';
 import ScanButton from './ScanButton';
 import BatchesPanel from './BatchesPanel';
+import PrebuiltDecksPanel from './PrebuiltDecksPanel';
 
-export default function Dashboard({ setCode, cards, collectionData, onImport, onExport, isImporting, hasDataToExport, onUpdateQuantity, onCardClick, onScan, uid, batchesRefresh = 0 }) {
+export default function Dashboard({ setCode, cards, collectionData, onImport, onExport, isImporting, hasDataToExport, onUpdateQuantity, onCardClick, onScan, uid, batchesRefresh = 0, collectionRef = null }) {
+  // A prebuilt deck added here is a new batch: the list below reloads.
+  const [batchesBump, setBatchesBump] = useState(0);
   const stats = useMemo(() => {
     return calculateStats(cards, collectionData, setCode);
   }, [cards, collectionData, setCode]);
@@ -105,7 +108,15 @@ export default function Dashboard({ setCode, cards, collectionData, onImport, on
       </div>
 
       {/* Saved scanning batches */}
-      {uid && <BatchesPanel uid={uid} refreshKey={batchesRefresh} />}
+      {uid && (
+        <PrebuiltDecksPanel
+          uid={uid}
+          collectionRef={collectionRef}
+          collectionData={collectionData}
+          onAdded={() => setBatchesBump((n) => n + 1)}
+        />
+      )}
+      {uid && <BatchesPanel uid={uid} refreshKey={batchesRefresh + batchesBump} />}
 
       {/* Missing Cards Table */}
       <div className="bg-gray-900 rounded-2xl border border-gray-800 shadow-xl overflow-hidden">

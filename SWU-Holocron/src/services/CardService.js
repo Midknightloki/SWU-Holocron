@@ -3,12 +3,16 @@ import { LEGACY_SET_CODES } from '../setCatalog';
 import { db, APP_ID } from '../firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
+// SOR and SHD number their foils with an F suffix ("059F"). The image CDN has
+// no file for those (403), and a foil's art is its non-foil printing's.
+const imageNumber = (number) => String(number).replace(/^(\d+)F$/i, '$1');
+
 export const CardService = {
   getCollectionId: (set, number, isFoil) => `${set}_${number}_${isFoil ? 'foil' : 'std'}`,
 
-  getCardImage: (set, number) => `${API_BASE}/cards/${set}/${number}?format=image`,
+  getCardImage: (set, number) => `${API_BASE}/cards/${set}/${imageNumber(number)}?format=image`,
 
-  getBackImage: (set, number) => `${API_BASE}/cards/${set}/${number}?format=image&face=back`,
+  getBackImage: (set, number) => `${API_BASE}/cards/${set}/${imageNumber(number)}?format=image&face=back`,
 
   /**
    * Read the set registry published by scripts/setDiscovery.js.

@@ -130,7 +130,7 @@ export const ScanService = {
       const want = normalizeNumber(number);
       const card = (await cardsForSet(set)).find((c) => normalizeNumber(c.Number) === want);
       return card
-        ? { type: card.Type ?? null, rarity: card.Rarity ?? null, aspects: card.Aspects ?? [], variant: card.VariantType ?? null }
+        ? { name: card.Name ?? null, type: card.Type ?? null, rarity: card.Rarity ?? null, aspects: card.Aspects ?? [], variant: card.VariantType ?? null }
         : null;
     } catch {
       return null;
