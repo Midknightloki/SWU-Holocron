@@ -96,6 +96,14 @@ describe('CardService', () => {
       expect(typeof CardService.getBackImage).toBe('function');
     });
 
+    // SOR and SHD number their foils "059F"; the image CDN has no such file
+    // (403) -- the foil's art is the non-foil printing's.
+    it('uses the image of the non-foil printing for an F-numbered foil', () => {
+      expect(CardService.getCardImage('SOR', '059F')).toBe(CardService.getCardImage('SOR', '059'));
+      expect(CardService.getBackImage('SHD', '010f')).toBe(CardService.getBackImage('SHD', '010'));
+      expect(CardService.getCardImage('SOR', '059')).toContain('/cards/SOR/059?');
+    });
+
     it('should have fetchWithTimeout method', () => {
       expect(CardService.fetchWithTimeout).toBeDefined();
       expect(typeof CardService.fetchWithTimeout).toBe('function');
