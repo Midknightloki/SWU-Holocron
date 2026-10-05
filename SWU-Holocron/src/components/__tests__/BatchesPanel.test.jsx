@@ -2,7 +2,7 @@
  * @vitest-environment happy-dom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import React from 'react';
 
 const m = vi.hoisted(() => ({ listBatches: vi.fn() }));
@@ -42,6 +42,19 @@ describe('BatchesPanel', () => {
     expect(screen.getByRole('dialog', { name: 'Batch report' })).toHaveTextContent('report b1');
     fireEvent.click(screen.getByText('delete-mock'));
     expect(m.listBatches).toHaveBeenCalledTimes(2);
+  });
+
+  it('reloads when asked to, so a batch just finished appears', async () => {
+    const { rerender } = render(<BatchesPanel uid="u1" refreshKey={0} />);
+    await screen.findByRole('button', { name: /eBay SOR box/ });
+    rerender(<BatchesPanel uid="u1" refreshKey={1} />);
+    await waitFor(() => expect(m.listBatches).toHaveBeenCalledTimes(2));
+  });
+
+  it('says when the list could not be loaded', async () => {
+    m.listBatches.mockResolvedValue({ error: 'offline' });
+    render(<BatchesPanel uid="u1" />);
+    expect(await screen.findByText(/couldn.t load your batches/i)).toBeInTheDocument();
   });
 
   it('says when there are no batches, and renders nothing without a user', async () => {

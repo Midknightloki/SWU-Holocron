@@ -1,5 +1,6 @@
 import { collection, deleteDoc, doc, getDoc, getDocs, orderBy, query, runTransaction, updateDoc } from 'firebase/firestore';
 import { db, APP_ID } from '../firebase';
+import { defaultBatchName } from '../utils/scanDraft';
 
 /**
  * Scanning batches (a booster box, a pre-release): one Firestore document per
@@ -42,12 +43,18 @@ export const BatchService = {
       const ref = batchRef(uid, batch.id);
       await runTransaction(db, async (tx) => {
         const snap = await tx.get(ref);
-        const data = snap.exists() ? snap.data() : { createdAt: batch.createdAt, closedAt: null, cards: {} };
+        const exists = snap.exists();
+        const data = exists ? snap.data() : { createdAt: batch.createdAt, closedAt: null, cards: {} };
         const cards = mergeLines(data.cards ?? {}, lines);
+        // The draft's name and price win only when they changed since its
+        // last append: otherwise a rename made from the Batches list would be
+        // undone by the next Add.
+        const nameChanged = !exists || batch.name !== batch.syncedName;
+        const priceChanged = !exists || (batch.pricePaid ?? null) !== (batch.syncedPricePaid ?? null);
         tx.set(ref, {
           ...data,
-          name: batch.name,
-          pricePaid: batch.pricePaid ?? null,
+          name: nameChanged ? (batch.name?.trim() || defaultBatchName(batch.createdAt)) : data.name,
+          pricePaid: priceChanged ? (batch.pricePaid ?? null) : (data.pricePaid ?? null),
           cards,
           summary: summarize(cards),
           updatedAt: Date.now(),

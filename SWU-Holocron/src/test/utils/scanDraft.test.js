@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   emptyDraft, draftKey, addCapture, applyResult, markReading, resolveManually,
   setFoil, removeRows, groupRows, setGroupQuantity, toWrites, countByStatus, markWaiting,
-  saveDraft, loadDraft, clearDraft, ensureBatch, setBatchName, setPricePaid, defaultBatchName,
+  saveDraft, loadDraft, clearDraft, ensureBatch, setBatchName, setPricePaid, defaultBatchName, parsePricePaid,
 } from '../../utils/scanDraft';
 
 const memoryStorage = () => {
@@ -242,6 +242,16 @@ describe('batch metadata', () => {
     expect(ensureBatch(added, NOW + 1, 'b2').batch.id).toBe('b2');
     expect(ensureBatch(capture(added, 'a'), NOW + 1, 'b2').batch.id).toBe('b1');
     expect(ensureBatch(withBatch(), NOW + 1, 'b2').batch.id).toBe('b1');
+  });
+
+  it('reads prices the way people type them', () => {
+    expect(parsePricePaid('89.99')).toBe(89.99);
+    expect(parsePricePaid('$40')).toBe(40);
+    expect(parsePricePaid(' $1,200.50 ')).toBe(1200.5);
+    expect(parsePricePaid('40,00')).toBe(40);
+    expect(parsePricePaid('')).toBeNull();
+    expect(parsePricePaid('forty')).toBeUndefined();
+    expect(parsePricePaid('-5')).toBeUndefined();
   });
 
   it('round-trips the batch through storage', () => {

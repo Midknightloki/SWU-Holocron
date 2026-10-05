@@ -579,7 +579,9 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
     if (all.length === 0) return true;
     const res = await BatchService.appendToBatch(uid, batch, all);
     const ok = !res?.error;
-    const patch = ok ? { appended: true, pending: [] } : { pending: all };
+    const patch = ok
+      ? { appended: true, pending: [], syncedName: batch.name, syncedPricePaid: batch.pricePaid ?? null }
+      : { pending: all };
     const apply = (d) => (d.batch?.id === batch.id ? { ...d, batch: { ...d.batch, ...patch } } : d);
     saveDraft(getStorage(), uid, apply(draftRef.current));
     if (mountedRef.current) setDraft(apply);

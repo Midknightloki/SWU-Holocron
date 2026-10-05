@@ -126,6 +126,8 @@ export default function App() {
     setIsScannerOpen(false);
   }, [user?.uid]);
 
+  // Bumped when the scanner closes, so the Command Center's batch list reloads.
+  const [batchesRefresh, setBatchesRefresh] = useState(0);
   // Handed only to users who can scan; views render no scan button without it.
   const openScanner = canScan ? () => setIsScannerOpen(true) : undefined;
   const [importing, setImporting] = useState(false);
@@ -961,6 +963,7 @@ export default function App() {
                 onCardClick={setSelectedCard}
                 onScan={openScanner}
                 uid={user?.uid}
+                batchesRefresh={batchesRefresh}
               />
               ) : view === 'decks' ? (
                 <DeckManager
@@ -1185,7 +1188,11 @@ export default function App() {
             setCodes={setRegistry.length > 0 ? setRegistry.map((s) => s.code) : availableSets}
             setOptions={setRegistry}
             collectionData={collectionData}
-            onClose={() => setIsScannerOpen(false)}
+            onClose={() => {
+              setIsScannerOpen(false);
+              // A batch may have just finished: the Command Center list reloads.
+              setBatchesRefresh((n) => n + 1);
+            }}
           />
         </ErrorBoundary>
       )}

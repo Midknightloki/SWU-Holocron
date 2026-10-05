@@ -154,6 +154,7 @@ export default function BatchReport({ uid, batchId, onClose, onDeleted }) {
   }
 
   let valueNow = fmt(report.valueNow);
+  if (report.unpricedNow) valueNow += ` (${report.unpricedNow} unpriced)`;
   if (prices === undefined) valueNow = '…';
   else if (prices === null) valueNow = 'unavailable';
   let netTone = '';

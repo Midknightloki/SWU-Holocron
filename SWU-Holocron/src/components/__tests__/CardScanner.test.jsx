@@ -875,6 +875,23 @@ describe('CardScanner', () => {
   });
 
   describe('batches', () => {
+    it('remembers the name and price it sent, so a rename from the list is not undone', async () => {
+      const user = userEvent.setup();
+      mocks.commitDraft.mockImplementation(async (draft) => ({ rows: draft.rows.filter((r) => r.status !== 'matched') }));
+      renderScanner();
+      pressSpace(); await flush();
+      mocks.scan.mockResolvedValueOnce({ status: 'unidentified', reason: 'unreadable', read: null });
+      pressSpace();
+      await user.click(await screen.findByRole('button', { name: 'Review (2)' }));
+      fireEvent.change(screen.getByLabelText('Batch name'), { target: { value: 'eBay SOR box' } });
+      await user.click(screen.getByRole('button', { name: 'Add 1 card to collection' }));
+      await waitFor(() => expect(batchMocks.appendToBatch).toHaveBeenCalled());
+      await waitFor(() => {
+        const saved = localStorage.setItem.mock.calls.filter(([k]) => k === 'swu-scan-draft-uid-1').at(-1);
+        expect(JSON.parse(saved[1]).batch).toMatchObject({ syncedName: 'eBay SOR box', syncedPricePaid: null });
+      });
+    });
+
     it('appends the committed cards to the batch with details, prices and new-card flags', async () => {
       const user = userEvent.setup();
       mocks.commitDraft.mockImplementation(async (draft, ref, { onProgress }) => { onProgress({ rows: [] }); return { rows: [] }; });

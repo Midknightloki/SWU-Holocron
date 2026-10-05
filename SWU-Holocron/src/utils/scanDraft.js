@@ -137,6 +137,19 @@ export function setBatchName(draft, name) {
   return draft.batch ? { ...draft, batch: { ...draft.batch, name } } : draft;
 }
 
+/**
+ * A typed price: "$40", "1,200.50", "40,00" (decimal comma). Blank is null
+ * (no price); anything unreadable is undefined, so the field can say so.
+ */
+export function parsePricePaid(text) {
+  let s = String(text ?? '').trim().replace(/^\$/, '').replace(/\s/g, '');
+  if (s === '') return null;
+  // A lone comma with one or two digits after it is a decimal comma.
+  s = /^\d+,\d{1,2}$/.test(s) ? s.replace(',', '.') : s.replace(/,/g, '');
+  if (!/^\d+(\.\d+)?$/.test(s)) return undefined;
+  return Number(s);
+}
+
 export function setPricePaid(draft, amount) {
   const pricePaid = typeof amount === 'number' && Number.isFinite(amount) && amount >= 0 ? amount : null;
   return draft.batch ? { ...draft, batch: { ...draft.batch, pricePaid } } : draft;

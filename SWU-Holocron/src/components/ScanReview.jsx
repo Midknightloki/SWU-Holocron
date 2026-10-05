@@ -5,7 +5,7 @@ import { CardService } from '../services/CardService';
 import { PhotoStore } from '../services/photoStore';
 import { getCardQuantities, isHorizontalCard } from '../utils/collectionHelpers';
 import {
-  countByStatus, groupRows, removeRows, resolveManually, setFoil, setGroupQuantity,
+  countByStatus, groupRows, parsePricePaid, removeRows, resolveManually, setFoil, setGroupQuantity,
 } from '../utils/scanDraft';
 
 /**
@@ -97,6 +97,7 @@ export default function ScanReview({
   const [pickingFor, setPickingFor] = useState(null);
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const [viewing, setViewing] = useState(null);
+  const [priceInvalid, setPriceInvalid] = useState(false);
 
   const groups = groupRows(draft);
   const counts = countByStatus(draft);
@@ -136,15 +137,18 @@ export default function ScanReview({
           />
           {/* Uncontrolled: a half-typed "12." must stay on screen while the batch holds 12. */}
           <input
+            key={batch.id}
             aria-label="Price paid"
+            aria-invalid={priceInvalid}
             inputMode="decimal"
             placeholder="Price paid"
             defaultValue={batch.pricePaid ?? ''}
             onChange={(e) => {
-              const v = e.target.value.trim() === '' ? null : Number(e.target.value);
-              onBatchChange({ pricePaid: Number.isFinite(v) && v >= 0 ? v : null });
+              const v = parsePricePaid(e.target.value);
+              setPriceInvalid(v === undefined);
+              onBatchChange({ pricePaid: v ?? null });
             }}
-            className="w-28 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm"
+            className={`w-28 bg-gray-800 border rounded-lg px-3 py-1.5 text-sm ${priceInvalid ? 'border-red-500' : 'border-gray-700'}`}
           />
         </div>
       )}

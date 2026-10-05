@@ -259,6 +259,18 @@ describe('ScanReview', () => {
     expect(onBatchChange).toHaveBeenLastCalledWith({ pricePaid: null });
   });
 
+  it('accepts $ and commas in the price, and marks what it cannot read', () => {
+    const onBatchChange = vi.fn();
+    renderReview(build([['a', LUKE]]), { batch: { id: 'b1', name: 'B', pricePaid: null }, onBatchChange });
+    const price = screen.getByLabelText('Price paid');
+    fireEvent.change(price, { target: { value: '$1,200' } });
+    expect(onBatchChange).toHaveBeenLastCalledWith({ pricePaid: 1200 });
+    expect(price).not.toHaveAttribute('aria-invalid', 'true');
+    fireEvent.change(price, { target: { value: 'forty' } });
+    expect(onBatchChange).toHaveBeenLastCalledWith({ pricePaid: null });
+    expect(price).toHaveAttribute('aria-invalid', 'true');
+  });
+
   it('shows no batch fields without a batch', () => {
     renderReview(build([['a', LUKE]]));
     expect(screen.queryByLabelText('Batch name')).not.toBeInTheDocument();

@@ -2,6 +2,9 @@
  * CSV export of a batch report: one row per card line, then summary rows.
  * Quoting follows RFC 4180 (fields with a comma, quote or newline are quoted,
  * quotes doubled), the same standard csvParser.js reads.
+ *
+ * It starts with a UTF-8 byte order mark: without one, Excel on Windows reads
+ * the file as ANSI and garbles accented names (Padmé).
  */
 export const BATCH_CSV_HEADER = ['Set', 'Number', 'Name', 'Type', 'Rarity', 'Aspects', 'Variant', 'Foil', 'Qty', 'New', 'Price at add', 'Value at add', 'Price now'];
 
@@ -32,7 +35,7 @@ export function toBatchCsv(report) {
   lines.push(row(['Price paid', money(report.pricePaid)]));
   lines.push(row(['Net', money(report.net)]));
   lines.push(row(['Multiple', report.multiple === null ? '' : `${report.multiple}x`]));
-  return lines.join('\r\n');
+  return `﻿${lines.join('\r\n')}`;
 }
 
 export function batchCsvFilename(name, createdAt) {
