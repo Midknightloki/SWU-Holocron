@@ -918,5 +918,54 @@ describe('CardScanner', () => {
       expect(await screen.findByRole('alert')).toHaveTextContent(/batch report couldn.t be updated/i);
       expect(mocks.commitDraft).toHaveBeenCalledTimes(1);
     });
+    it('stays open with the warning when a whole-batch report fails, and can retry it', async () => {
+      const user = userEvent.setup();
+      const onClose = vi.fn();
+      batchMocks.appendToBatch.mockResolvedValueOnce({ error: 'offline' });
+      mocks.commitDraft.mockImplementation(async () => ({ rows: [] }));
+      renderScanner({ onClose });
+      pressSpace();
+      await user.click(await screen.findByRole('button', { name: 'Review (1)' }));
+      await user.click(screen.getByRole('button', { name: 'Add 1 card to collection' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent(/batch report couldn.t be updated/i);
+      expect(onClose).not.toHaveBeenCalled();
+      await user.click(screen.getByRole('button', { name: 'Retry batch report' }));
+      expect(await screen.findByRole('dialog', { name: 'Batch report' })).toBeInTheDocument();
+      expect(batchMocks.appendToBatch).toHaveBeenCalledTimes(2);
+      expect(batchMocks.appendToBatch.mock.calls[1][2]).toEqual(batchMocks.appendToBatch.mock.calls[0][2]);
+      expect(batchMocks.closeBatch).toHaveBeenCalled();
+    });
+
+    it('closes and reports a batch emptied by removing the leftovers after an Add', async () => {
+      const user = userEvent.setup();
+      mocks.commitDraft.mockImplementation(async (draft) => ({ rows: draft.rows.filter((r) => r.status !== 'matched') }));
+      renderScanner();
+      pressSpace(); await flush();
+      mocks.scan.mockResolvedValueOnce({ status: 'unidentified', reason: 'unreadable', read: null });
+      pressSpace();
+      await user.click(await screen.findByRole('button', { name: 'Review (2)' }));
+      await user.click(screen.getByRole('button', { name: 'Add 1 card to collection' }));
+      await waitFor(() => expect(batchMocks.appendToBatch).toHaveBeenCalled());
+      expect(screen.queryByRole('dialog', { name: 'Batch report' })).not.toBeInTheDocument();
+      await user.click(await screen.findByRole('button', { name: 'Remove' }));
+      expect(await screen.findByRole('dialog', { name: 'Batch report' })).toBeInTheDocument();
+      expect(batchMocks.closeBatch).toHaveBeenCalled();
+    });
+
+    it('reports the cards that were added before a later save failed', async () => {
+      const user = userEvent.setup();
+      mocks.scan.mockResolvedValueOnce(LUKE).mockResolvedValueOnce({ status: 'matched', set: 'SOR', number: '010', name: 'Darth Vader' });
+      mocks.commitDraft.mockImplementation(async (draft, ref, { onProgress }) => {
+        onProgress({ rows: draft.rows.filter((r) => r.number !== '012') });
+        throw new Error('network');
+      });
+      renderScanner();
+      pressSpace(); await flush();
+      pressSpace();
+      await user.click(await screen.findByRole('button', { name: 'Review (2)' }));
+      await user.click(screen.getByRole('button', { name: 'Add 2 cards to collection' }));
+      await waitFor(() => expect(batchMocks.appendToBatch).toHaveBeenCalled());
+      expect(batchMocks.appendToBatch.mock.calls[0][2].map((l) => l.id)).toEqual(['SOR_012_std']);
+    });
   });
 });

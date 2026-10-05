@@ -237,6 +237,13 @@ describe('batch metadata', () => {
     expect(d.batch.id).toBe('b1');
   });
 
+  it('starts a new batch once an added batch has emptied, and keeps an unadded one', () => {
+    const added = { ...withBatch(), batch: { ...withBatch().batch, appended: true } };
+    expect(ensureBatch(added, NOW + 1, 'b2').batch.id).toBe('b2');
+    expect(ensureBatch(capture(added, 'a'), NOW + 1, 'b2').batch.id).toBe('b1');
+    expect(ensureBatch(withBatch(), NOW + 1, 'b2').batch.id).toBe('b1');
+  });
+
   it('round-trips the batch through storage', () => {
     const storage = memoryStorage();
     saveDraft(storage, 'uid-1', setBatchName(withBatch(), 'Pre-release'));

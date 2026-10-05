@@ -92,7 +92,7 @@ function Photo({ id, hasPhoto, getPhoto, onView }) {
 
 export default function ScanReview({
   draft, onChange, onRetry, onBack, onCommit, onDiscard, committing, commitError,
-  collectionData = {}, getPhoto = PhotoStore.get, batch = null, onBatchChange = () => {},
+  collectionData = {}, getPhoto = PhotoStore.get, batch = null, onBatchChange = () => {}, onRetryReport = () => {},
 }) {
   const [pickingFor, setPickingFor] = useState(null);
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
@@ -290,6 +290,16 @@ export default function ScanReview({
       <div className="px-4 py-3 bg-gray-900 border-t border-gray-800 space-y-2">
         {commitError && (
           <p role="alert" className="text-sm text-red-400">{commitError}</p>
+        )}
+        {batch?.pending?.length > 0 && (
+          <button
+            type="button"
+            disabled={committing}
+            onClick={onRetryReport}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-sm"
+          >
+            <RotateCcw size={14} aria-hidden="true" />Retry batch report
+          </button>
         )}
         {attention > 0 && (
           <p className="text-xs text-gray-400">
