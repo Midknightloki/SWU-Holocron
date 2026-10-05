@@ -2,7 +2,7 @@
  * Card-scanner batch ("draft"): the rows captured in a scanning session,
  * before the user approves them into their collection.
  *
- * Pure functions over an immutable { rows } value. The storage helpers take
+ * Pure functions over an immutable { rows, batch? } value. The storage helpers take
  * the storage object as a parameter so tests need no real localStorage, and
  * they never throw -- a private window or a full quota must not stop scanning.
  *
@@ -20,13 +20,14 @@ export const emptyDraft = () => ({ rows: [] });
 
 const mapRows = (draft, ids, fn) => {
   const wanted = new Set(ids);
-  return { rows: draft.rows.map((row) => (wanted.has(row.id) ? fn(row) : row)) };
+  return { ...draft, rows: draft.rows.map((row) => (wanted.has(row.id) ? fn(row) : row)) };
 };
 
 // The photo itself lives in the photo store (IndexedDB), keyed by row id; a
 // row only records that it has one, so a whole box never sits in memory.
 export function addCapture(draft, { id, isFoil }) {
   return {
+    ...draft,
     rows: [...draft.rows, { id, status: 'reading', isFoil: Boolean(isFoil), qty: 1, hasPhoto: true }],
   };
 }
@@ -71,7 +72,7 @@ export function setFoil(draft, ids, isFoil) {
 
 export function removeRows(draft, ids) {
   const gone = new Set(ids);
-  return { rows: draft.rows.filter((row) => !gone.has(row.id)) };
+  return { ...draft, rows: draft.rows.filter((row) => !gone.has(row.id)) };
 }
 
 export const groupKey = (row) =>
@@ -113,10 +114,29 @@ export function setGroupQuantity(draft, key, qty) {
   const [keep, ...rest] = members;
   const dropped = new Set(rest.map((row) => row.id));
   return {
+    ...draft,
     rows: draft.rows
       .filter((row) => !dropped.has(row.id))
       .map((row) => (row.id === keep.id ? { ...row, qty } : row)),
   };
+}
+
+// Batch metadata (a box, a pre-release): created on the first capture, kept
+// with the rows, and carried by every helper above so no edit loses it.
+export const defaultBatchName = (ms) => `Batch ${new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+
+export function ensureBatch(draft, now, id) {
+  if (draft.batch) return draft;
+  return { ...draft, batch: { id, name: defaultBatchName(now), pricePaid: null, createdAt: now } };
+}
+
+export function setBatchName(draft, name) {
+  return draft.batch ? { ...draft, batch: { ...draft.batch, name } } : draft;
+}
+
+export function setPricePaid(draft, amount) {
+  const pricePaid = typeof amount === 'number' && Number.isFinite(amount) && amount >= 0 ? amount : null;
+  return draft.batch ? { ...draft, batch: { ...draft.batch, pricePaid } } : draft;
 }
 
 export function toWrites(draft) {
@@ -143,7 +163,7 @@ export function countByStatus(draft) {
 
 export function saveDraft(storage, uid, draft) {
   try {
-    storage.setItem(draftKey(uid), JSON.stringify({ rows: draft.rows }));
+    storage.setItem(draftKey(uid), JSON.stringify({ rows: draft.rows, batch: draft.batch ?? null }));
     return true;
   } catch {
     return false;
@@ -156,6 +176,7 @@ export function loadDraft(storage, uid) {
     if (!raw) return emptyDraft();
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed?.rows)) return emptyDraft();
+    const batch = parsed.batch && typeof parsed.batch.id === 'string' ? parsed.batch : undefined;
     // Rows still reading stay reading: the scanner queues them again if their
     // photo is in the store. Drafts from before the photo store carried the
     // image inline -- drop it rather than hold it in memory.
@@ -163,6 +184,7 @@ export function loadDraft(storage, uid) {
       rows: parsed.rows
         .filter((row) => row && typeof row.id === 'string')
         .map(({ photo, hadPhoto, ...row }) => ({ ...row, hasPhoto: Boolean(row.hasPhoto) })),
+      ...(batch ? { batch } : {}),
     };
   } catch {
     return emptyDraft();

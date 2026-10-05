@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   emptyDraft, draftKey, addCapture, applyResult, markReading, resolveManually,
   setFoil, removeRows, groupRows, setGroupQuantity, toWrites, countByStatus, markWaiting,
-  saveDraft, loadDraft, clearDraft,
+  saveDraft, loadDraft, clearDraft, ensureBatch, setBatchName, setPricePaid, defaultBatchName,
 } from '../../utils/scanDraft';
 
 const memoryStorage = () => {
@@ -205,5 +205,41 @@ describe('persistence', () => {
     saveDraft(storage, 'uid-1', matched(emptyDraft(), 'a'));
     clearDraft(storage, 'uid-1');
     expect(loadDraft(storage, 'uid-1')).toEqual(emptyDraft());
+  });
+});
+
+describe('batch metadata', () => {
+  const NOW = Date.UTC(2026, 9, 5, 12);
+  const withBatch = () => ensureBatch(emptyDraft(), NOW, 'b1');
+
+  it('creates the batch lazily with a dated default name, once', () => {
+    const d = withBatch();
+    expect(d.batch).toEqual({ id: 'b1', name: defaultBatchName(NOW), pricePaid: null, createdAt: NOW });
+    expect(defaultBatchName(NOW)).toBe('Batch Oct 5');
+    expect(ensureBatch(d, NOW + 1, 'b2').batch.id).toBe('b1');
+  });
+
+  it('renames and prices the batch; a bad price becomes null', () => {
+    let d = setBatchName(withBatch(), 'eBay SOR box');
+    d = setPricePaid(d, 89.99);
+    expect(d.batch).toMatchObject({ name: 'eBay SOR box', pricePaid: 89.99 });
+    expect(setPricePaid(d, -1).batch.pricePaid).toBeNull();
+    expect(setPricePaid(d, NaN).batch.pricePaid).toBeNull();
+  });
+
+  it('every draft operation keeps the batch metadata', () => {
+    let d = capture(withBatch(), 'a');
+    d = applyResult(d, 'a', LUKE);
+    d = setFoil(d, ['a'], true);
+    d = setGroupQuantity(d, 'SOR_012_foil', 3);
+    d = markReading(d, 'a');
+    d = removeRows(d, ['a']);
+    expect(d.batch.id).toBe('b1');
+  });
+
+  it('round-trips the batch through storage', () => {
+    const storage = memoryStorage();
+    saveDraft(storage, 'uid-1', setBatchName(withBatch(), 'Pre-release'));
+    expect(loadDraft(storage, 'uid-1').batch).toMatchObject({ id: 'b1', name: 'Pre-release' });
   });
 });
