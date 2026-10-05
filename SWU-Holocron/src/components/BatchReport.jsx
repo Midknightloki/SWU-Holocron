@@ -222,6 +222,7 @@ export default function BatchReport({ uid, batchId, onClose, onDeleted }) {
 
       {report.topPulls.length > 0 && <CardList title="Top pulls" lines={report.topPulls} testId="top-pulls" />}
       {report.newCards.length > 0 && <CardList title="New to your collection" lines={report.newCards} testId="new-cards" />}
+      {report.otherFinish.length > 0 && <CardList title="Priced from the other finish" lines={report.otherFinish} testId="other-finish" />}
       {report.unpriced.length > 0 && <CardList title="No price data" lines={report.unpriced} testId="unpriced" price={false} />}
     </>,
   );

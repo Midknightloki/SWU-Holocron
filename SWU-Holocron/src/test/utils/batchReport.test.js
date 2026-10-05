@@ -62,6 +62,14 @@ describe('buildReport', () => {
     expect(r.topPulls.map((l) => l.id)).toEqual(['SOR_200_std', 'SOR_010_foil', 'SOR_010_std', 'SOR_050_std']);
   });
 
+  it('flags prices taken from the other finish, still counting them', () => {
+    const b = { ...BATCH, cards: { ...BATCH.cards, SOR_010_foil: { ...BATCH.cards.SOR_010_foil, priceIsFallback: true } } };
+    const flagged = buildReport(b);
+    expect(flagged.otherFinish.map((l) => l.id)).toEqual(['SOR_010_foil']);
+    expect(flagged.valueAtAdd).toBe(110.5);
+    expect(r.otherFinish).toEqual([]);
+  });
+
   it('sorts lines by set then number', () => {
     expect(r.lines.map((l) => l.id)).toEqual(['SOR_010_foil', 'SOR_010_std', 'SOR_050_std', 'SOR_051_std', 'SOR_200_std']);
   });

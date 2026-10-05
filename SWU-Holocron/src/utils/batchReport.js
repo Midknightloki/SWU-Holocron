@@ -55,6 +55,7 @@ export function buildReport(batch, currentPrices = null) {
     valueAtAdd,
     valueNow,
     unpriced: lines.filter((l) => !isPriced(l.priceAtAdd)),
+    otherFinish: lines.filter((l) => l.priceIsFallback && isPriced(l.priceAtAdd)),
     net: pricePaid === null ? null : cents(valueAtAdd - pricePaid),
     multiple: pricePaid ? cents(valueAtAdd / pricePaid) : null,
     byRarity: breakdown(lines, (l) => [l.rarity ?? 'Unknown']),

@@ -618,6 +618,8 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
       qty: w.qty,
       isNew: getCardQuantities(collectionRefData.current, w.set, w.number).total === 0,
       priceAtAdd: typeof prices?.[w.collectionId]?.market === 'number' ? prices[w.collectionId].market : null,
+      // No price for this finish: the other finish's, flagged in the report.
+      priceIsFallback: Boolean(prices?.[w.collectionId]?.isFallback),
       rowIds: w.rowIds,
     }));
     const committedIds = new Set();

@@ -887,7 +887,19 @@ describe('CardScanner', () => {
       const [uid, batch, lines] = batchMocks.appendToBatch.mock.calls[0];
       expect(uid).toBe('uid-1');
       expect(batch).toMatchObject({ name: 'eBay SOR box' });
-      expect(lines).toEqual([{ id: 'SOR_012_std', set: 'SOR', number: '012', name: 'Luke Skywalker', type: 'Leader', rarity: 'Rare', aspects: ['Vigilance'], variant: 'Normal', isFoil: false, qty: 1, isNew: true, priceAtAdd: 4.5 }]);
+      expect(lines).toEqual([{ id: 'SOR_012_std', set: 'SOR', number: '012', name: 'Luke Skywalker', type: 'Leader', rarity: 'Rare', aspects: ['Vigilance'], variant: 'Normal', isFoil: false, qty: 1, isNew: true, priceAtAdd: 4.5, priceIsFallback: false }]);
+    });
+
+    it('flags a price borrowed from the other finish', async () => {
+      const user = userEvent.setup();
+      batchMocks.getBulkPrices.mockResolvedValue({ SOR_012_std: { market: 9, isFallback: true } });
+      mocks.commitDraft.mockImplementation(async () => ({ rows: [] }));
+      renderScanner();
+      pressSpace();
+      await user.click(await screen.findByRole('button', { name: 'Review (1)' }));
+      await user.click(screen.getByRole('button', { name: 'Add 1 card to collection' }));
+      await waitFor(() => expect(batchMocks.appendToBatch).toHaveBeenCalled());
+      expect(batchMocks.appendToBatch.mock.calls[0][2][0]).toMatchObject({ priceAtAdd: 9, priceIsFallback: true });
     });
 
     it('closes the batch and shows its report when the batch empties', async () => {
