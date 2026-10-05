@@ -155,6 +155,17 @@ these on real hardware and record the results in the PR:
   on binder and dashboard at phone width. A non-Pro, non-admin account and a
   guest see none of them.
 
+## User management — manual checks
+
+- Deploy: `firebase deploy --only functions:adminListUsers,functions:adminGetUserDetail,functions:adminSetRole`.
+- Admin console → **Users**: the list loads, search and the role filter work,
+  **Show guests** adds guest accounts.
+- Open a user: collection, batches, decks and last scan day look right.
+- Grant **Pro** to a test account, reload the app as that account and check it
+  can scan; revoke it and check it can't. The change appears under "Recent
+  role changes".
+- A non-admin calling the functions gets "Admins only."
+
 ## Prebuilt decks — manual checks
 
 - Run **Sync Card Database** with `workflow_dispatch`; the sync summary shows
