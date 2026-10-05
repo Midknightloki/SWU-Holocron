@@ -8,7 +8,20 @@ import React from 'react';
 
 const mocks = vi.hoisted(() => ({
   scan: vi.fn(), commitDraft: vi.fn(), capturePhoto: vi.fn(), prefetchSets: vi.fn(),
-  captureVideoFrame: vi.fn(), sharpness: 200,
+  captureVideoFrame: vi.fn(), sharpness: 200, cardDetails: vi.fn(),
+}));
+const batchMocks = vi.hoisted(() => ({ appendToBatch: vi.fn(), closeBatch: vi.fn(), getBulkPrices: vi.fn() }));
+vi.mock('../../services/BatchService', () => ({
+  BatchService: { appendToBatch: batchMocks.appendToBatch, closeBatch: batchMocks.closeBatch },
+}));
+vi.mock('../../services/PricingService', () => ({ PricingService: { getBulkPrices: batchMocks.getBulkPrices } }));
+vi.mock('../BatchReport', () => ({
+  default: ({ batchId, onClose }) => (
+    <div role="dialog" aria-label="Batch report">
+      report {batchId}
+      <button type="button" onClick={onClose}>close-report</button>
+    </div>
+  ),
 }));
 // Photos live in the photo store now: an in-memory stand-in.
 const photos = vi.hoisted(() => ({ map: new Map(), remove: vi.fn(), clear: vi.fn() }));
@@ -23,7 +36,7 @@ vi.mock('../../services/photoStore', () => ({
 vi.mock('../../utils/sharpness', () => ({ laplacianVariance: () => mocks.sharpness }));
 
 vi.mock('../../services/ScanService', () => ({
-  ScanService: { scan: mocks.scan, commitDraft: mocks.commitDraft, prefetchSets: mocks.prefetchSets },
+  ScanService: { scan: mocks.scan, commitDraft: mocks.commitDraft, prefetchSets: mocks.prefetchSets, cardDetails: mocks.cardDetails },
 }));
 vi.mock('../../utils/frameCapture', () => ({ capturePhoto: mocks.capturePhoto, captureVideoFrame: mocks.captureVideoFrame }));
 vi.mock('../CardPickerModal', () => ({ default: () => null }));
@@ -111,6 +124,10 @@ beforeEach(() => {
   photos.remove.mockClear();
   photos.clear.mockClear();
   mocks.scan.mockResolvedValue(LUKE);
+  mocks.cardDetails.mockResolvedValue({ type: 'Leader', rarity: 'Rare', aspects: ['Vigilance'], variant: 'Normal' });
+  batchMocks.appendToBatch.mockResolvedValue({ ok: true });
+  batchMocks.closeBatch.mockResolvedValue({ ok: true });
+  batchMocks.getBulkPrices.mockResolvedValue({ SOR_012_std: { market: 4.5 } });
   stubCamera(async () => ({ getTracks: () => [TRACK], getVideoTracks: () => [TRACK] }));
 });
 
@@ -817,6 +834,8 @@ describe('CardScanner', () => {
     await user.click(await screen.findByRole('button', { name: 'Review (1)' }));
     await user.click(await screen.findByRole('button', { name: 'Add 1 card to collection' }));
     expect(mocks.commitDraft).toHaveBeenCalledWith(expect.any(Object), { id: 'ref' }, expect.any(Object));
+    // A finished batch shows its report first; closing that closes the scanner.
+    await user.click(await screen.findByText('close-report'));
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(localStorage.removeItem).toHaveBeenCalledWith('swu-scan-draft-uid-1');
   });
@@ -853,5 +872,51 @@ describe('CardScanner', () => {
     await user.click(await screen.findByRole('button', { name: 'Review (1)' }));
     await user.click(await screen.findByRole('button', { name: 'Add 1 card to collection' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/won't be added twice/);
+  });
+
+  describe('batches', () => {
+    it('appends the committed cards to the batch with details, prices and new-card flags', async () => {
+      const user = userEvent.setup();
+      mocks.commitDraft.mockImplementation(async (draft, ref, { onProgress }) => { onProgress({ rows: [] }); return { rows: [] }; });
+      renderScanner({ collectionData: {} });
+      pressSpace();
+      await user.click(await screen.findByRole('button', { name: 'Review (1)' }));
+      fireEvent.change(screen.getByLabelText('Batch name'), { target: { value: 'eBay SOR box' } });
+      await user.click(screen.getByRole('button', { name: 'Add 1 card to collection' }));
+      await waitFor(() => expect(batchMocks.appendToBatch).toHaveBeenCalled());
+      const [uid, batch, lines] = batchMocks.appendToBatch.mock.calls[0];
+      expect(uid).toBe('uid-1');
+      expect(batch).toMatchObject({ name: 'eBay SOR box' });
+      expect(lines).toEqual([{ id: 'SOR_012_std', set: 'SOR', number: '012', name: 'Luke Skywalker', type: 'Leader', rarity: 'Rare', aspects: ['Vigilance'], variant: 'Normal', isFoil: false, qty: 1, isNew: true, priceAtAdd: 4.5 }]);
+    });
+
+    it('closes the batch and shows its report when the batch empties', async () => {
+      const user = userEvent.setup();
+      const onClose = vi.fn();
+      mocks.commitDraft.mockImplementation(async (draft, ref, { onProgress }) => { onProgress({ rows: [] }); return { rows: [] }; });
+      renderScanner({ onClose });
+      pressSpace();
+      await user.click(await screen.findByRole('button', { name: 'Review (1)' }));
+      await user.click(screen.getByRole('button', { name: 'Add 1 card to collection' }));
+      expect(await screen.findByRole('dialog', { name: 'Batch report' })).toBeInTheDocument();
+      expect(batchMocks.closeBatch).toHaveBeenCalled();
+      expect(onClose).not.toHaveBeenCalled();
+      await user.click(screen.getByText('close-report'));
+      expect(onClose).toHaveBeenCalled();
+    });
+
+    it('keeps the cards added when the report cannot be updated', async () => {
+      const user = userEvent.setup();
+      batchMocks.appendToBatch.mockResolvedValue({ error: 'offline' });
+      mocks.commitDraft.mockImplementation(async (draft) => ({ rows: draft.rows.filter((r) => r.status !== 'matched') }));
+      renderScanner();
+      pressSpace(); await flush();
+      mocks.scan.mockResolvedValueOnce({ status: 'unidentified', reason: 'unreadable', read: null });
+      pressSpace();
+      await user.click(await screen.findByRole('button', { name: 'Review (2)' }));
+      await user.click(screen.getByRole('button', { name: 'Add 1 card to collection' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent(/batch report couldn.t be updated/i);
+      expect(mocks.commitDraft).toHaveBeenCalledTimes(1);
+    });
   });
 });
