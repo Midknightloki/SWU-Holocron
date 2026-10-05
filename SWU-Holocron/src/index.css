@@ -43,3 +43,9 @@ html {
 .animate-shimmer {
   animation: shimmer 2s infinite;
 }
+/* Batch report: printing (Save as PDF) shows only the report. */
+@media print {
+  body * { visibility: hidden; }
+  #batch-report, #batch-report * { visibility: visible; }
+  #batch-report { position: absolute; inset: 0; overflow: visible; }
+}
