@@ -7,6 +7,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
+vi.mock('../../components/AdminUsers', () => ({ default: () => <div>user management</div> }));
 vi.mock('../../components/AdminPrebuiltDecks', () => ({ default: ({ uid }) => <div>prebuilt review for {uid}</div> }));
 import AdminPanel from '../../components/AdminPanel';
 import { AuthContext } from '../../contexts/AuthContext';
@@ -96,6 +97,17 @@ describe('AdminPanel', () => {
       );
       await user.click(await screen.findByRole('button', { name: /Prebuilt Decks/ }));
       expect(screen.getByText(`prebuilt review for ${mockAdminUser.uid}`)).toBeInTheDocument();
+    });
+
+    it('has a Users tab for admins', async () => {
+      const user = userEvent.setup();
+      render(
+        <AuthContext.Provider value={{ user: mockAdminUser, isAdmin: true, loading: false, adminLoading: false }}>
+          <AdminPanel />
+        </AuthContext.Provider>
+      );
+      await user.click(await screen.findByRole('button', { name: /^Users$/ }));
+      expect(screen.getByText('user management')).toBeInTheDocument();
     });
 
     it('should show loading state while checking admin status', () => {
