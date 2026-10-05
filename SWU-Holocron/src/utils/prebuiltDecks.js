@@ -81,14 +81,26 @@ export function suggestProduct(deck, products) {
   return best;
 }
 
+/**
+ * Which listed decks to fetch: new ones, and stored ones edited at the source
+ * since the copy we hold (for a changed deck, the pending copy). A deck added
+ * by link has no source date, so it is fetched once to adopt one. What an
+ * update does depends on the stored status -- see the sync.
+ */
 export function planSync(listed, stored) {
   const out = [];
   for (const deck of listed) {
     const prior = stored[deck.id];
-    if (!prior) out.push({ sourceId: deck.id, reason: 'new' });
-    else if (prior.status !== 'ignored' && deck.updatedDate > (prior.sourceUpdatedAt ?? '')) {
-      out.push({ sourceId: deck.id, reason: 'changed' });
+    if (!prior) {
+      out.push({ sourceId: deck.id, reason: 'new' });
+      continue;
     }
+    if (prior.status === 'ignored') continue;
+    const held = prior.pending?.sourceUpdatedAt ?? prior.sourceUpdatedAt ?? '';
+    if ((deck.updatedDate ?? '') > held) out.push({ sourceId: deck.id, reason: 'update' });
   }
   return out;
 }
+
+const cardKey = (cards) => (cards ?? []).map((c) => `${c.id}x${c.qty}`).sort().join(',');
+export const sameCards = (a, b) => cardKey(a) === cardKey(b);

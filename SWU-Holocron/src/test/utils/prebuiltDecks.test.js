@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   parseDeckLink, splitCardId, parseDeckApi, findMissingCards, isPreconProduct,
-  deckSetCode, suggestProduct, planSync, deckApiUrl,
+  deckSetCode, suggestProduct, planSync, deckApiUrl, sameCards,
 } from '../../utils/prebuiltDecks';
 
 const PALPATINE = {
@@ -132,6 +132,24 @@ describe('planSync', () => {
       3: { status: 'published', sourceUpdatedAt: '2026-07-01T00:00:00Z' },
       4: { status: 'ignored', sourceUpdatedAt: '2026-07-01T00:00:00Z' },
     };
-    expect(planSync(listed, stored)).toEqual([{ sourceId: 1, reason: 'new' }, { sourceId: 3, reason: 'changed' }]);
+    expect(planSync(listed, stored)).toEqual([{ sourceId: 1, reason: 'new' }, { sourceId: 3, reason: 'update' }]);
+  });
+
+  it('refetches a deck added by link (no source date) once, and a changed deck only when edited again', () => {
+    const listed = [{ id: 5, updatedDate: '2026-07-01' }, { id: 6, updatedDate: '2026-08-01' }, { id: 7, updatedDate: '2026-09-01' }];
+    const stored = {
+      5: { status: 'published', sourceUpdatedAt: null },
+      6: { status: 'changed', sourceUpdatedAt: '2026-07-01', pending: { sourceUpdatedAt: '2026-08-01' } },
+      7: { status: 'changed', sourceUpdatedAt: '2026-07-01', pending: { sourceUpdatedAt: '2026-08-01' } },
+    };
+    expect(planSync(listed, stored)).toEqual([{ sourceId: 5, reason: 'update' }, { sourceId: 7, reason: 'update' }]);
+  });
+});
+
+describe('sameCards', () => {
+  it('compares card lists regardless of order', () => {
+    expect(sameCards([{ id: 'A', qty: 1 }, { id: 'B', qty: 2 }], [{ id: 'B', qty: 2 }, { id: 'A', qty: 1 }])).toBe(true);
+    expect(sameCards([{ id: 'A', qty: 1 }], [{ id: 'A', qty: 2 }])).toBe(false);
+    expect(sameCards([{ id: 'A', qty: 1 }], [])).toBe(false);
   });
 });

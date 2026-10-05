@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { PrebuiltDeckService } from '../services/PrebuiltDeckService';
-import { CardService } from '../services/CardService';
+import { loadSet } from '../services/setLoader';
 
 /**
  * Admin review of prebuilt (precon) decks. The weekly sync brings in the
@@ -14,19 +14,22 @@ const LINK_ERRORS = {
   'not-found': 'No published deck at that link.',
 };
 
-// Every card id we know, so an added deck's unknown cards can be flagged.
-async function defaultLoadKnownIds() {
+// The card ids of just the sets a deck uses (through the app's IndexedDB
+// cache), so its unknown cards can be flagged. A set that won't load is left
+// unchecked rather than having all its cards flagged missing.
+async function defaultLoadKnownIds(setCodes) {
   const known = new Set();
-  const registry = await CardService.getSetRegistry();
-  await Promise.all(registry.map(async ({ code }) => {
+  const checkedSets = new Set();
+  await Promise.all(setCodes.map(async (code) => {
     try {
-      const { data } = await CardService.fetchSetData(code);
-      for (const c of data ?? []) known.add(`${c.Set}_${c.Number}`);
+      const { cards } = await loadSet(code);
+      for (const c of cards ?? []) known.add(`${c.Set}_${c.Number}`);
+      checkedSets.add(code);
     } catch {
-      // A set that won't load just isn't checked.
+      // Unchecked: the weekly sync rechecks every deck anyway.
     }
   }));
-  return known;
+  return { known, checkedSets };
 }
 
 const countCards = (cards) => (cards ?? []).reduce((s, c) => s + c.qty, 0);
@@ -39,6 +42,8 @@ export default function AdminPrebuiltDecks({ uid, loadKnownIds = defaultLoadKnow
   const [link, setLink] = useState('');
   const [message, setMessage] = useState(null);
   const [busy, setBusy] = useState(false);
+  // The deck whose Publish is waiting on "publish anyway" (it has missing cards).
+  const [confirming, setConfirming] = useState(null);
 
   const load = useCallback(async () => {
     const [list, prods] = await Promise.all([PrebuiltDeckService.listDecks(), PrebuiltDeckService.listProducts()]);
@@ -65,8 +70,7 @@ export default function AdminPrebuiltDecks({ uid, loadKnownIds = defaultLoadKnow
   const fetchDeck = async () => {
     setBusy(true);
     setMessage(null);
-    const knownIds = await loadKnownIds();
-    const res = await PrebuiltDeckService.addFromLink(link, { knownIds });
+    const res = await PrebuiltDeckService.addFromLink(link, { loadKnownIds });
     if (res?.error) setMessage(LINK_ERRORS[res.error] ?? `Couldn't add that deck: ${res.error}`);
     else setLink('');
     await load();
@@ -76,6 +80,9 @@ export default function AdminPrebuiltDecks({ uid, loadKnownIds = defaultLoadKnow
   const card = (deck) => {
     const label = deck.sourceName;
     const product = productFor(deck);
+    // A changed deck is judged by what accepting it would bring in.
+    const issues = deck.status === 'changed' ? deck.pending?.issues ?? [] : deck.issues ?? [];
+    const publish = () => run(() => PrebuiltDeckService.publish(deck.id, { product, name: names[deck.id] ?? deck.name ?? label }, uid));
     return (
       <li key={deck.id} className="rounded-xl bg-gray-800 border border-gray-700 p-3 space-y-2">
         <div className="flex flex-wrap items-center gap-2">
@@ -86,10 +93,11 @@ export default function AdminPrebuiltDecks({ uid, loadKnownIds = defaultLoadKnow
             <span className="text-xs text-gray-400">→ {countCards(deck.pending.cards)} cards after the change</span>
           )}
         </div>
-        {deck.issues?.length > 0 && (
-          <p className="text-xs text-red-300">Not in our database: {deck.issues.map((i) => i.id).join(', ')}</p>
+        {issues.length > 0 && (
+          <p className="text-xs text-red-300">Not in our database: {issues.map((i) => i.id).join(', ')}</p>
         )}
-        {deck.status !== 'ignored' && (
+        {/* Only a deck under review has anything to save: Publish sends these. */}
+        {deck.status === 'review' && (
           <div className="flex flex-wrap gap-2">
             <input
               aria-label={`Display name for ${label}`}
@@ -112,21 +120,33 @@ export default function AdminPrebuiltDecks({ uid, loadKnownIds = defaultLoadKnow
         )}
         <div className="flex flex-wrap gap-2 text-sm">
           {deck.status === 'review' && (
-            <>
+            confirming === deck.id ? (
+              <>
+                <span className="text-yellow-300">
+                  {issues.length} {issues.length === 1 ? "card isn't" : "cards aren't"} in our database and will be skipped when added.
+                </span>
+                <button type="button" disabled={busy} aria-label={`Publish anyway: ${label}`}
+                  onClick={() => { setConfirming(null); publish(); }}
+                  className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 text-white font-semibold">Publish anyway</button>
+                <button type="button" onClick={() => setConfirming(null)} className="px-3 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600">Cancel</button>
+              </>
+            ) : (
               <button type="button" disabled={busy} aria-label={`Publish ${label}`}
-                onClick={() => run(() => PrebuiltDeckService.publish(deck.id, { product, name: names[deck.id] ?? deck.name ?? label }, uid))}
+                onClick={() => (issues.length ? setConfirming(deck.id) : publish())}
                 className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 text-white font-semibold">Publish</button>
-              <button type="button" disabled={busy} aria-label={`Not a precon: ${label}`}
-                onClick={() => run(() => PrebuiltDeckService.ignore(deck.id))}
-                className="px-3 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600">Not a precon</button>
-            </>
+            )
           )}
           {deck.status === 'changed' && (
             <button type="button" disabled={busy} aria-label={`Accept changes to ${label}`}
               onClick={() => run(() => PrebuiltDeckService.acceptChanges(deck.id))}
               className="px-3 py-1.5 rounded-lg bg-yellow-600 hover:bg-yellow-500 text-white font-semibold">Accept changes</button>
           )}
-          {deck.status === 'published' && (
+          {(deck.status === 'review' || deck.status === 'changed') && (
+            <button type="button" disabled={busy} aria-label={`Not a precon: ${label}`}
+              onClick={() => run(() => PrebuiltDeckService.ignore(deck.id))}
+              className="px-3 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600">Not a precon</button>
+          )}
+          {(deck.status === 'published' || deck.status === 'changed') && (
             <button type="button" disabled={busy} aria-label={`Unpublish ${label}`}
               onClick={() => run(() => PrebuiltDeckService.unpublish(deck.id))}
               className="px-3 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600">Unpublish</button>

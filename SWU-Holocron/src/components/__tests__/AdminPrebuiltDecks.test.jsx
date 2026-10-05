@@ -17,7 +17,7 @@ const PRODUCTS = [
 const DECKS = [
   { id: '151901', sourceName: 'Emperor Palpatine (ASH)', name: 'Emperor Palpatine (ASH)', status: 'review', cards: [{ id: 'ASH_015', qty: 1 }, { id: 'ASH_118', qty: 50 }], issues: [{ id: 'XYZ_001', problem: 'unknown-card' }], suggestedProduct: PRODUCTS[0], product: null },
   { id: '2963', sourceName: 'Aggression', name: 'Aggression', status: 'review', cards: [], issues: [], suggestedProduct: null, product: null },
-  { id: '149318', sourceName: 'Vader Preset', name: 'Vader Preset', status: 'changed', cards: [{ id: 'A_1', qty: 1 }], pending: { cards: [{ id: 'A_1', qty: 2 }] }, issues: [], product: null },
+  { id: '149318', sourceName: 'Vader Preset', name: 'Vader Preset', status: 'changed', cards: [{ id: 'A_1', qty: 1 }], pending: { cards: [{ id: 'A_1', qty: 2 }], issues: [{ id: 'NEW_1', problem: 'unknown-card' }] }, issues: [], product: null },
   { id: '147115', sourceName: 'TS deck', name: 'TS deck', status: 'published', cards: [], issues: [], product: null },
 ];
 
@@ -29,7 +29,8 @@ beforeEach(() => {
   m.addFromLink.mockResolvedValue({ ok: true, id: 5 });
 });
 
-const renderTab = () => render(<AdminPrebuiltDecks uid="admin" loadKnownIds={async () => new Set(['ASH_015'])} />);
+const loadKnownIds = async () => new Set(['ASH_015']);
+const renderTab = () => render(<AdminPrebuiltDecks uid="admin" loadKnownIds={loadKnownIds} />);
 
 describe('AdminPrebuiltDecks', () => {
   it('lists decks needing review first, with issues, card count and the suggested product', async () => {
@@ -47,6 +48,10 @@ describe('AdminPrebuiltDecks', () => {
     renderTab();
     fireEvent.change(await screen.findByLabelText('Display name for Emperor Palpatine (ASH)'), { target: { value: 'Emperor Palpatine Spotlight' } });
     fireEvent.click(screen.getByRole('button', { name: 'Publish Emperor Palpatine (ASH)' }));
+    // It has a card our database lacks: publishing asks first.
+    expect(m.publish).not.toHaveBeenCalled();
+    expect(screen.getByText(/1 card isn.t in our database and will be skipped when added/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Publish anyway: Emperor Palpatine (ASH)' }));
     await waitFor(() => expect(m.publish).toHaveBeenCalledWith('151901', { product: PRODUCTS[0], name: 'Emperor Palpatine Spotlight' }, 'admin'));
     expect(m.listDecks).toHaveBeenCalledTimes(2);
   });
@@ -59,12 +64,27 @@ describe('AdminPrebuiltDecks', () => {
     await waitFor(() => expect(m.acceptChanges).toHaveBeenCalledWith('149318'));
   });
 
+  it('shows what a changed deck would bring in, and lets it be unpublished or marked not a precon', async () => {
+    renderTab();
+    const review = await screen.findByRole('region', { name: 'Needs review' });
+    expect(within(review).getByText(/Not in our database: NEW_1/)).toBeInTheDocument();
+    fireEvent.click(within(review).getByRole('button', { name: 'Unpublish Vader Preset' }));
+    await waitFor(() => expect(m.unpublish).toHaveBeenCalledWith('149318'));
+    expect(within(review).getByRole('button', { name: 'Not a precon: Vader Preset' })).toBeInTheDocument();
+  });
+
+  it('offers no edit fields on published decks, where nothing would save them', async () => {
+    renderTab();
+    await screen.findByText('TS deck');
+    expect(screen.queryByLabelText('Display name for TS deck')).not.toBeInTheDocument();
+  });
+
   it('adds a deck from a link and explains a bad one', async () => {
     renderTab();
     const input = await screen.findByLabelText('sw-unlimited-db deck link');
     fireEvent.change(input, { target: { value: 'https://sw-unlimited-db.com/decks/5' } });
     fireEvent.click(screen.getByRole('button', { name: 'Fetch deck' }));
-    await waitFor(() => expect(m.addFromLink).toHaveBeenCalledWith('https://sw-unlimited-db.com/decks/5', { knownIds: new Set(['ASH_015']) }));
+    await waitFor(() => expect(m.addFromLink).toHaveBeenCalledWith('https://sw-unlimited-db.com/decks/5', { loadKnownIds }));
     m.addFromLink.mockResolvedValueOnce({ error: 'bad-link' });
     fireEvent.click(screen.getByRole('button', { name: 'Fetch deck' }));
     expect(await screen.findByText("That isn't a sw-unlimited-db deck link.")).toBeInTheDocument();

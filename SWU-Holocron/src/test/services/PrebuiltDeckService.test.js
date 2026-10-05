@@ -28,17 +28,21 @@ beforeEach(() => { store.docs.clear(); store.fail = false; });
 describe('PrebuiltDeckService', () => {
   it('adds a deck from a link for review, flagging unknown cards', async () => {
     const fetchImpl = vi.fn(async () => ok(API));
-    const res = await PrebuiltDeckService.addFromLink('https://sw-unlimited-db.com/decks/151901', { fetchImpl, knownIds: new Set(['ASH_015', 'ASH_021']) });
+    const loadKnownIds = vi.fn(async () => new Set(['ASH_015', 'ASH_021']));
+    const res = await PrebuiltDeckService.addFromLink('https://sw-unlimited-db.com/decks/151901', { fetchImpl, loadKnownIds });
+    // Only the sets the deck uses are loaded, not the whole card database.
+    expect(loadKnownIds).toHaveBeenCalledWith(['ASH']);
     expect(res).toEqual({ ok: true, id: 151901 });
     expect(fetchImpl).toHaveBeenCalledWith('https://sw-unlimited-db.com/umbraco/api/deckapi/get?id=151901');
     expect(store.docs.get(`${P}/151901`)).toMatchObject({ status: 'review', name: 'Emperor Palpatine (ASH)', issues: [{ id: 'ASH_118', problem: 'unknown-card' }], product: null });
   });
 
   it('refuses a bad link, a missing deck and a deck already stored', async () => {
-    expect(await PrebuiltDeckService.addFromLink('nope', { knownIds: new Set() })).toEqual({ error: 'bad-link' });
-    expect(await PrebuiltDeckService.addFromLink('5', { fetchImpl: async () => ({ ok: false, status: 404 }), knownIds: new Set() })).toEqual({ error: 'not-found' });
+    const loadKnownIds = async () => new Set();
+    expect(await PrebuiltDeckService.addFromLink('nope', { loadKnownIds })).toEqual({ error: 'bad-link' });
+    expect(await PrebuiltDeckService.addFromLink('5', { fetchImpl: async () => ({ ok: false, status: 404 }), loadKnownIds })).toEqual({ error: 'not-found' });
     store.docs.set(`${P}/5`, { status: 'published' });
-    expect(await PrebuiltDeckService.addFromLink('5', { fetchImpl: async () => ok(API), knownIds: new Set() })).toEqual({ error: 'exists' });
+    expect(await PrebuiltDeckService.addFromLink('5', { fetchImpl: async () => ok(API), loadKnownIds })).toEqual({ error: 'exists' });
   });
 
   it('publishes with a product and a name, ignores, and unpublishes', async () => {
@@ -50,6 +54,18 @@ describe('PrebuiltDeckService', () => {
     expect(store.docs.get(`${P}/1`).status).toBe('review');
     await PrebuiltDeckService.ignore('1');
     expect(store.docs.get(`${P}/1`).status).toBe('ignored');
+  });
+
+  it('does not flag cards from a set that could not be loaded', async () => {
+    const loadKnownIds = async () => null; // nothing could be checked
+    await PrebuiltDeckService.addFromLink('151901', { fetchImpl: async () => ok(API), loadKnownIds });
+    expect(store.docs.get(`${P}/151901`).issues).toEqual([]);
+  });
+
+  it('unpublishing a changed deck takes its newer list back to review', async () => {
+    store.docs.set(`${P}/1`, { status: 'changed', cards: [{ id: 'A_001', qty: 1 }], pending: { cards: [{ id: 'B_001', qty: 2 }], issues: [], sourceUpdatedAt: 'T2' } });
+    await PrebuiltDeckService.unpublish('1');
+    expect(store.docs.get(`${P}/1`)).toMatchObject({ status: 'review', cards: [{ id: 'B_001', qty: 2 }], sourceUpdatedAt: 'T2', pending: undefined });
   });
 
   it('accepts a changed deck by moving the pending list in', async () => {

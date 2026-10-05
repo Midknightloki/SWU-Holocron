@@ -70,6 +70,57 @@ describe('syncPrebuiltDecks', () => {
     expect(doc.pending.sourceUpdatedAt).toBe('2026-08-01T00:00:00Z');
   });
 
+  it('updates a deck still awaiting review in place, never exposing it to collectors', async () => {
+    const review = { status: 'review', sourceUpdatedAt: '2026-07-01T00:00:00Z', cards: [{ id: 'ASH_015', qty: 1 }], name: 'Kept name' };
+    const db = fakeDb({ ...seedCards, [`${BASE}/prebuiltDecks/151901`]: review });
+    const fetchImpl = fetcher({ listed: [{ id: 151901, updatedDate: '2026-08-01T00:00:00Z' }], decks: { 151901: PALPATINE }, groups, products });
+    const res = await syncPrebuiltDecks({ db, appId: 'app', fetchImpl, wait: async () => {} });
+    const doc = db.docs.get(`${BASE}/prebuiltDecks/151901`);
+    expect(doc.status).toBe('review');
+    expect(doc.cards).toHaveLength(3);
+    expect(doc.sourceUpdatedAt).toBe('2026-08-01T00:00:00Z');
+    expect(doc.name).toBe('Kept name');
+    expect(res.changed).toEqual([]);
+  });
+
+  it('adopts the source date for a published deck added by link when its cards match', async () => {
+    const cards = [{ id: 'ASH_015', qty: 1 }, { id: 'ASH_021', qty: 1 }, { id: 'ASH_118', qty: 3 }];
+    const db = fakeDb({ ...seedCards, [`${BASE}/prebuiltDecks/151901`]: { status: 'published', sourceUpdatedAt: null, cards } });
+    const fetchImpl = fetcher({ listed: [{ id: 151901, updatedDate: '2026-08-01T00:00:00Z' }], decks: { 151901: PALPATINE }, groups, products });
+    const res = await syncPrebuiltDecks({ db, appId: 'app', fetchImpl, wait: async () => {} });
+    const doc = db.docs.get(`${BASE}/prebuiltDecks/151901`);
+    expect(doc).toMatchObject({ status: 'published', sourceUpdatedAt: '2026-08-01T00:00:00Z' });
+    expect(doc.pending ?? null).toBeNull();
+    expect(res.changed).toEqual([]);
+  });
+
+  it('settles a changed deck whose source went back to the published list', async () => {
+    const cards = [{ id: 'ASH_015', qty: 1 }, { id: 'ASH_021', qty: 1 }, { id: 'ASH_118', qty: 3 }];
+    const changed = { status: 'changed', sourceUpdatedAt: '2026-07-01', cards, pending: { cards: [{ id: 'X_1', qty: 1 }], sourceUpdatedAt: '2026-08-01' } };
+    const db = fakeDb({ ...seedCards, [`${BASE}/prebuiltDecks/151901`]: changed });
+    const fetchImpl = fetcher({ listed: [{ id: 151901, updatedDate: '2026-09-01' }], decks: { 151901: PALPATINE }, groups, products });
+    await syncPrebuiltDecks({ db, appId: 'app', fetchImpl, wait: async () => {} });
+    expect(db.docs.get(`${BASE}/prebuiltDecks/151901`)).toMatchObject({ status: 'published', pending: null, sourceUpdatedAt: '2026-09-01' });
+  });
+
+  it('keeps syncing decks when a TCGplayer group fails, and keeps the stored product list', async () => {
+    const db = fakeDb({ ...seedCards, [`${BASE}/cardDatabase/preconProducts`]: { products: [{ tcgplayerProductId: 2, name: 'Ashes of the Empire - Spotlight Deck: Emperor Palpatine', setCode: 'ASH' }] } });
+    const base = fetcher({ listed: [{ id: 151901, updatedDate: 'a' }], decks: { 151901: PALPATINE }, groups: [...groups, { groupId: 10, abbreviation: 'SOR' }], products });
+    const fetchImpl = vi.fn(async (url, init) => (url.includes('/79/10/products') ? json({}, false) : base(url, init)));
+    const res = await syncPrebuiltDecks({ db, appId: 'app', fetchImpl, wait: async () => {} });
+    expect(res.added).toEqual([151901]);
+    expect(db.docs.get(`${BASE}/prebuiltDecks/151901`).suggestedProduct.tcgplayerProductId).toBe(2);
+    expect(db.docs.get(`${BASE}/cardDatabase/preconProducts`).products).toHaveLength(1);
+  });
+
+  it('rechecks stored decks for cards our database has gained since', async () => {
+    const stored = { status: 'published', sourceUpdatedAt: 'z', cards: [{ id: 'ASH_015', qty: 1 }], issues: [{ id: 'ASH_015', problem: 'unknown-card' }] };
+    const db = fakeDb({ ...seedCards, [`${BASE}/prebuiltDecks/1`]: stored });
+    const fetchImpl = fetcher({ listed: [{ id: 1, updatedDate: 'a' }], decks: {}, groups, products });
+    await syncPrebuiltDecks({ db, appId: 'app', fetchImpl, wait: async () => {} });
+    expect(db.docs.get(`${BASE}/prebuiltDecks/1`).issues).toEqual([]);
+  });
+
   it('leaves ignored and unchanged decks alone', async () => {
     const db = fakeDb({ ...seedCards, [`${BASE}/prebuiltDecks/1`]: { status: 'ignored', sourceUpdatedAt: '2026-01-01' } });
     const fetchImpl = fetcher({ listed: [{ id: 1, updatedDate: '2026-09-01' }], decks: {}, groups, products });
