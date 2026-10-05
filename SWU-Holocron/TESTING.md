@@ -139,8 +139,9 @@ these on real hardware and record the results in the PR:
 - Commit, and check collection counts went **up** by the scanned amounts rather
   than being replaced.
 - Batches: name a batch and set a price paid in Review, Add part of it, scan
-  more, Add the rest — the report that opens is one batch with every card,
-  and the Command Center lists it. Save as PDF on the phone and on desktop
+  more, close and reopen the scanner, scan the rest, then **Finish batch** —
+  the report is one batch with every card, and the Command Center lists it.
+  An Add that empties the list must go back to the camera, not end the batch. Save as PDF on the phone and on desktop
   shows only the report, legibly on white. The CSV opens in Excel and Google
   Sheets with names containing commas intact.
 - Rig calibration: calibrate with a card in the rig and check the detected box

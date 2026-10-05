@@ -317,8 +317,12 @@ that cross-check is what keeps a misread number from adding the wrong card.
   transaction), with type/rarity/aspects/printing, the market price at that
   moment and whether the card was new to the collection. A line's first
   `isNew` and price stick when the same card is added again. A failed append
-  never fails the Add. When the draft empties the batch closes and its report
-  opens (`BatchReport.jsx`, built by the pure `batchReport.js`); reports are
+  never fails the Add; its lines wait on the batch (`pending`) for a Retry.
+  **Only Finish batch ends a batch** -- an Add that empties the list goes back
+  to the camera, and closing the scanner keeps the batch open. Finish adds
+  any matched cards first, closes the record and opens its report
+  (`BatchReport.jsx`, built by the pure `batchReport.js`); rows still in the
+  list go into the next batch (`endBatch`). Reports are
   listed in the Command Center (`BatchesPanel`). Export is CSV
   (`batchCsv.js`) and PDF via the browser's print dialog — a print rule in
   `index.css` shows only `#batch-report`. Cards with no price data are listed,

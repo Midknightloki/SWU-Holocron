@@ -92,7 +92,7 @@ function Photo({ id, hasPhoto, getPhoto, onView }) {
 
 export default function ScanReview({
   draft, onChange, onRetry, onBack, onCommit, onDiscard, committing, commitError,
-  collectionData = {}, getPhoto = PhotoStore.get, batch = null, onBatchChange = () => {}, onRetryReport = () => {},
+  collectionData = {}, getPhoto = PhotoStore.get, batch = null, onBatchChange = () => {}, onRetryReport = () => {}, onFinish = () => {},
 }) {
   const [pickingFor, setPickingFor] = useState(null);
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
@@ -313,6 +313,23 @@ export default function ScanReview({
         )}
         {counts.reading > 0 && (
           <p className="text-xs text-gray-400">{counts.reading} still reading will stay in the batch.</p>
+        )}
+        {batch && (batch.appended || counts.matched > 0) && (
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              disabled={committing}
+              onClick={onFinish}
+              className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold disabled:opacity-40"
+            >
+              Finish batch
+            </button>
+            <p className="text-xs text-gray-400">
+              {counts.matched > 0 && `Adds the ${counts.matched} matched ${counts.matched === 1 ? 'card' : 'cards'} first. `}
+              {total - counts.matched > 0
+                && `${plural(total - counts.matched)} left here ${total - counts.matched === 1 ? 'goes' : 'go'} into the next batch.`}
+            </p>
+          </div>
         )}
         {confirmingDiscard ? (
           <div className="flex gap-2">

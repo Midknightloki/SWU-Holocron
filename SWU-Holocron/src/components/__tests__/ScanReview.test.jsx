@@ -278,6 +278,22 @@ describe('ScanReview', () => {
     expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
   });
 
+  it('offers Finish batch once there is something to report, and says what it does', async () => {
+    const onFinish = vi.fn();
+    const user = userEvent.setup();
+    const unread = applyResult(build([['a', LUKE], ['u']]), 'u', { status: 'unidentified', reason: 'unreadable', read: null });
+    renderReview(unread, { batch: { id: 'b1', name: 'B', pricePaid: null }, onFinish });
+    expect(screen.getByText(/adds the 1 matched card first/i)).toBeInTheDocument();
+    expect(screen.getByText(/1 card left here goes into the next batch/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Finish batch' }));
+    expect(onFinish).toHaveBeenCalled();
+  });
+
+  it('offers no Finish batch when nothing was matched or added yet', () => {
+    renderReview(build([['u']]), { batch: { id: 'b1', name: 'B', pricePaid: null } });
+    expect(screen.queryByRole('button', { name: 'Finish batch' })).not.toBeInTheDocument();
+  });
+
   it('shows no batch fields without a batch', () => {
     renderReview(build([['a', LUKE]]));
     expect(screen.queryByLabelText('Batch name')).not.toBeInTheDocument();

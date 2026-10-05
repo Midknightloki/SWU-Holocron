@@ -126,11 +126,14 @@ export function setGroupQuantity(draft, key, qty) {
 export const defaultBatchName = (ms) => `Batch ${new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
 
 export function ensureBatch(draft, now, id) {
-  // A batch whose cards were all added is finished: the next capture starts
-  // the next box, rather than merging two boxes (and two prices) into one.
-  const finished = draft.batch?.appended && draft.rows.length === 0;
-  if (draft.batch && !finished) return draft;
+  if (draft.batch) return draft;
   return { ...draft, batch: { id, name: defaultBatchName(now), pricePaid: null, createdAt: now } };
+}
+
+/** Finish batch: the batch is done; any rows left wait for the next one. */
+export function endBatch(draft) {
+  const { batch, ...rest } = draft;
+  return rest;
 }
 
 export function setBatchName(draft, name) {

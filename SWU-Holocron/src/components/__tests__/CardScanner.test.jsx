@@ -864,7 +864,7 @@ describe('CardScanner', () => {
     await waitFor(() => expect(photos.remove).toHaveBeenCalled());
   });
 
-  it('commits from review, saving progress as it goes, and closes when empty', async () => {
+  it('commits from review, saving progress as it goes, and goes back to the camera when empty', async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
     mocks.commitDraft.mockImplementation(async (draft, ref, { onProgress }) => {
@@ -876,10 +876,10 @@ describe('CardScanner', () => {
     await user.click(await screen.findByRole('button', { name: 'Review (1)' }));
     await user.click(await screen.findByRole('button', { name: 'Add 1 card to collection' }));
     expect(mocks.commitDraft).toHaveBeenCalledWith(expect.any(Object), { id: 'ref' }, expect.any(Object));
-    // A finished batch shows its report first; closing that closes the scanner.
-    await user.click(await screen.findByText('close-report'));
-    await waitFor(() => expect(onClose).toHaveBeenCalled());
-    expect(localStorage.removeItem).toHaveBeenCalledWith('swu-scan-draft-uid-1');
+    // The batch stays open for the rest of the box: back to scanning.
+    expect(await screen.findByRole('button', { name: 'Review (0)' })).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(batchMocks.closeBatch).not.toHaveBeenCalled();
   });
 
   it('says a previous save is still running when a commit is refused', async () => {
@@ -961,19 +961,52 @@ describe('CardScanner', () => {
       expect(batchMocks.appendToBatch.mock.calls[0][2][0]).toMatchObject({ priceAtAdd: 9, priceIsFallback: true });
     });
 
-    it('closes the batch and shows its report when the batch empties', async () => {
+    it('Finish batch adds the matched cards, closes the batch and shows its report', async () => {
       const user = userEvent.setup();
       const onClose = vi.fn();
       mocks.commitDraft.mockImplementation(async (draft, ref, { onProgress }) => { onProgress({ rows: [] }); return { rows: [] }; });
       renderScanner({ onClose });
       pressSpace();
       await user.click(await screen.findByRole('button', { name: 'Review (1)' }));
-      await user.click(screen.getByRole('button', { name: 'Add 1 card to collection' }));
+      await user.click(screen.getByRole('button', { name: 'Finish batch' }));
       expect(await screen.findByRole('dialog', { name: 'Batch report' })).toBeInTheDocument();
+      expect(mocks.commitDraft).toHaveBeenCalledTimes(1);
+      expect(batchMocks.appendToBatch).toHaveBeenCalledTimes(1);
       expect(batchMocks.closeBatch).toHaveBeenCalled();
       expect(onClose).not.toHaveBeenCalled();
       await user.click(screen.getByText('close-report'));
       expect(onClose).toHaveBeenCalled();
+    });
+
+    it('Finish batch after an earlier Add closes it without adding anything', async () => {
+      const user = userEvent.setup();
+      mocks.commitDraft.mockImplementation(async () => ({ rows: [] }));
+      renderScanner();
+      pressSpace();
+      await user.click(await screen.findByRole('button', { name: 'Review (1)' }));
+      await user.click(screen.getByRole('button', { name: 'Add 1 card to collection' }));
+      await user.click(await screen.findByRole('button', { name: 'Review (0)' }));
+      await user.click(screen.getByRole('button', { name: 'Finish batch' }));
+      expect(await screen.findByRole('dialog', { name: 'Batch report' })).toBeInTheDocument();
+      expect(mocks.commitDraft).toHaveBeenCalledTimes(1);
+      expect(batchMocks.closeBatch).toHaveBeenCalledTimes(1);
+    });
+
+    it('the capture after a finished batch starts a new batch, taking the leftovers with it', async () => {
+      const user = userEvent.setup();
+      mocks.commitDraft.mockImplementation(async (draft) => ({ rows: draft.rows.filter((r) => r.status !== 'matched') }));
+      renderScanner({ onClose: vi.fn() });
+      pressSpace(); await flush();
+      mocks.scan.mockResolvedValueOnce({ status: 'unidentified', reason: 'unreadable', read: null });
+      pressSpace();
+      await user.click(await screen.findByRole('button', { name: 'Review (2)' }));
+      await user.click(screen.getByRole('button', { name: 'Finish batch' }));
+      await screen.findByRole('dialog', { name: 'Batch report' });
+      const firstBatch = batchMocks.appendToBatch.mock.calls[0][1].id;
+      const saved = () => JSON.parse(localStorage.setItem.mock.calls.filter(([k]) => k === 'swu-scan-draft-uid-1').at(-1)[1]);
+      await waitFor(() => expect(saved().batch).toBeNull());
+      expect(saved().rows).toHaveLength(1);
+      expect(firstBatch).toEqual(expect.any(String));
     });
 
     it('keeps the cards added when the report cannot be updated', async () => {
@@ -1001,13 +1034,15 @@ describe('CardScanner', () => {
       expect(await screen.findByRole('alert')).toHaveTextContent(/batch report couldn.t be updated/i);
       expect(onClose).not.toHaveBeenCalled();
       await user.click(screen.getByRole('button', { name: 'Retry batch report' }));
-      expect(await screen.findByRole('dialog', { name: 'Batch report' })).toBeInTheDocument();
-      expect(batchMocks.appendToBatch).toHaveBeenCalledTimes(2);
+      await waitFor(() => expect(batchMocks.appendToBatch).toHaveBeenCalledTimes(2));
       expect(batchMocks.appendToBatch.mock.calls[1][2]).toEqual(batchMocks.appendToBatch.mock.calls[0][2]);
+      expect(batchMocks.closeBatch).not.toHaveBeenCalled();
+      await user.click(screen.getByRole('button', { name: 'Finish batch' }));
+      expect(await screen.findByRole('dialog', { name: 'Batch report' })).toBeInTheDocument();
       expect(batchMocks.closeBatch).toHaveBeenCalled();
     });
 
-    it('closes and reports a batch emptied by removing the leftovers after an Add', async () => {
+    it('removing the leftovers after an Add does not finish the batch', async () => {
       const user = userEvent.setup();
       mocks.commitDraft.mockImplementation(async (draft) => ({ rows: draft.rows.filter((r) => r.status !== 'matched') }));
       renderScanner();
@@ -1019,8 +1054,9 @@ describe('CardScanner', () => {
       await waitFor(() => expect(batchMocks.appendToBatch).toHaveBeenCalled());
       expect(screen.queryByRole('dialog', { name: 'Batch report' })).not.toBeInTheDocument();
       await user.click(await screen.findByRole('button', { name: 'Remove' }));
-      expect(await screen.findByRole('dialog', { name: 'Batch report' })).toBeInTheDocument();
-      expect(batchMocks.closeBatch).toHaveBeenCalled();
+      await flush();
+      expect(screen.queryByRole('dialog', { name: 'Batch report' })).not.toBeInTheDocument();
+      expect(batchMocks.closeBatch).not.toHaveBeenCalled();
     });
 
     it('reports the cards that were added before a later save failed', async () => {
