@@ -35,7 +35,7 @@ export function toBatchCsv(report) {
   lines.push(row(['Price paid', money(report.pricePaid)]));
   lines.push(row(['Net', money(report.net)]));
   lines.push(row(['Multiple', report.multiple === null ? '' : `${report.multiple}x`]));
-  return `﻿${lines.join('\r\n')}`;
+  return `\uFEFF${lines.join('\r\n')}`;
 }
 
 export function batchCsvFilename(name, createdAt) {

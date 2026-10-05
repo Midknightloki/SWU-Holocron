@@ -15,7 +15,7 @@ describe('toBatchCsv', () => {
   const rows = toBatchCsv(buildReport(batch, { SOR_010_std: 6 })).split('\r\n');
 
   it('starts with a UTF-8 byte order mark, then the header', () => {
-    expect(rows[0]).toBe(`﻿${BATCH_CSV_HEADER.join(',')}`);
+    expect(rows[0]).toBe(`\uFEFF${BATCH_CSV_HEADER.join(',')}`);
   });
 
   it('reads back through the collection CSV importer', () => {
