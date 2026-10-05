@@ -92,7 +92,7 @@ function Photo({ id, hasPhoto, getPhoto, onView }) {
 
 export default function ScanReview({
   draft, onChange, onRetry, onBack, onCommit, onDiscard, committing, commitError,
-  collectionData = {}, getPhoto = PhotoStore.get,
+  collectionData = {}, getPhoto = PhotoStore.get, batch = null, onBatchChange = () => {}, onRetryReport = () => {},
 }) {
   const [pickingFor, setPickingFor] = useState(null);
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
@@ -126,6 +126,28 @@ export default function ScanReview({
         <h2 className="text-lg font-bold text-white">Review batch</h2>
         <span className="ml-auto text-sm text-gray-400">{plural(total)}</span>
       </div>
+      {batch && (
+        <div className="flex gap-2 px-4 py-2 bg-gray-900 border-b border-gray-800">
+          <input
+            aria-label="Batch name"
+            value={batch.name}
+            onChange={(e) => onBatchChange({ name: e.target.value })}
+            className="flex-1 min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm"
+          />
+          {/* Uncontrolled: a half-typed "12." must stay on screen while the batch holds 12. */}
+          <input
+            aria-label="Price paid"
+            inputMode="decimal"
+            placeholder="Price paid"
+            defaultValue={batch.pricePaid ?? ''}
+            onChange={(e) => {
+              const v = e.target.value.trim() === '' ? null : Number(e.target.value);
+              onBatchChange({ pricePaid: Number.isFinite(v) && v >= 0 ? v : null });
+            }}
+            className="w-28 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm"
+          />
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
         {groups.length === 0 && (
@@ -268,6 +290,16 @@ export default function ScanReview({
       <div className="px-4 py-3 bg-gray-900 border-t border-gray-800 space-y-2">
         {commitError && (
           <p role="alert" className="text-sm text-red-400">{commitError}</p>
+        )}
+        {batch?.pending?.length > 0 && (
+          <button
+            type="button"
+            disabled={committing}
+            onClick={onRetryReport}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-sm"
+          >
+            <RotateCcw size={14} aria-hidden="true" />Retry batch report
+          </button>
         )}
         {attention > 0 && (
           <p className="text-xs text-gray-400">

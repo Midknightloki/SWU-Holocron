@@ -5,6 +5,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+vi.mock('../../components/BatchesPanel', () => ({ default: ({ uid }) => <div>batches for {uid}</div> }));
 import Dashboard from '../../components/Dashboard';
 import { mockCards, mockCollectionData } from '../utils/mockData';
 
@@ -37,6 +38,13 @@ describe('Dashboard Component', () => {
     expect(onScan).toHaveBeenCalled();
   });
 
+
+  it('shows the saved batches for the signed-in user', () => {
+    const { rerender } = render(<Dashboard {...defaultProps} uid="u1" />);
+    expect(screen.getByText('batches for u1')).toBeInTheDocument();
+    rerender(<Dashboard {...defaultProps} />);
+    expect(screen.queryByText(/batches for/)).not.toBeInTheDocument();
+  });
   it('shows no scan button without onScan (not Pro, not admin)', () => {
     render(<Dashboard {...defaultProps} />);
     expect(screen.queryByRole('button', { name: 'Scan cards' })).not.toBeInTheDocument();

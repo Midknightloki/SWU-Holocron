@@ -959,6 +959,7 @@ export default function App() {
                 onUpdateQuantity={handleGridQuantityChange}
                 onCardClick={setSelectedCard}
                 onScan={openScanner}
+                uid={user?.uid}
               />
               ) : view === 'decks' ? (
                 <DeckManager

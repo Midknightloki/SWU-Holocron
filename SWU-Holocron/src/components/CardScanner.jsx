@@ -14,9 +14,13 @@ import { PhotoStore } from '../services/photoStore';
 import { createScanQueue } from '../services/scanQueue';
 import { levelReading } from '../utils/level';
 import {
-  addCapture, applyResult, clearDraft, countByStatus, emptyDraft, loadDraft, markReading, markWaiting, removeRows, saveDraft,
+  addCapture, applyResult, clearDraft, countByStatus, emptyDraft, ensureBatch, loadDraft, markReading, markWaiting, removeRows, saveDraft,
+  setBatchName, setPricePaid, toWrites,
 } from '../utils/scanDraft';
 import ScanReview from './ScanReview';
+import BatchReport from './BatchReport';
+import { BatchService } from '../services/BatchService';
+import { PricingService } from '../services/PricingService';
 
 /**
  * Card scanner overlay: camera preview, capture on tap / Space / Enter, a
@@ -36,6 +40,8 @@ const getStorage = () => {
     return null;
   }
 };
+
+const REPORT_FAILED = "Cards added — the batch report couldn't be updated.";
 
 // crypto.randomUUID is missing on older iOS Safari; the id only has to be
 // unique within one batch.
@@ -134,6 +140,8 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
   const [level, setLevel] = useState(null);
   const [committing, setCommitting] = useState(false);
   const [commitError, setCommitError] = useState(null);
+  // The finished batch whose report is showing; closing it closes the scanner.
+  const [reportBatchId, setReportBatchId] = useState(null);
   const [calibration, setCalibration] = useState(() => loadCalibration(getStorage()));
   const [calibrating, setCalibrating] = useState(false);
   const [view, setView] = useState({ vw: 0, vh: 0, bw: 0, bh: 0 });
@@ -353,7 +361,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
     const id = newId();
     await PhotoStore.put(id, shot.image);
     if (!mountedRef.current) return;
-    setDraft((d) => addCapture(d, { id, isFoil }));
+    setDraft((d) => addCapture(ensureBatch(d, Date.now(), newId()), { id, isFoil }));
     queueRef.current.enqueue(id);
   }, [calibration, cameraError, foilStack, signal]);
   captureRef.current = capture;
@@ -563,6 +571,21 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
     if (gone.length) PhotoStore.remove(gone);
   }, [draft]);
 
+  // Appends lines -- and any a failed append left pending -- to the batch's
+  // report. Success marks the batch appended (so emptying the draft finishes
+  // it); failure keeps the lines on the batch for a retry, never losing them.
+  const recordBatch = useCallback(async (batch, newLines) => {
+    const all = [...(batch.pending ?? []), ...newLines];
+    if (all.length === 0) return true;
+    const res = await BatchService.appendToBatch(uid, batch, all);
+    const ok = !res?.error;
+    const patch = ok ? { appended: true, pending: [] } : { pending: all };
+    const apply = (d) => (d.batch?.id === batch.id ? { ...d, batch: { ...d.batch, ...patch } } : d);
+    saveDraft(getStorage(), uid, apply(draftRef.current));
+    if (mountedRef.current) setDraft(apply);
+    return ok;
+  }, [uid]);
+
   const commit = useCallback(async () => {
     if (!collectionRef) {
       setCommitError('Not connected to cloud storage.');
@@ -570,6 +593,39 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
     }
     setCommitting(true);
     setCommitError(null);
+    const { batch } = draft;
+    // Batch report lines are built before the commit: "new" means not owned
+    // in any finish before this Add. A price or detail that can't be had is
+    // left null, never a reason to hold up the cards.
+    const writes = toWrites(draft);
+    const [details, prices] = batch && writes.length
+      ? await Promise.all([
+        Promise.all(writes.map((w) => ScanService.cardDetails(w.set, w.number))),
+        PricingService.getBulkPrices(writes.map((w) => ({ cardId: w.collectionId, set: w.set, number: w.number, isFoil: w.isFoil })))
+          .catch(() => ({})),
+      ])
+      : [[], {}];
+    const lines = writes.map((w, i) => ({
+      id: w.collectionId,
+      set: w.set,
+      number: w.number,
+      name: w.name,
+      type: details[i]?.type ?? null,
+      rarity: details[i]?.rarity ?? null,
+      aspects: details[i]?.aspects ?? [],
+      variant: details[i]?.variant ?? null,
+      isFoil: w.isFoil,
+      qty: w.qty,
+      isNew: getCardQuantities(collectionRefData.current, w.set, w.number).total === 0,
+      priceAtAdd: typeof prices?.[w.collectionId]?.market === 'number' ? prices[w.collectionId].market : null,
+      // No price for this finish: the other finish's, flagged in the report.
+      priceIsFallback: Boolean(prices?.[w.collectionId]?.isFallback),
+      rowIds: w.rowIds,
+    }));
+    const committedIds = new Set();
+    const committedLines = () => lines
+      .filter((l) => l.rowIds.every((rid) => committedIds.has(rid)))
+      .map(({ rowIds, ...line }) => line);
     // Cards keep reading (and captures keep landing) while Add saves, so take
     // out only the rows that were committed. Replacing the batch with the
     // snapshot this save started from would revert anything that arrived
@@ -578,6 +634,7 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
     const dropCommitted = (next) => {
       const kept = new Set(next.rows.map((r) => r.id));
       const committed = snapshotIds.filter((id) => !kept.has(id));
+      committed.forEach((id) => committedIds.add(id));
       const live = removeRows(draftRef.current, committed);
       // Persist synchronously: if the overlay closes mid-commit, the saved
       // batch must not still hold rows that were already added.
@@ -591,12 +648,20 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
       });
       if (!mountedRef.current) return;
       const live = dropCommitted(rest);
-      if (live.rows.length === 0) {
+      // The cards are in; the report is a record of them. A failed append
+      // says so (and can be retried), but never undoes or fails the Add. An
+      // emptied batch is finished by the effect below, report and all.
+      const reportFailed = batch ? !(await recordBatch(batch, committedLines())) : false;
+      if (!mountedRef.current) return;
+      if (reportFailed) setCommitError(REPORT_FAILED);
+      if (live.rows.length === 0 && !batch) {
         clearDraft(getStorage(), uid);
         onClose();
       }
     } catch (err) {
       console.error('Scan commit failed:', err);
+      // Chunks saved before the failure are in the collection: report them.
+      if (batch) await recordBatch(batch, committedLines());
       if (mountedRef.current) {
         setCommitError(err?.code === 'commit-in-progress'
           ? 'A previous save is still in progress. Wait for it to finish, then try again.'
@@ -605,7 +670,31 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
     } finally {
       if (mountedRef.current) setCommitting(false);
     }
-  }, [collectionRef, draft, uid, onClose]);
+  }, [collectionRef, draft, uid, onClose, recordBatch]);
+
+  const retryReport = useCallback(async () => {
+    const { batch } = draftRef.current;
+    if (!batch?.pending?.length) return;
+    setCommitting(true);
+    setCommitError(null);
+    const ok = await recordBatch(batch, []);
+    if (!mountedRef.current) return;
+    if (!ok) setCommitError(REPORT_FAILED);
+    setCommitting(false);
+  }, [recordBatch]);
+
+  // A batch is finished once its cards were added and nothing is left in it,
+  // however it emptied: the last Add, or removing the leftovers afterwards.
+  // Close it and show its report; the next capture starts a new batch.
+  useEffect(() => {
+    const { batch } = draft;
+    if (committing || reportBatchId || draft.rows.length > 0) return;
+    if (!batch?.appended || batch.pending?.length) return;
+    clearDraft(getStorage(), uid);
+    setDraft(emptyDraft());
+    setReportBatchId(batch.id);
+    BatchService.closeBatch(uid, batch.id);
+  }, [draft, committing, reportBatchId, uid]);
 
   const discard = useCallback(() => {
     // This batch's photos go with its rows (the cleanup effect below); never
@@ -619,12 +708,26 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
   const total = counts.reading + counts.matched + counts.unidentified + counts.failed;
   const attention = counts.unidentified + counts.failed;
 
+  if (reportBatchId) {
+    return (
+      <BatchReport
+        uid={uid}
+        batchId={reportBatchId}
+        onClose={() => { setReportBatchId(null); onClose(); }}
+        onDeleted={() => { setReportBatchId(null); onClose(); }}
+      />
+    );
+  }
+
   if (mode === 'review') {
     return (
       <div className="fixed inset-0 z-50">
         <ScanReview
           draft={draft}
           onChange={setDraft}
+          batch={draft.batch ?? null}
+          onRetryReport={retryReport}
+          onBatchChange={({ name, pricePaid }) => setDraft((d) => (name !== undefined ? setBatchName(d, name) : setPricePaid(d, pricePaid)))}
           collectionData={collectionData}
           onRetry={retry}
           onBack={() => setMode('camera')}

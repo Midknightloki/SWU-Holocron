@@ -138,6 +138,11 @@ these on real hardware and record the results in the PR:
 - Close the scanner mid-batch and reopen: rows survive, photos show "Photo lost".
 - Commit, and check collection counts went **up** by the scanned amounts rather
   than being replaced.
+- Batches: name a batch and set a price paid in Review, Add part of it, scan
+  more, Add the rest — the report that opens is one batch with every card,
+  and the Command Center lists it. Save as PDF on the phone and on desktop
+  shows only the report, legibly on white. The CSV opens in Excel and Google
+  Sheets with names containing commas intact.
 - Rig calibration: calibrate with a card in the rig and check the detected box
   fits the card; after saving, check the live outline sits over the card (note
   any offset — it is approximate by design). Close and reopen the app: the

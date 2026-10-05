@@ -2,7 +2,7 @@
  * @vitest-environment happy-dom
  */
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, within, act } from '@testing-library/react';
+import { render, screen, within, act, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React from 'react';
 
@@ -245,5 +245,22 @@ describe('ScanReview', () => {
     const { onBack } = renderReview(emptyDraft());
     await user.click(screen.getByRole('button', { name: 'Back to camera' }));
     expect(onBack).toHaveBeenCalled();
+  });
+
+  it('edits the batch name and price paid', () => {
+    const onBatchChange = vi.fn();
+    renderReview(build([['a', LUKE]]), { batch: { id: 'b1', name: 'Batch Oct 5', pricePaid: null }, onBatchChange });
+    expect(screen.getByLabelText('Batch name')).toHaveValue('Batch Oct 5');
+    fireEvent.change(screen.getByLabelText('Batch name'), { target: { value: 'eBay SOR box' } });
+    expect(onBatchChange).toHaveBeenLastCalledWith({ name: 'eBay SOR box' });
+    fireEvent.change(screen.getByLabelText('Price paid'), { target: { value: '89.99' } });
+    expect(onBatchChange).toHaveBeenLastCalledWith({ pricePaid: 89.99 });
+    fireEvent.change(screen.getByLabelText('Price paid'), { target: { value: '' } });
+    expect(onBatchChange).toHaveBeenLastCalledWith({ pricePaid: null });
+  });
+
+  it('shows no batch fields without a batch', () => {
+    renderReview(build([['a', LUKE]]));
+    expect(screen.queryByLabelText('Batch name')).not.toBeInTheDocument();
   });
 });

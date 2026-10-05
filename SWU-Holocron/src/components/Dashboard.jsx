@@ -4,8 +4,9 @@ import { SETS } from '../constants';
 import { calculateStats, calculateGlobalSummary } from '../utils/statsCalculator';
 import { generateMissingCardsCSV } from '../utils/csvParser';
 import ScanButton from './ScanButton';
+import BatchesPanel from './BatchesPanel';
 
-export default function Dashboard({ setCode, cards, collectionData, onImport, onExport, isImporting, hasDataToExport, onUpdateQuantity, onCardClick, onScan }) {
+export default function Dashboard({ setCode, cards, collectionData, onImport, onExport, isImporting, hasDataToExport, onUpdateQuantity, onCardClick, onScan, uid }) {
   const stats = useMemo(() => {
     return calculateStats(cards, collectionData, setCode);
   }, [cards, collectionData, setCode]);
@@ -102,6 +103,9 @@ export default function Dashboard({ setCode, cards, collectionData, onImport, on
           </div>
         </div>
       </div>
+
+      {/* Saved scanning batches */}
+      {uid && <BatchesPanel uid={uid} />}
 
       {/* Missing Cards Table */}
       <div className="bg-gray-900 rounded-2xl border border-gray-800 shadow-xl overflow-hidden">

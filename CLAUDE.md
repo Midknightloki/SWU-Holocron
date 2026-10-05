@@ -105,6 +105,7 @@ artifacts/{APP_ID}/public/decks/{slug}                        publicly shared de
 artifacts/{APP_ID}/users/{uid}                                profile doc: isAdmin / isContributor
 artifacts/{APP_ID}/users/{uid}/collection/{SET_NNN_std|foil}  owned-card quantities
 artifacts/{APP_ID}/users/{uid}/decks/{deckId}                 + /versions, /gamelogs subcollections
+artifacts/{APP_ID}/users/{uid}/batches/{batchId}              scanner batch reports (one per box/pre-release)
 artifacts/{APP_ID}/submissions, /shells, /packets, /contributorInvites
 artifacts/{APP_ID}/admin/sync/logs
 artifacts/{APP_ID}/config/scanner                             { dailyLimit } for the card scanner (function-only)
@@ -308,6 +309,20 @@ that cross-check is what keeps a misread number from adding the wrong card.
   success or recognition, a red flash only when nothing usable was captured,
   and unrecognised cards just raise the Review badge. Add commits the matched
   cards even while others are still reading or waiting.
+- **Batches and reports.** A batch (a box, a pre-release) is named and
+  priced in Review; the draft carries it as `batch: { id, name, pricePaid,
+  createdAt }`, created on the first capture (default name `Batch Oct 5`), and
+  every draft helper must keep it (`{ ...draft, rows }`). Each Add appends the
+  committed cards to `users/{uid}/batches/{id}` (`BatchService`, a
+  transaction), with type/rarity/aspects/printing, the market price at that
+  moment and whether the card was new to the collection. A line's first
+  `isNew` and price stick when the same card is added again. A failed append
+  never fails the Add. When the draft empties the batch closes and its report
+  opens (`BatchReport.jsx`, built by the pure `batchReport.js`); reports are
+  listed in the Command Center (`BatchesPanel`). Export is CSV
+  (`batchCsv.js`) and PDF via the browser's print dialog — a print rule in
+  `index.css` shows only `#batch-report`. Cards with no price data are listed,
+  never counted as $0.
 - **One IndexedDB opener.** `appDb.js` opens `swu-holocron` (version 2) and
   creates every store (`cardSets`, `scanPhotos`). A store must never be
   created elsewhere: a module asking for a lower version than another has
