@@ -88,6 +88,12 @@ gcloud projects add-iam-policy-binding $PROJECT `
 gcloud projects add-iam-policy-binding $PROJECT `
   --member="serviceAccount:$SA" --role="roles/logging.logWriter" --condition=None
 
+# Read Firebase Auth accounts, for user management (adminListUsers /
+# adminGetUserDetail / adminSetRole). Read-only: roles are Firestore data, not
+# Auth claims, so nothing writes to Auth. Added 2026-10-05.
+gcloud projects add-iam-policy-binding $PROJECT `
+  --member="serviceAccount:$SA" --role="roles/firebaseauth.viewer" --condition=None
+
 # Let the deployer act as the account. `firebase deploy` runs as you, and
 # setting a runtime service account on a Cloud Run service requires
 # iam.serviceAccounts.actAs on it.
@@ -117,7 +123,7 @@ gcloud iam service-accounts create swu-functions \
   --display-name="SWU Holocron Cloud Functions runtime" \
   --description="Runtime identity for getCardSuggestions and redeemInviteCode"
 
-for role in roles/datastore.user roles/aiplatform.user roles/logging.logWriter; do
+for role in roles/datastore.user roles/aiplatform.user roles/logging.logWriter roles/firebaseauth.viewer; do
   gcloud projects add-iam-policy-binding "$PROJECT" \
     --member="serviceAccount:${SA}" --role="$role" --condition=None
 done
@@ -194,7 +200,10 @@ and redeploy. The functions return to the default compute account. The
 
 - **`roles/firebaseauth.admin`** — not needed. The callable verifies the caller's
   ID token against Google's public certificates over HTTPS; that is not an IAM
-  operation.
+  operation. User management only *reads* accounts (`listUsers`, `getUser`),
+  so it gets `roles/firebaseauth.viewer`, not admin. Without the viewer role
+  every user-management call fails with `auth/insufficient-permission`, which
+  the admin console shows as "The server hit an error".
 - **`roles/iam.serviceAccountTokenCreator`** — only required for minting custom
   tokens or signing blobs, neither of which these functions do.
 - **Artifact Registry read** — the Cloud Run service agent pulls the image, not

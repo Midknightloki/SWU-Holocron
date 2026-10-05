@@ -33,8 +33,14 @@ function setup({ users = [record('admin'), record('bob'), record('guest1', { gue
     audit: [],
     getProfiles: vi.fn(async (uids) => Object.fromEntries(uids.map((u) => [u, store.profiles[u] ?? null]))),
     getProfile: vi.fn(async (uid) => store.profiles[uid] ?? null),
-    setRole: vi.fn(async (uid, role, value) => { store.profiles[uid] = { ...store.profiles[uid], [role]: value }; }),
-    addAudit: vi.fn(async (e) => { store.audit.push(e); }),
+    // One atomic step in the real store (a transaction): read, compare, write + audit.
+    applyRoleChange: vi.fn(async (uid, role, value, entry) => {
+      const from = store.profiles[uid]?.[role] === true;
+      if (from === value) return { changed: false };
+      store.profiles[uid] = { ...store.profiles[uid], [role]: value };
+      store.audit.push({ ...entry, from, to: value });
+      return { changed: true };
+    }),
     listAudit: vi.fn(async (uid) => store.audit.filter((e) => e.uid === uid).reverse()),
     collectionStats: vi.fn(async () => ({ unique: 120, total: 300, lastChangedAt: 5 })),
     batchStats: vi.fn(async () => ({ count: 2, latest: { name: 'Box', createdAt: 4, cards: 384 } })),
@@ -58,7 +64,7 @@ describe('admin gate', () => {
     await expect(h.listUsers(as(null))).rejects.toMatchObject({ code: 'unauthenticated' });
     await expect(h.setRole(as('bob', { uid: 'bob', role: 'isPro', value: true }))).rejects.toMatchObject({ code: 'permission-denied' });
     expect(auth.listUsers).not.toHaveBeenCalled();
-    expect(store.setRole).not.toHaveBeenCalled();
+    expect(store.applyRoleChange).not.toHaveBeenCalled();
   });
 });
 
@@ -118,7 +124,6 @@ describe('setRole', () => {
   it('does nothing for an unchanged value', async () => {
     const { h, store } = setup({ profiles: { admin: { isAdmin: true }, bob: { isPro: true } } });
     expect(await h.setRole(as('admin', { uid: 'bob', role: 'isPro', value: true }))).toEqual({ ok: true, unchanged: true });
-    expect(store.setRole).not.toHaveBeenCalled();
     expect(store.audit).toEqual([]);
   });
 
@@ -128,7 +133,7 @@ describe('setRole', () => {
       await expect(h.setRole(as('admin', { uid: 'bob', role, value: true }))).rejects.toMatchObject({ code: 'invalid-argument' });
     }
     await expect(h.setRole(as('admin', { uid: 'bob', role: 'isPro', value: 'yes' }))).rejects.toMatchObject({ code: 'invalid-argument' });
-    expect(store.setRole).not.toHaveBeenCalled();
+    expect(store.applyRoleChange).not.toHaveBeenCalled();
   });
 
   it('refuses guests and unknown users', async () => {

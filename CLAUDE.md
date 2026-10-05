@@ -358,7 +358,8 @@ that cross-check is what keeps a misread number from adding the wrong card.
 - Functions are deployed by hand
   (`firebase deploy --only functions:scanCard,functions:locateCard`, and
   `functions:adminListUsers,functions:adminGetUserDetail,functions:adminSetRole`
-  for user management); no
+  for user management, whose runtime account also needs
+  `roles/firebaseauth.viewer` -- see `docs/FUNCTIONS-RUNTIME-SA.md`); no
   workflow deploys them.
 - **Rig calibration.** Users with a fixed scanning rig calibrate once:
   `locateCard` (same pipeline, entitlement and quota as `scanCard`, shared in

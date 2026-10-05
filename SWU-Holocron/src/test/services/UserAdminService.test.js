@@ -30,6 +30,11 @@ describe('UserAdminService', () => {
     expect(await UserAdminService.listUsers()).toEqual({ error: 'Admins only.' });
     m.impl.adminListUsers = fail('functions/not-found');
     expect((await UserAdminService.listUsers()).error).toMatch(/isn't deployed yet/);
+    // Any server exception is internal -- not a sign the functions are missing.
+    m.impl.adminListUsers = fail('functions/internal');
+    expect(await UserAdminService.listUsers()).toEqual({ error: 'The server hit an error. Check the function logs.' });
+    m.impl.adminListUsers = fail('functions/unauthenticated');
+    expect(await UserAdminService.listUsers()).toEqual({ error: 'Sign in again.' });
     m.impl.adminSetRole = fail('functions/failed-precondition', "Guest accounts can't hold roles.");
     expect(await UserAdminService.setRole('g', 'isPro', true)).toEqual({ error: "Guest accounts can't hold roles." });
     m.impl.adminGetUserDetail = fail('functions/unavailable');

@@ -26,7 +26,12 @@ function fakeDb(docs = {}) {
   const db = {
     added,
     store,
-    collection: (path) => query(path, children(path)),
+    runTransaction: vi.fn(async (fn) => fn({
+      get: async (ref) => ({ exists: store.has(ref.path), data: () => store.get(ref.path) }),
+      set: (ref, data, opts) => { store.set(ref.path, opts?.merge ? { ...store.get(ref.path), ...data } : data); },
+      create: (ref, data) => { added.push({ path: ref.path.split('/').slice(0, -1).join('/'), data }); store.set(ref.path, data); },
+    })),
+    collection: (path) => ({ ...query(path, children(path)), doc: () => ({ path: `${path}/auto${added.length}` }) }),
     doc: (path) => ({
       path,
       get: async () => ({ exists: store.has(path), data: () => store.get(path) }),
@@ -72,13 +77,20 @@ describe('createAdminUsersStore', () => {
     expect(await s.scanUsage('u9')).toBeNull();
   });
 
-  it('merges a role and writes and reads the audit log', async () => {
+  it('applies a role change and its audit entry in one transaction', async () => {
     const db = fakeDb({ [`${A}/users/u1`]: { isAdmin: false, other: 1 } });
     const s = createAdminUsersStore({ db, appId: 'app', AggregateField });
-    await s.setRole('u1', 'isPro', true);
+    expect(await s.applyRoleChange('u1', 'isPro', true, { uid: 'u1', role: 'isPro', at: 5 })).toEqual({ changed: true });
+    expect(db.runTransaction).toHaveBeenCalledTimes(1);
     expect(db.store.get(`${A}/users/u1`)).toEqual({ isAdmin: false, other: 1, isPro: true });
-    await s.addAudit({ uid: 'u1', at: 5 });
-    expect(db.added).toEqual([{ path: `${A}/admin/audit/roleChanges`, data: { uid: 'u1', at: 5 } }]);
+    expect(db.added).toEqual([{ path: `${A}/admin/audit/roleChanges`, data: { uid: 'u1', role: 'isPro', at: 5, from: false, to: true } }]);
+  });
+
+  it('writes nothing when the role already has that value', async () => {
+    const db = fakeDb({ [`${A}/users/u1`]: { isPro: true } });
+    const s = createAdminUsersStore({ db, appId: 'app', AggregateField });
+    expect(await s.applyRoleChange('u1', 'isPro', true, { uid: 'u1', at: 5 })).toEqual({ changed: false });
+    expect(db.added).toEqual([]);
   });
 
   it('lists a user’s audit entries newest first', async () => {

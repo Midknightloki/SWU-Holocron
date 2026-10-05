@@ -95,6 +95,37 @@ describe('AdminUsers', () => {
     expect(within(panel).getByText("Guest accounts can't hold roles.")).toBeInTheDocument();
   });
 
+  it('never lets a late reply for another row replace the user on screen', async () => {
+    let lateBob;
+    m.getUserDetail.mockImplementation((uid) => (uid === 'bob'
+      ? new Promise((r) => { lateBob = () => r({ ...DETAIL, user: USERS[1] }); })
+      : Promise.resolve(DETAIL)));
+    renderTab();
+    fireEvent.click(await screen.findByRole('button', { name: /Bob/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Cara/ }));
+    const panel = await screen.findByRole('region', { name: 'User details' });
+    await within(panel).findByText('Cara');
+    lateBob();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(within(panel).queryByText('Bob')).not.toBeInTheDocument();
+    fireEvent.click(within(panel).getByLabelText('Pro'));
+    fireEvent.click(within(panel).getByRole('button', { name: 'Confirm' }));
+    await waitFor(() => expect(m.setRole).toHaveBeenCalledWith('cara', 'isPro', true));
+  });
+
+  it('stops loading when a user cannot be read, and clears the error after a good load', async () => {
+    m.getUserDetail.mockResolvedValueOnce({ error: 'The server hit an error. Check the function logs.' });
+    renderTab();
+    fireEvent.click(await screen.findByRole('button', { name: /Cara/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('The server hit an error');
+    const panel = screen.getByRole('region', { name: 'User details' });
+    expect(within(panel).queryByText('Loading…')).not.toBeInTheDocument();
+    expect(within(panel).getByText("Couldn't load this user.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Cara/ }));
+    await within(panel).findByText(/120 unique/);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('shows errors from the server', async () => {
     m.listUsers.mockResolvedValue({ error: 'Admins only.' });
     renderTab();

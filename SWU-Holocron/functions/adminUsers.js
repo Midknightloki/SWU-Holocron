@@ -106,15 +106,14 @@ function createAdminUsersHandlers({ auth, store, HttpsError, now = () => Date.no
     if (providerOf(record) === "guest") {
       throw new HttpsError("failed-precondition", "Guest accounts can't hold roles.");
     }
-    const profile = await store.getProfile(uid);
-    const from = Boolean(profile && profile[role] === true);
-    if (from === value) return { ok: true, unchanged: true };
-    await store.setRole(uid, role, value);
-    await store.addAudit({
-      uid, email: record.email || null, role, from, to: value,
+    // Read, compare, write and audit in one transaction: a change is never
+    // applied without its audit entry, and two admins at once can't record a
+    // wrong "from".
+    const { changed } = await store.applyRoleChange(uid, role, value, {
+      uid, email: record.email || null, role,
       byUid: caller.uid, byEmail: (caller.token && caller.token.email) || null, at: now(),
     });
-    return { ok: true };
+    return changed ? { ok: true } : { ok: true, unchanged: true };
   }
 
   return { listUsers, getUserDetail, setRole };

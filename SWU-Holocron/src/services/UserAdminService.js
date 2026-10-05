@@ -10,8 +10,11 @@ import { isConfigured } from '../firebase';
 function message(err) {
   switch (err?.code) {
     case 'functions/permission-denied': return 'Admins only.';
-    case 'functions/not-found':
-    case 'functions/internal': return "User management isn't deployed yet, or that user no longer exists.";
+    case 'functions/unauthenticated': return 'Sign in again.';
+    case 'functions/not-found': return "User management isn't deployed yet, or that user no longer exists.";
+    // Any server-side exception (missing permission, Firestore outage): the
+    // function logs say which.
+    case 'functions/internal': return 'The server hit an error. Check the function logs.';
     case 'functions/failed-precondition':
     case 'functions/invalid-argument': return err.message;
     default: return "Couldn't reach the server. Try again.";

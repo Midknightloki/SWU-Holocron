@@ -157,7 +157,8 @@ these on real hardware and record the results in the PR:
 
 ## User management — manual checks
 
-- Deploy: `firebase deploy --only functions:adminListUsers,functions:adminGetUserDetail,functions:adminSetRole`.
+- Grant the runtime account `roles/firebaseauth.viewer` once (`docs/FUNCTIONS-RUNTIME-SA.md`), then
+  deploy: `firebase deploy --only functions:adminListUsers,functions:adminGetUserDetail,functions:adminSetRole`.
 - Admin console → **Users**: the list loads, search and the role filter work,
   **Show guests** adds guest accounts.
 - Open a user: collection, batches, decks and last scan day look right.

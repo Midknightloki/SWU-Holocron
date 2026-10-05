@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Search } from 'lucide-react';
 import { UserAdminService } from '../services/UserAdminService';
 
@@ -43,17 +43,32 @@ export default function AdminUsers({ now = () => Date.now() }) {
   const [confirming, setConfirming] = useState(null);
   const [saving, setSaving] = useState(false);
   const [note, setNote] = useState(null);
+  const [detailFailed, setDetailFailed] = useState(false);
+  // The latest request of each kind: a slower, older reply is dropped, so the
+  // panel can never show (and Confirm can never act on) a row not selected.
+  const latestDetail = useRef(null);
+  const latestList = useRef(0);
 
   const loadUsers = useCallback(async () => {
+    const request = ++latestList.current;
     const res = await UserAdminService.listUsers({ includeGuests });
+    if (request !== latestList.current) return;
     if (res?.error) setError(res.error);
     else { setError(null); setUsers(res.users ?? []); }
   }, [includeGuests]);
 
   const loadDetail = useCallback(async (uid) => {
+    latestDetail.current = uid;
     const res = await UserAdminService.getUserDetail(uid);
-    if (res?.error) setError(res.error);
-    else setDetail(res);
+    if (uid !== latestDetail.current) return;
+    if (res?.error) {
+      setError(res.error);
+      setDetailFailed(true);
+    } else {
+      setError(null);
+      setDetailFailed(false);
+      setDetail(res);
+    }
   }, []);
 
   useEffect(() => { loadUsers(); }, [loadUsers]);
@@ -72,6 +87,7 @@ export default function AdminUsers({ now = () => Date.now() }) {
   const open = (uid) => {
     setSelected(uid);
     setDetail(null);
+    setDetailFailed(false);
     setConfirming(null);
     setNote(null);
     loadDetail(uid);
@@ -79,8 +95,10 @@ export default function AdminUsers({ now = () => Date.now() }) {
 
   const save = async () => {
     const { role, value } = confirming;
+    // The user on screen, not merely the selected row.
+    const { uid } = detail.user;
     setSaving(true);
-    const res = await UserAdminService.setRole(selected, role, value);
+    const res = await UserAdminService.setRole(uid, role, value);
     setSaving(false);
     setConfirming(null);
     if (res?.error) {
@@ -88,7 +106,7 @@ export default function AdminUsers({ now = () => Date.now() }) {
       return;
     }
     setNote(`${nameOf(detail.user)} sees the change next time they open the app.`);
-    await Promise.all([loadDetail(selected), loadUsers()]);
+    await Promise.all([loadDetail(uid), loadUsers()]);
   };
 
   const t = now();
@@ -156,9 +174,9 @@ export default function AdminUsers({ now = () => Date.now() }) {
 
         {selected && (
           <section role="region" aria-label="User details" className="rounded-xl bg-gray-800 border border-gray-700 p-4 space-y-3 text-sm">
-            {!detail ? (
-              <p className="text-gray-400">Loading…</p>
-            ) : (
+            {detailFailed && <p className="text-gray-400">Couldn&apos;t load this user.</p>}
+            {!detail && !detailFailed && <p className="text-gray-400">Loading…</p>}
+            {detail && (
               <>
                 <div>
                   <p className="text-lg font-bold text-white">{nameOf(user)}</p>

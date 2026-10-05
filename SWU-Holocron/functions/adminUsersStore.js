@@ -59,12 +59,18 @@ function createAdminUsersStore({ db, appId, AggregateField }) {
     return snap.exists ? snap.data() : null;
   }
 
-  async function setRole(uid, role, value) {
-    await db.doc(userPath(uid)).set({ [role]: value }, { merge: true });
-  }
-
-  async function addAudit(entry) {
-    await db.collection(auditPath).add(entry);
+  // The role write and its audit entry, atomically. `entry` gets from/to here,
+  // read inside the transaction.
+  async function applyRoleChange(uid, role, value, entry) {
+    const profileRef = db.doc(userPath(uid));
+    return db.runTransaction(async (tx) => {
+      const snap = await tx.get(profileRef);
+      const from = Boolean(snap.exists && snap.data()[role] === true);
+      if (from === value) return { changed: false };
+      tx.set(profileRef, { [role]: value }, { merge: true });
+      tx.create(db.collection(auditPath).doc(), { ...entry, from, to: value });
+      return { changed: true };
+    });
   }
 
   // No orderBy in the query: where + orderBy on another field would need a
@@ -74,7 +80,7 @@ function createAdminUsersStore({ db, appId, AggregateField }) {
     return snap.docs.map((d) => d.data()).sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, limit);
   }
 
-  return { getProfiles, getProfile, collectionStats, batchStats, deckCount, scanUsage, setRole, addAudit, listAudit };
+  return { getProfiles, getProfile, collectionStats, batchStats, deckCount, scanUsage, applyRoleChange, listAudit };
 }
 
 module.exports = { createAdminUsersStore };
