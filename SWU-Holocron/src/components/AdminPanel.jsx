@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Database, RefreshCw, Clock, CheckCircle, XCircle, AlertTriangle,
-  Shield, Plus, Trash2, Edit2, Package, Wand2, Users, Save, X, Mail, Copy, Ticket
+  Shield, Plus, Trash2, Edit2, Package, Wand2, Users, Save, X, Mail, Copy, Ticket, Boxes
 } from 'lucide-react';
+import AdminPrebuiltDecks from './AdminPrebuiltDecks';
 import { db, APP_ID } from '../firebase';
 import { SETS } from '../constants';
 import { collection, doc, getDoc, getDocs, query, orderBy, limit } from 'firebase/firestore';
@@ -552,6 +553,7 @@ export default function AdminPanel() {
     { id: 'shells', label: 'Shells', icon: Wand2 },
     { id: 'packets', label: 'Packets', icon: Package },
     ...(isAdmin ? [{ id: 'contributors', label: 'Contributors', icon: Users }] : []),
+    ...(isAdmin ? [{ id: 'prebuilt', label: 'Prebuilt Decks', icon: Boxes }] : []),
   ];
 
   return (
@@ -578,7 +580,7 @@ export default function AdminPanel() {
         )}
 
         {/* Tabs */}
-        <div className="flex items-center gap-1 bg-gray-800 rounded-xl p-1 border border-gray-700 w-fit">
+        <div className="flex flex-wrap items-center gap-1 bg-gray-800 rounded-xl p-1 border border-gray-700 w-fit max-w-full">
           {tabs.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
@@ -802,6 +804,8 @@ export default function AdminPanel() {
         )}
 
         {/* ── Contributors Tab (admin only) ── */}
+        {activeTab === 'prebuilt' && isAdmin && <AdminPrebuiltDecks uid={user?.uid} />}
+
         {activeTab === 'contributors' && isAdmin && (
           <div className="space-y-6">
             <h2 className="text-xl font-bold text-white flex items-center gap-2"><Users size={20} className="text-purple-400" /> Contributor Invites</h2>
