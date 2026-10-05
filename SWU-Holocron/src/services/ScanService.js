@@ -2,7 +2,7 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import { doc, increment, writeBatch } from 'firebase/firestore';
 import { db, isConfigured } from '../firebase';
 import { CardService } from './CardService';
-import { normalizeSetCode, relatedSetCodes, resolveScan } from '../utils/scanResolve';
+import { normalizeNumber, normalizeSetCode, relatedSetCodes, resolveScan } from '../utils/scanResolve';
 import { removeRows, toWrites } from '../utils/scanDraft';
 
 /**
@@ -122,6 +122,19 @@ export const ScanService = {
   /** Warm the per-session set cache (e.g. for sets picked in the scanner). Never throws. */
   async prefetchSets(codes) {
     await Promise.allSettled(codes.map((code) => cardsForSet(code)));
+  },
+
+  /** Type, rarity, aspects and printing of a card, for batch reports. Never throws. */
+  async cardDetails(set, number) {
+    try {
+      const want = normalizeNumber(number);
+      const card = (await cardsForSet(set)).find((c) => normalizeNumber(c.Number) === want);
+      return card
+        ? { type: card.Type ?? null, rarity: card.Rarity ?? null, aspects: card.Aspects ?? [], variant: card.VariantType ?? null }
+        : null;
+    } catch {
+      return null;
+    }
   },
 
   /** Finds the card in a rig-calibration photo. Never throws. */
