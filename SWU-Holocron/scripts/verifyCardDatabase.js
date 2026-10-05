@@ -14,6 +14,7 @@
 import { SETS } from '../src/cardData.js';
 import { LEGACY_SET_CODES } from '../src/setCatalog.js';
 import { PLACEHOLDER_FLAG, classifySetCompleteness } from '../src/placeholderCards.js';
+import { staleIssue } from './setFreshness.js';
 import { initFirestore } from './firebaseAdmin.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -111,9 +112,8 @@ async function verifyFirestoreData() {
         issues.push(`${set.code}: dataHash missing`);
       }
 
-      if (age > 7 * 24 * 3600000) {
-        issues.push(`${set.code}: data older than 7 days`);
-      }
+      const stale = staleIssue(set.code, data);
+      if (stale) issues.push(stale);
 
     } catch (error) {
       console.log(`❌ ${set.code} - ERROR: ${error.message}`);
