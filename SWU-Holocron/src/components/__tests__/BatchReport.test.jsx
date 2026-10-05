@@ -41,6 +41,12 @@ describe('BatchReport', () => {
     expect(screen.getByTestId('unpriced')).toHaveTextContent('Battle Droid');
   });
 
+  it('renders straight under <body>, so printing can hide the rest of the app', async () => {
+    renderReport();
+    await screen.findByRole('heading', { name: 'eBay SOR box' });
+    expect(screen.getByRole('dialog', { name: 'Batch report' }).parentElement).toBe(document.body);
+  });
+
   it('downloads a CSV', async () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     renderReport();

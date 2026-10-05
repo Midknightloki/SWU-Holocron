@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Download, FileText, Pencil, Trash2, X } from 'lucide-react';
 import { BatchService } from '../services/BatchService';
 import { PricingService } from '../services/PricingService';
@@ -9,6 +10,8 @@ import { batchCsvFilename, toBatchCsv } from '../utils/batchCsv';
  * The report for one scanning batch: what came out of it, what it was worth
  * when added and now, and how that compares with what was paid. Printing
  * (Save as PDF) shows only this screen -- see the print rule in index.css.
+ * It renders straight under <body> so that rule can take everything else out
+ * of the layout; merely hiding it left pages of blank binder behind.
  */
 const fmt = (v) => (v === null || v === undefined ? '—' : `${v < 0 ? '-' : ''}$${Math.abs(v).toFixed(2)}`);
 const signed = (v) => (v === null ? '—' : `${v > 0 ? '+' : ''}${fmt(v)}`);
@@ -62,7 +65,7 @@ function CardList({ title, lines, testId, price = true }) {
         {lines.map((l) => (
           <li key={l.id} className="py-1 flex gap-2">
             <span className="text-gray-500 w-20 flex-shrink-0">{l.set} {l.number}</span>
-            <span className="flex-1 min-w-0 truncate">
+            <span className="flex-1 min-w-0 truncate print:whitespace-normal print:overflow-visible">
               {l.name}{l.isFoil ? ' (foil)' : ''}{l.qty > 1 ? ` ×${l.qty}` : ''}
             </span>
             {price && <span>{fmt(l.priceAtAdd)}</span>}
@@ -128,7 +131,7 @@ export default function BatchReport({ uid, batchId, onClose, onDeleted }) {
     onDeleted();
   };
 
-  const shell = (children) => (
+  const shell = (children) => createPortal(
     <div
       id="batch-report"
       role="dialog"
@@ -136,7 +139,8 @@ export default function BatchReport({ uid, batchId, onClose, onDeleted }) {
       className="fixed inset-0 z-[80] overflow-y-auto bg-gray-950 text-gray-100 print:static print:bg-white print:text-black"
     >
       <div className="max-w-3xl mx-auto p-4 space-y-5">{children}</div>
-    </div>
+    </div>,
+    document.body,
   );
 
   if (batch === undefined) return shell(<p className="text-gray-400">Loading…</p>);
@@ -160,7 +164,7 @@ export default function BatchReport({ uid, batchId, onClose, onDeleted }) {
     <>
       <header className="flex items-start gap-3">
         <div className="flex-1 min-w-0">
-          <h2 className="text-xl font-bold truncate">{report.name}</h2>
+          <h2 className="text-xl font-bold truncate print:whitespace-normal">{report.name}</h2>
           <p className="text-sm text-gray-400 print:text-gray-600">{new Date(report.createdAt).toLocaleDateString()}</p>
         </div>
         <button type="button" onClick={onClose} className={`${button} print:hidden`}>

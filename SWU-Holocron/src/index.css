@@ -43,9 +43,10 @@ html {
 .animate-shimmer {
   animation: shimmer 2s infinite;
 }
-/* Batch report: printing (Save as PDF) shows only the report. */
+/* Batch report: printing (Save as PDF) shows only the report. It is portalled
+   to <body>, so everything else can leave the layout entirely -- hiding it
+   with visibility kept its height and printed pages of blank binder. */
 @media print {
-  body * { visibility: hidden; }
-  #batch-report, #batch-report * { visibility: visible; }
-  #batch-report { position: absolute; inset: 0; overflow: visible; }
+  body > :not(#batch-report) { display: none !important; }
+  #batch-report { position: static; overflow: visible; }
 }
