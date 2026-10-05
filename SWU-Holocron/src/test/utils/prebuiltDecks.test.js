@@ -114,6 +114,8 @@ describe('products', () => {
   it('suggests nothing without a product in the same set or any shared word', () => {
     expect(suggestProduct({ sourceName: 'Boba Aggression', leaders: ['JTL_010'] }, PRODUCTS)).toBeNull();
     expect(suggestProduct({ sourceName: 'Zzz (ASH)', leaders: ['ASH_001'] }, PRODUCTS)).toBeNull();
+    // A personal deck is not the set's only precon just because it shares the set.
+    expect(suggestProduct({ sourceName: 'Aggression', leaders: ['SOR_010'] }, PRODUCTS)).toBeNull();
   });
 });
 

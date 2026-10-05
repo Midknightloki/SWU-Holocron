@@ -66,13 +66,15 @@ const words = (s) => new Set(String(s ?? '')
 
 export function suggestProduct(deck, products) {
   const set = deckSetCode(deck);
+  // Same set, and at least one shared name word -- the set's name counts
+  // ("Intro Battle: Hoth"), but sharing a set alone is not enough: the site
+  // owner's personal decks share sets with the precons too.
   const candidates = products.filter((p) => p.setCode === set);
-  if (candidates.length === 1) return candidates[0];
   const mine = words(deck.sourceName);
   let best = null;
   let bestScore = 0;
   for (const p of candidates) {
-    const theirs = words(p.name.split(' - ').slice(1).join(' - '));
+    const theirs = words(p.name);
     const score = [...mine].filter((w) => theirs.has(w)).length;
     if (score > bestScore) { best = p; bestScore = score; }
   }
