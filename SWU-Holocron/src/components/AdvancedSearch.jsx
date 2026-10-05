@@ -6,6 +6,7 @@ import { dedupeToBasePrintings } from '../utils/cardIdentity';
 import { CardService } from '../services/CardService';
 import { getPlaysetQuantity } from '../utils/collectionHelpers';
 import ScanButton from './ScanButton';
+import { matchesNumberQuery } from '../utils/cardNumberQuery';
 
 export default function AdvancedSearch({ onCardClick, collectionData, currentSet, onClose = () => {}, onUpdateQuantity, embedded = false, getDeckCount = () => 0, initialFilters = {}, onScan }) {
   const [searchText, setSearchText] = useState('');
@@ -139,7 +140,9 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
           const matchesKeywords = card.Keywords?.some(k => k.toLowerCase().includes(text));
           const matchesArenas = card.Arenas?.some(a => a.toLowerCase().includes(text));
 
-          if (!matchesName && !matchesSubtitle && !matchesFrontText && !matchesBackText && !matchesTraits && !matchesKeywords && !matchesArenas) {
+          const matchesNumber = matchesNumberQuery(card, text);
+
+          if (!matchesNumber && !matchesName && !matchesSubtitle && !matchesFrontText && !matchesBackText && !matchesTraits && !matchesKeywords && !matchesArenas) {
             return false;
           }
         }
@@ -299,7 +302,7 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
                   type="text"
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
-                  placeholder="Name, text, traits..."
+                  placeholder="Name, text, traits, number..."
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2 pl-10 pr-4 text-white placeholder:text-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 />
               </div>

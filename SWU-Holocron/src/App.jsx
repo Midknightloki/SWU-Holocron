@@ -30,6 +30,7 @@ import RedeemInviteModal from './components/RedeemInviteModal';
 import ErrorBoundary from './components/ErrorBoundary';
 import CardScanner from './components/CardScanner';
 import ScanButton from './components/ScanButton';
+import { matchesNameOrNumber } from './utils/cardNumberQuery';
 
 // Version info
 const VERSION = __APP_VERSION__;
@@ -519,7 +520,7 @@ export default function App() {
           return false;
         }
       }
-      const matchSearch = card.Name?.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchSearch = matchesNameOrNumber(card, searchTerm);
       // Handle Neutral aspect filter for cards with no aspects
       const isNeutral = !card.Aspects || card.Aspects.length === 0;
       const matchAspect = selectedAspect === 'All' ||
@@ -800,7 +801,7 @@ export default function App() {
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-yellow-500 transition-colors" size={16} />
                   <input
                     type="text"
-                    placeholder="Search cards..."
+                    placeholder="Search name or number..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="w-full bg-gray-800/50 border border-gray-700 rounded-full pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-yellow-500/50 focus:ring-1 focus:ring-yellow-500/50 transition-all placeholder:text-gray-600"
