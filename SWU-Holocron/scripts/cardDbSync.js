@@ -12,6 +12,7 @@
 import { execSync } from 'child_process';
 import { mkdirSync, writeFileSync } from 'fs';
 import { initFirestore } from './firebaseAdmin.js';
+import { syncPrebuiltDecks } from './prebuiltDecks.js';
 import { reconcileSet } from '../src/cardReconcile.js';
 import { applyPlaceholders, classifySetCompleteness, isFailingStatus } from '../src/placeholderCards.js';
 import {
@@ -594,7 +595,19 @@ async function main() {
   // Step 5 - Prices. Never fails the run; see syncPrices.
   steps.prices = await syncPrices();
 
-  // Step 6 - Verify
+  // Step 6 - Prebuilt decks from sw-unlimited-db. Never fails the run.
+  steps.prebuilt = await (async () => {
+    const start = Date.now();
+    try {
+      const { APP_ID } = await import('../src/firebase.js');
+      const res = await syncPrebuiltDecks({ db: await initFirestore(), appId: APP_ID });
+      return { ...res, duration_ms: Date.now() - start };
+    } catch (error) {
+      return { success: true, degraded: true, added: [], changed: [], products: 0, error: error.message, duration_ms: Date.now() - start };
+    }
+  })();
+
+  // Step 7 - Verify
   steps.verify = runStep('Verify database', 'node scripts/verifyCardDatabase.js');
   if (!steps.verify.success) {
     errors.push('Verify step failed');
@@ -625,6 +638,15 @@ async function main() {
         cardsPriced: steps.prices.totalCards || 0,
         failed: steps.prices.failed || [],
         unpriceable: steps.prices.unpriceable || []
+      },
+      prebuilt: {
+        success: steps.prebuilt.success,
+        degraded: steps.prebuilt.degraded || false,
+        duration_ms: steps.prebuilt.duration_ms,
+        added: steps.prebuilt.added,
+        changed: steps.prebuilt.changed,
+        products: steps.prebuilt.products,
+        error: steps.prebuilt.error || null
       },
       placeholders: {
         success: steps.placeholders.success,
@@ -676,6 +698,7 @@ async function main() {
   console.log(`  Placeholders: ${steps.placeholders.success ? 'OK' : 'FAILED'} (+${(steps.placeholders.added || []).length}, -${(steps.placeholders.removed || []).length} stale)`);
   const priceState = steps.prices.degraded ? 'DEGRADED' : (steps.prices.skipped ? 'SKIPPED (unchanged)' : 'OK');
   console.log(`  Prices: ${priceState} (${(steps.prices.priced || []).length} sets, ${steps.prices.totalCards || 0} cards)`);
+  console.log(`  Prebuilt decks: ${steps.prebuilt.degraded ? `DEGRADED (${steps.prebuilt.error})` : 'OK'} (+${steps.prebuilt.added.length} for review, ${steps.prebuilt.changed.length} changed)`);
   console.log(`  Verify: ${steps.verify.success ? 'OK' : 'FAILED'}`);
   console.log(`  Errors: ${errors.length}`);
   console.log('='.repeat(60) + '\n');
