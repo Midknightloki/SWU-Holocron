@@ -110,6 +110,9 @@ artifacts/{APP_ID}/submissions, /shells, /packets, /contributorInvites
 artifacts/{APP_ID}/admin/sync/logs
 artifacts/{APP_ID}/config/scanner                             { dailyLimit } for the card scanner (function-only)
 artifacts/{APP_ID}/scanUsage/{uid}                            per-user daily scan counter (function-only)
+artifacts/{APP_ID}/public/data/prebuiltDecks/{sourceId}       precon decks (sync writes; admins publish)
+artifacts/{APP_ID}/public/data/cardDatabase/preconProducts    TCGplayer precon products (sync writes)
+artifacts/{APP_ID}/users/{uid}/prebuiltAdds/{sourceId}        when a user added a precon
 ```
 
 Firestore requires alternating collection/document segments, so path arity is
@@ -356,6 +359,33 @@ that cross-check is what keeps a misread number from adding the wrong card.
   only approximately — the live stream and the still photo can frame
   differently — but the crop is exact because it is applied to the photo.
 
+### Prebuilt decks
+
+Precon decks (Spotlight, starters, Twin Suns, Intro Battle) are added to a
+collection in one tap from the Command Center. No official source publishes
+precon contents as data, so they come from **sw-unlimited-db.com**, whose
+owner (user **3671**) publishes each precon as it releases:
+
+- `scripts/prebuiltDecks.js` is a step in the weekly card sync. It lists that
+  user's published decks (`POST /api/proxy/api/decks/query`, server only) and
+  fetches new or edited ones from the deck API
+  (`/umbraco/api/deckapi/get?id=`, CORS `*`), which returns exact `SET_NNN`
+  printings. It also stores TCGplayer's precon products (via TCGCSV) for each
+  deck's product, image and release date. It never fails the sync.
+- New decks wait as `review`; nothing reaches collectors until an admin
+  publishes it in the **Prebuilt Decks** admin tab. The owner's personal
+  decks are marked "Not a precon" once and skipped after that. A deck edited
+  at the source becomes `changed` and keeps serving its published list until
+  accepted. Older products are backfilled by pasting a deck link (the browser
+  fetches it).
+- Precons are always the **standard printing**, so cards map to
+  `SET_NNN_std`. Adding a deck reuses `ScanService.commitDraft` (additive) and
+  records a finished batch with its report (`src/services/prebuiltAdd.js`).
+  Cards our database lacks are flagged at review and skipped on add.
+- Product matching (`src/utils/prebuiltDecks.js`) needs the same set and a
+  shared name word: a shared set alone suggested the SOR starter for the
+  owner's personal SOR decks.
+
 ### Constants split
 
 `src/cardData.js` holds pure data (`API_BASE`, `SETS`, `FALLBACK_DATA`) and is
@@ -430,7 +460,8 @@ without it. The cron was enabled 2026-09-26 after a manual run was watched end t
 end and came back clean at 51/51 sets and 0 verify issues; the run before that
 was not clean, which is what the gate was for.
 
-Pipeline order is seed → scrape → reconcile → **placeholders** → verify. The
+Pipeline order is seed → scrape → reconcile → **placeholders** → prices →
+prebuilt decks → verify. The
 placeholder step is what keeps a red run from being permanent: where the catalogue
 claims cards no source can describe, it records placeholders instead of failing,
 and verify treats that as informational (`src/placeholderCards.js`).
