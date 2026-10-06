@@ -1,6 +1,7 @@
 import { loadSet } from './setLoader';
 import { PricingService } from './PricingService';
 import { buildCollectionLines } from '../utils/collectionValue';
+import { LEGACY_SET_CODES } from '../setCatalog';
 
 /**
  * Everything the collection value report needs: card details for each owned
@@ -10,7 +11,9 @@ import { buildCollectionLines } from '../utils/collectionValue';
  */
 export async function loadCollectionValue(collectionData, { loadSetImpl = loadSet, pricing = PricingService } = {}) {
   const owned = Object.entries(collectionData ?? {}).filter(([, d]) => (Number(d?.quantity) || 0) > 0);
-  const setCodes = [...new Set(owned.map(([, d]) => d.set).filter(Boolean))];
+  // PROMO/OTHER are legacy collection buckets, not sets: there is nothing to
+  // load, and trying fails every time.
+  const setCodes = [...new Set(owned.map(([, d]) => d.set).filter((code) => code && !LEGACY_SET_CODES.includes(code)))];
   const cardsBySet = {};
   const missingSets = [];
   await Promise.all(setCodes.map(async (code) => {
@@ -29,5 +32,8 @@ export async function loadCollectionValue(collectionData, { loadSetImpl = loadSe
   } catch {
     error = 'prices';
   }
+  // A failed read (offline, denied) leaves cards unpriced without throwing:
+  // say so, rather than show an unexplained $0.
+  if (!error && (pricing.failedSets?.() ?? []).some((code) => setCodes.includes(code))) error = 'prices';
   return { lines: buildCollectionLines(collectionData, cardsBySet, prices), missingSets: missingSets.sort(), ...(error ? { error } : {}) };
 }

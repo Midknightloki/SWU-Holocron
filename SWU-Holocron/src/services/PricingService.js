@@ -34,17 +34,23 @@ import { lookupCardPrice } from '../tcgPrices';
 
 /** setCode -> Promise<priceDoc|null>. Held for the page's lifetime. */
 const setPriceCache = new Map();
+// Sets whose last read failed (offline, denied) -- not cached, so retried.
+const failedReads = new Set();
 
 export const PricingService = {
   /**
    * Prices for one set, or null when that set has none.
    *
    * Memoised per set, including the misses, so a set without prices is asked for
-   * once rather than on every render.
+   * once rather than on every render. A failed read is not memoised -- it is
+   * retried next time -- and is listed by failedSets() until a read succeeds.
    *
    * @param {string} setCode e.g. 'SOR'
    * @returns {Promise<object|null>}
    */
+  /** Sets whose most recent price read failed. */
+  failedSets: () => [...failedReads].sort(),
+
   getSetPrices: async (setCode) => {
     if (!setCode || !db || !APP_ID) return null;
 
@@ -61,9 +67,12 @@ export const PricingService = {
           code, 'prices'
         );
         const snap = await getDoc(ref);
+        failedReads.delete(code);
         return snap.exists() ? snap.data() : null;
       } catch (error) {
         console.warn(`PricingService: could not read prices for ${code}:`, error.message);
+        setPriceCache.delete(code);
+        failedReads.add(code);
         return null;
       }
     })();
@@ -150,5 +159,6 @@ export const PricingService = {
   /** Drop the memoised set documents. Only needed by tests. */
   _resetCache: () => {
     setPriceCache.clear();
+    failedReads.clear();
   },
 };

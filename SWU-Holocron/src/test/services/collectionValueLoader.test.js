@@ -38,4 +38,23 @@ describe('loadCollectionValue', () => {
     expect(res.lines.every((l) => l.value === null)).toBe(true);
     expect(res.error).toBe('prices');
   });
+
+  it('says prices are unavailable when an owned set failed to read (offline)', async () => {
+    const res = await loadCollectionValue(COLLECTION, {
+      loadSetImpl: async () => ({ cards: [] }),
+      pricing: { getBulkPrices: async () => ({}), failedSets: () => ['SOR'] },
+    });
+    expect(res.error).toBe('prices');
+  });
+
+  it('does not try to load the legacy PROMO/OTHER buckets, which are not real sets', async () => {
+    const loadSetImpl = vi.fn(async () => ({ cards: [] }));
+    const res = await loadCollectionValue(
+      { PROMO_001_std: { quantity: 1, set: 'PROMO', number: '001', name: 'Old promo' } },
+      { loadSetImpl, pricing: { getBulkPrices: async () => ({}) } },
+    );
+    expect(loadSetImpl).not.toHaveBeenCalled();
+    expect(res.missingSets).toEqual([]);
+    expect(res.lines[0]).toMatchObject({ name: 'Old promo' });
+  });
 });
