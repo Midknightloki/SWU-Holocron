@@ -17,6 +17,10 @@ vi.mock('../../services/PricingService', () => ({
   }
 }));
 
+vi.mock('../SaveListDialog', () => ({
+  default: ({ kind, items, defaultName }) => <div role="dialog" aria-label="save-dialog">{kind}|{defaultName}|{Object.keys(items).join(',')}</div>,
+}));
+
 import { PricingService } from '../../services/PricingService';
 
 describe('ShoppingList Component', () => {
@@ -95,6 +99,18 @@ describe('ShoppingList Component', () => {
       expect(screen.getByText('Chewbacca')).toBeInTheDocument();
       expect(screen.getByText('Director Krennic')).toBeInTheDocument();
     }, { timeout: 3000 });
+  });
+
+  it('saves the deck gaps as a wants list', async () => {
+    render(<ShoppingList deck={deckWithGaps} collectionData={{}} cardDatabase={mockCardDatabase} uid="u1" deckName="Krennic aggro" />);
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'Save as wants list' }));
+    expect(screen.getByRole('dialog', { name: 'save-dialog' })).toHaveTextContent(/^wants\|Wants: Krennic aggro\|SOR_001_any,SOR_003_any$/);
+  });
+
+  it('offers no save without a signed-in user', async () => {
+    render(<ShoppingList deck={deckWithGaps} collectionData={{}} cardDatabase={mockCardDatabase} />);
+    await screen.findByText(/cards needed/);
+    expect(screen.queryByRole('button', { name: 'Save as wants list' })).not.toBeInTheDocument();
   });
 
   it('should render shopping cart icon', async () => {
