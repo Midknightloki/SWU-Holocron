@@ -76,7 +76,9 @@ describe('Binder Value button', () => {
     mockDocs = { SOR_001_std: { quantity: 2, set: 'SOR', number: '001', name: 'Test Card', isFoil: false } };
     const user = userEvent.setup();
     render(<App />);
-    await user.click(await screen.findByRole('button', { name: 'Value' }));
+    // The whole app renders here; under a full parallel suite that can take
+    // longer than the default 1s wait.
+    await user.click(await screen.findByRole('button', { name: 'Value' }, { timeout: 5000 }));
     expect(screen.getByRole('dialog', { name: 'Collection value' })).toBeInTheDocument();
     await user.click(screen.getByText('close-value'));
     expect(screen.queryByRole('dialog', { name: 'Collection value' })).not.toBeInTheDocument();
@@ -84,7 +86,7 @@ describe('Binder Value button', () => {
 
   it('is hidden when the collection is empty', async () => {
     render(<App />);
-    await screen.findByPlaceholderText(/search name or number/i);
+    await screen.findByPlaceholderText(/search name or number/i, {}, { timeout: 5000 });
     expect(screen.queryByRole('button', { name: 'Value' })).not.toBeInTheDocument();
   });
 });
