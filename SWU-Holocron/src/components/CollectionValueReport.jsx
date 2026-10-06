@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Download, FileText, X } from 'lucide-react';
+import { ChevronDown, Download, FileText, SlidersHorizontal, X } from 'lucide-react';
 import { loadCollectionValue } from '../services/collectionValueLoader';
 import {
   DEFAULT_FILTERS, applyFilters, filterOptions, summarize, sortLines, toCollectionCsv,
@@ -72,6 +72,9 @@ export default function CollectionValueReport({ collectionData, onClose, load = 
   const [shown, setShown] = useState(PAGE);
   // Save as PDF prints every matching card: render them all, print, page again.
   const [printing, setPrinting] = useState(false);
+  // The filter controls take a lot of room: collapsed until asked for. The
+  // chips below always show what is applied.
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -154,7 +157,20 @@ export default function CollectionValueReport({ collectionData, onClose, load = 
               </button>
             </div>
 
-            {/* Filters */}
+            <button
+              type="button"
+              aria-expanded={filtersOpen}
+              onClick={() => setFiltersOpen((o) => !o)}
+              className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-sm font-semibold print:hidden"
+            >
+              <span className="flex items-center gap-2">
+                <SlidersHorizontal className="w-4 h-4" aria-hidden="true" />
+                {chips.length > 0 ? `Filters (${chips.length})` : 'Filters'}
+              </span>
+              <ChevronDown className={`w-4 h-4 transition-transform ${filtersOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+            </button>
+
+            {filtersOpen && (
             <section className="grid grid-cols-2 sm:grid-cols-3 gap-2 print:hidden" aria-label="Filters">
               {LIST_FIELDS.map(({ field, label, option }) => (
                 <label key={field} className="flex flex-col gap-1 text-xs text-gray-400">
@@ -214,6 +230,7 @@ export default function CollectionValueReport({ collectionData, onClose, load = 
                 />
               </label>
             </section>
+            )}
 
             {chips.length > 0 && (
               <div className="flex flex-wrap gap-2 print:hidden">

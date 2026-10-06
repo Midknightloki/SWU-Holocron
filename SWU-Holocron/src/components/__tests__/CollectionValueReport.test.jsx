@@ -20,6 +20,9 @@ beforeEach(() => {
   localStorage.setItem.mockReset();
 });
 
+// The filters start collapsed behind a button.
+const showFilters = () => fireEvent.click(screen.getByRole('button', { name: /^Filters/ }));
+
 const open = async () => {
   render(<CollectionValueReport collectionData={{}} onClose={vi.fn()} load={load} />);
   return screen.findByTestId('total-value');
@@ -34,6 +37,7 @@ describe('CollectionValueReport', () => {
 
   it('filters, and every number follows', async () => {
     await open();
+    showFilters();
     const set = screen.getByLabelText('Set');
     fireEvent.change(set, { target: { selectedOptions: [set.querySelector('option[value="SHD"]')] } });
     await waitFor(() => expect(screen.getByTestId('total-cards')).toHaveTextContent('1'));
@@ -67,6 +71,7 @@ describe('CollectionValueReport', () => {
 
   it('remembers filters', async () => {
     await open();
+    showFilters();
     fireEvent.change(screen.getByLabelText('Search cards'), { target: { value: 'vader' } });
     expect(localStorage.setItem).toHaveBeenLastCalledWith('swu-value-filters', expect.stringContaining('"search":"vader"'));
   });
@@ -74,6 +79,7 @@ describe('CollectionValueReport', () => {
   it('starts from remembered filters', async () => {
     localStorage.getItem.mockImplementation(() => JSON.stringify({ search: 'vader' }));
     expect(await open()).toHaveTextContent('$10.00');
+    showFilters();
     expect(screen.getByLabelText('Search cards')).toHaveValue('vader');
   });
 
@@ -110,6 +116,7 @@ describe('CollectionValueReport', () => {
     // Only the readable part survives: sets ['SOR'] (the number is dropped).
     expect(screen.getByTestId('total-cards')).toHaveTextContent('12');
     expect(screen.getByRole('button', { name: 'Remove Set: SOR' })).toBeInTheDocument();
+    showFilters();
     expect(screen.getByLabelText('Search cards')).toHaveValue('');
     expect(screen.getByLabelText('Finish')).toHaveValue('all');
   });
@@ -132,5 +139,19 @@ describe('CollectionValueReport', () => {
   it('shows no money total when nothing is priced', async () => {
     render(<CollectionValueReport collectionData={{}} onClose={vi.fn()} load={async () => ({ lines: [LINES[2]], missingSets: [] })} />);
     expect(await screen.findByTestId('total-value')).toHaveTextContent('—');
+  });
+
+  it('keeps the filters collapsed behind a button, with the active ones still shown as chips', async () => {
+    localStorage.getItem.mockImplementation(() => JSON.stringify({ sets: ['SOR'] }));
+    await open();
+    const toggle = screen.getByRole('button', { name: 'Filters (1)' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByLabelText('Search cards')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove Set: SOR' })).toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByLabelText('Search cards')).toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(screen.queryByLabelText('Search cards')).not.toBeInTheDocument();
   });
 });
