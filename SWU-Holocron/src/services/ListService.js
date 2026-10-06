@@ -12,6 +12,18 @@ const listRef = (uid, id) => doc(db, 'artifacts', APP_ID, 'users', uid, 'lists',
 const fail = (err) => ({ error: err?.message ?? 'unknown' });
 const DEFAULT_NAME = { trade: 'Trade list', wants: 'Wants list' };
 
+// Offline, Firestore queues a write and its promise never settles. Stop
+// waiting so the screen can say the change isn't saved, rather than look
+// saved while it sits in a queue a reload would drop.
+export const WRITE_TIMEOUT_MS = 8000;
+const settle = (promise) => {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('timeout')), WRITE_TIMEOUT_MS);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+};
+
 export const ListService = {
   async listLists(uid, kind) {
     if (!db) return { error: 'offline' };
@@ -38,9 +50,9 @@ export const ListService = {
     if (!db) return { error: 'offline' };
     try {
       const now = Date.now();
-      const ref = await addDoc(listsRef(uid), {
+      const ref = await settle(addDoc(listsRef(uid), {
         kind, name: name?.trim() || DEFAULT_NAME[kind], items, source, showPrices, createdAt: now, updatedAt: now,
-      });
+      }));
       return { id: ref.id };
     } catch (err) {
       return fail(err);
@@ -50,7 +62,7 @@ export const ListService = {
   async updateList(uid, id, patch) {
     if (!db) return { error: 'offline' };
     try {
-      await updateDoc(listRef(uid, id), { ...patch, updatedAt: Date.now() });
+      await settle(updateDoc(listRef(uid, id), { ...patch, updatedAt: Date.now() }));
       return { ok: true };
     } catch (err) {
       return fail(err);
@@ -60,7 +72,7 @@ export const ListService = {
   async deleteList(uid, id) {
     if (!db) return { error: 'offline' };
     try {
-      await deleteDoc(listRef(uid, id));
+      await settle(deleteDoc(listRef(uid, id)));
       return { ok: true };
     } catch (err) {
       return fail(err);

@@ -107,6 +107,12 @@ describe('ShoppingList Component', () => {
     expect(screen.getByRole('dialog', { name: 'save-dialog' })).toHaveTextContent(/^wants\|Wants: Krennic aggro\|SOR_001_any,SOR_003_any$/);
   });
 
+  it('counts owned copies of unpadded-number cards (TS26_1 is collection doc TS26_001)', async () => {
+    const db = [{ Set: 'TS26', Number: 1, Name: 'Twin Card', Type: 'Unit' }];
+    render(<ShoppingList deck={{ cards: { TS26_1: 3 } }} collectionData={{ TS26_001_std: { quantity: 3 } }} cardDatabase={db} />);
+    expect(await screen.findByText(/You own everything/i)).toBeInTheDocument();
+  });
+
   it('offers no save without a signed-in user', async () => {
     render(<ShoppingList deck={deckWithGaps} collectionData={{}} cardDatabase={mockCardDatabase} />);
     await screen.findByText(/cards needed/);

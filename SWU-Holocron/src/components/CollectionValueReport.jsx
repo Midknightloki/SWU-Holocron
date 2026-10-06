@@ -469,7 +469,7 @@ export default function CollectionValueReport({ uid, collectionData, onClose, lo
       </div>
       {savingList && (
         <SaveListDialog uid={uid} kind="trade" items={itemsFromSurplus(lines)} source={{ type: 'surplus', label: 'Surplus' }}
-          defaultName="Trade list" onClose={() => setSavingList(false)} />
+          defaultName="Trade list" showPrices={showPrices} onClose={() => setSavingList(false)} />
       )}
     </div>,
     document.body,

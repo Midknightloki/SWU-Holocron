@@ -150,7 +150,10 @@ export default function ListView({ uid, list, collectionData, onBack, onDeleted,
               <div className="flex items-center gap-2">
                 <span className="flex-1 min-w-0">
                   <span className="block font-medium truncate">{l.name}{l.subtitle ? `, ${l.subtitle}` : ''}</span>
-                  <span className="block text-xs text-gray-500">{l.set} {l.number}{wants ? '' : ` · ${FINISH_LABEL[l.finish]}`}</span>
+                  <span className="block text-xs text-gray-500">{l.set} {l.number}{wants ? '' : ` · ${FINISH_LABEL[l.finish]}`}
+                    {/* The finish picker is hidden in print: say it in the PDF. */}
+                    {wants && <span data-testid="print-finish" className="hidden print:inline"> · {FINISH_LABEL[l.finish]}</span>}
+                  </span>
                 </span>
                 {showPrices && l.unitPrice !== null && (
                   <span className="text-xs text-gray-400 text-right">{money(l.unitPrice)}{l.priceIsFallback ? ' ↺' : ''}</span>

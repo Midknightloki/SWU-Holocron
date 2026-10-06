@@ -29,6 +29,14 @@ describe('SaveListDialog', () => {
     expect(service.createList).toHaveBeenCalledWith('u1', { kind: 'wants', name: 'Wants: Vader deck', items: ITEMS, source: { type: 'deck', label: 'Vader deck' } });
   });
 
+  it('creates the list with prices hidden when the report had them hidden', async () => {
+    open({ showPrices: false });
+    await screen.findByLabelText('Add to “Old”');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await screen.findByRole('status');
+    expect(service.createList.mock.calls[0][1].showPrices).toBe(false);
+  });
+
   it('adds into an existing wants list', async () => {
     open();
     fireEvent.click(await screen.findByLabelText('Add to “Old”'));

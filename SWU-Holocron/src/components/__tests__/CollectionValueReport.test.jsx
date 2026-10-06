@@ -5,8 +5,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within, cleanup } from '@testing-library/react';
 import React from 'react';
 vi.mock('../SaveListDialog', () => ({
-  default: ({ kind, items, onClose }) => (
-    <div role="dialog" aria-label="save-dialog">{kind} {Object.keys(items).join(',')}<button type="button" onClick={onClose}>close-save</button></div>
+  default: ({ kind, items, showPrices, onClose }) => (
+    <div role="dialog" aria-label="save-dialog">{kind} {Object.keys(items).join(',')} prices:{String(showPrices)}<button type="button" onClick={onClose}>close-save</button></div>
   ),
 }));
 import CollectionValueReport from '../CollectionValueReport';
@@ -203,6 +203,7 @@ describe('Surplus mode', () => {
     expect(dialog).toHaveTextContent(/^trade /);
     expect(dialog.textContent).toContain('SOR_005_standard');
     expect(dialog.textContent).toContain('SOR_010_standard');
+    expect(dialog.textContent).toContain('prices:true');
     fireEvent.click(screen.getByText('close-save'));
     expect(screen.queryByRole('dialog', { name: 'save-dialog' })).not.toBeInTheDocument();
   });

@@ -1,16 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const store = vi.hoisted(() => ({ docs: new Map(), fail: false, next: 0 }));
+const store = vi.hoisted(() => ({ docs: new Map(), fail: false, hang: false, next: 0 }));
 vi.mock('../../firebase', () => ({ db: {}, APP_ID: 'app' }));
 vi.mock('firebase/firestore', () => {
   const path = (segs) => segs.join('/');
   const guard = () => { if (store.fail) throw new Error('offline'); };
+  // Offline, the real SDK queues a write and its promise never settles.
+  const pending = () => new Promise(() => {});
   return {
     doc: (db, ...segs) => ({ path: path(segs) }),
     collection: (db, ...segs) => ({ path: path(segs) }),
     query: (ref) => ref,
     orderBy: () => null,
-    addDoc: async (ref, data) => { guard(); const id = `l${++store.next}`; store.docs.set(`${ref.path}/${id}`, data); return { id }; },
+    addDoc: async (ref, data) => { if (store.hang) return pending(); guard(); const id = `l${++store.next}`; store.docs.set(`${ref.path}/${id}`, data); return { id }; },
     getDoc: async (ref) => { guard(); return { exists: () => store.docs.has(ref.path), data: () => store.docs.get(ref.path) }; },
     getDocs: async (ref) => {
       guard();
@@ -21,15 +23,15 @@ vi.mock('firebase/firestore', () => {
           .map(([p, d]) => ({ id: p.split('/').pop(), data: () => d })),
       };
     },
-    updateDoc: async (ref, patch) => { guard(); store.docs.set(ref.path, { ...store.docs.get(ref.path), ...patch }); },
-    deleteDoc: async (ref) => { guard(); store.docs.delete(ref.path); },
+    updateDoc: async (ref, patch) => { if (store.hang) return pending(); guard(); store.docs.set(ref.path, { ...store.docs.get(ref.path), ...patch }); },
+    deleteDoc: async (ref) => { if (store.hang) return pending(); guard(); store.docs.delete(ref.path); },
   };
 });
 
 import { ListService } from '../../services/ListService';
 
 const BASE = 'artifacts/app/users/u1/lists';
-beforeEach(() => { store.docs.clear(); store.fail = false; store.next = 0; });
+beforeEach(() => { store.docs.clear(); store.fail = false; store.hang = false; store.next = 0; vi.useRealTimers(); });
 
 describe('ListService', () => {
   it('creates a list with timestamps and defaults', async () => {
@@ -69,6 +71,18 @@ describe('ListService', () => {
     store.docs.set(`${BASE}/a`, { kind: 'trade', updatedAt: 1 });
     expect(await ListService.deleteList('u1', 'a')).toEqual({ ok: true });
     expect(store.docs.has(`${BASE}/a`)).toBe(false);
+  });
+
+  it('gives up on a write that never settles (offline) instead of hanging', async () => {
+    vi.useFakeTimers();
+    store.hang = true;
+    const calls = [
+      ListService.createList('u1', { kind: 'wants', name: 'x' }),
+      ListService.updateList('u1', 'a', { name: 'y' }),
+      ListService.deleteList('u1', 'a'),
+    ];
+    await vi.advanceTimersByTimeAsync(8000);
+    expect(await Promise.all(calls)).toEqual([{ error: 'timeout' }, { error: 'timeout' }, { error: 'timeout' }]);
   });
 
   it('returns errors instead of throwing', async () => {

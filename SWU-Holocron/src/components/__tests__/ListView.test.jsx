@@ -117,6 +117,11 @@ describe('ListView', () => {
     expect(service.deleteList).toHaveBeenCalledWith('u1', 'l1');
   });
 
+  it('prints the finish of wants lines (the picker is hidden in print)', async () => {
+    renderView({ ...LIST, items: { SOR_010_foil: item({ finish: 'foil' }) } });
+    expect(screen.getByTestId('print-finish')).toHaveTextContent('Foil');
+  });
+
   it('has no finish picker or Add card on a trade list', async () => {
     renderView({ ...LIST, kind: 'trade', items: { SOR_010_standard: item({ finish: 'standard' }) } });
     expect(screen.queryByLabelText('Finish for Vader')).not.toBeInTheDocument();

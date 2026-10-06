@@ -5,6 +5,7 @@ import {
 import { PricingService } from '../services/PricingService';
 import SaveListDialog from './SaveListDialog';
 import { itemsFromDeckGaps } from '../utils/cardLists';
+import { getCollectionId } from '../utils/collectionHelpers';
 
 /**
  * ShoppingList — Panel component showing cards needed to complete a deck
@@ -47,9 +48,10 @@ export default function ShoppingList({ deck, collectionData, cardDatabase, onUpd
       const card = cardDatabase?.find(c => `${c.Set}_${c.Number}` === cardId);
       if (!card) return;
 
-      // Check collection (both std and foil variants)
-      const standard = collectionData?.[`${cardId}_std`]?.quantity || 0;
-      const foil = collectionData?.[`${cardId}_foil`]?.quantity || 0;
+      // Check collection (both std and foil variants). Deck ids can be
+      // unpadded (TS26_1); collection docs are always padded (TS26_001_std).
+      const standard = collectionData?.[getCollectionId(card.Set, card.Number, false)]?.quantity || 0;
+      const foil = collectionData?.[getCollectionId(card.Set, card.Number, true)]?.quantity || 0;
       const owned = standard + foil;
 
       const gap = needed - owned;

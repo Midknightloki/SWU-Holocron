@@ -7,7 +7,7 @@ import { mergeItems } from '../utils/cardLists';
  * Save cards as a new list, or into an existing one: a trade list is replaced
  * (it is a snapshot of the surplus), a wants list is added to.
  */
-export default function SaveListDialog({ uid, kind, items, source = null, defaultName, onClose, service = ListService }) {
+export default function SaveListDialog({ uid, kind, items, source = null, defaultName, showPrices, onClose, service = ListService }) {
   const [lists, setLists] = useState([]);
   const [choice, setChoice] = useState('new');
   const [name, setName] = useState(defaultName);
@@ -30,7 +30,8 @@ export default function SaveListDialog({ uid, kind, items, source = null, defaul
     let label;
     if (choice === 'new') {
       label = name.trim() || defaultName;
-      res = await service.createList(uid, { kind, name: label, items, source });
+      // A list made with prices hidden stays that way (it is meant for posting).
+      res = await service.createList(uid, { kind, name: label, items, source, ...(showPrices === undefined ? {} : { showPrices }) });
     } else {
       const target = lists.find((l) => l.id === choice);
       label = target.name;
