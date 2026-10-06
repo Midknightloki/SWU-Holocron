@@ -268,3 +268,24 @@ describe('CardService', () => {
   });
 });
 
+describe('CardService.getLastSync', () => {
+  it('reads when the card database last synced, from its sync metadata', async () => {
+    const { getDoc, doc } = await import('firebase/firestore');
+    // The shared mock above rejects even-length document paths, though
+    // Firestore requires them (collection/doc pairs); take the real shape here.
+    doc.mockImplementationOnce((db, ...segments) => ({ _segments: segments }));
+    getDoc.mockResolvedValueOnce({ exists: () => true, data: () => ({ lastFullSync: 1234 }) });
+    await expect(CardService.getLastSync()).resolves.toBe(1234);
+    expect(getDoc.mock.calls.at(-1)[0]._segments).toEqual(['artifacts', 'test-app-id', 'public', 'data', 'cardDatabase', 'metadata']);
+  });
+
+  it('returns null when there is no metadata or the read fails', async () => {
+    const { getDoc, doc } = await import('firebase/firestore');
+    doc.mockImplementation((db, ...segments) => ({ _segments: segments }));
+    getDoc.mockResolvedValueOnce({ exists: () => false });
+    await expect(CardService.getLastSync()).resolves.toBeNull();
+    getDoc.mockRejectedValueOnce(new Error('denied'));
+    await expect(CardService.getLastSync()).resolves.toBeNull();
+    doc.mockReset();
+  });
+});

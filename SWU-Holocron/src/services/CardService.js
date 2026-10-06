@@ -15,6 +15,23 @@ export const CardService = {
   getBackImage: (set, number) => `${API_BASE}/cards/${set}/${imageNumber(number)}?format=image&face=back`,
 
   /**
+   * When the card database last synced (every weekly or manual run writes
+   * cardDatabase/metadata.lastFullSync). Null if unknown. Never throws.
+   *
+   * @environment:firebase
+   * @returns {Promise<number|null>} epoch ms
+   */
+  getLastSync: async () => {
+    if (!db || !APP_ID) return null;
+    try {
+      const snap = await getDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'cardDatabase', 'metadata'));
+      return snap.exists() ? snap.data().lastFullSync ?? null : null;
+    } catch {
+      return null;
+    }
+  },
+
+  /**
    * Read the set registry published by scripts/setDiscovery.js.
    *
    * This replaces a loop that probed each of nine hardcoded set codes with one

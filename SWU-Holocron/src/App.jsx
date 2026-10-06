@@ -31,6 +31,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import CardScanner from './components/CardScanner';
 import ScanButton from './components/ScanButton';
 import { matchesNameOrNumber } from './utils/cardNumberQuery';
+import { dbSyncLabel } from './utils/syncLabel';
 
 // Version info
 const VERSION = __APP_VERSION__;
@@ -78,7 +79,8 @@ export default function App() {
   const [activeSet, setActiveSet] = useState('SOR');
   const [cards, setCards] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [lastSync, setLastSync] = useState(null);
+  // When the card database last synced (epoch ms); undefined until read.
+  const [lastSync, setLastSync] = useState(undefined);
   const [error, setError] = useState(null);
   const [reconstructedData, setReconstructedData] = useState(false);
   const [setRegistry, setSetRegistry] = useState([]);
@@ -124,6 +126,15 @@ export default function App() {
   // so it never reopens by itself for the next user who signs in.
   useEffect(() => {
     setIsScannerOpen(false);
+  }, [user?.uid]);
+
+  // The card database's last sync time, for the header. Read once signed in
+  // (the metadata needs auth); cards themselves may come from the local cache.
+  useEffect(() => {
+    if (!user) return undefined;
+    let cancelled = false;
+    CardService.getLastSync().then((ms) => { if (!cancelled) setLastSync(ms); });
+    return () => { cancelled = true; };
   }, [user?.uid]);
 
   // Bumped when the scanner closes, so the Command Center's batch list reloads.
@@ -347,9 +358,8 @@ export default function App() {
 
       // 1. IndexedDB cache (no TTL), else 2. fetch through the service and cache.
       // @environment:web-indexeddb
-      const { cards: loaded, source } = await loadSet(activeSet, { force });
+      const { cards: loaded } = await loadSet(activeSet, { force });
       setCards(loaded);
-      if (source !== 'cache') setLastSync(source);
     } catch (e) {
       console.error(e);
       // 3. Fallback: Reconstruct from Collection
@@ -643,7 +653,9 @@ export default function App() {
                       <RefreshCw size={8} className="animate-spin" /> Syncing...
                     </span>
                   ) : (
-                    <span className="flex items-center gap-1">DB: {lastSync || 'Never'}</span>
+                    <span className="flex items-center gap-1" title={lastSync ? new Date(lastSync).toLocaleString() : undefined}>
+                      DB: {dbSyncLabel(lastSync)}
+                    </span>
                   )}
                   <div className="flex items-center gap-1 pl-2 border-l border-gray-700">
                     {authLoading ? (
