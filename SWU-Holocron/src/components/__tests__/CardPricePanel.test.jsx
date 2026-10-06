@@ -45,4 +45,15 @@ describe('CardPricePanel', () => {
     render(<CardPricePanel card={CARD} collectionData={owned} getCardPrice={price({ market: 1.5 }, null)} />);
     expect(await screen.findByText('3 + 1F = ≈$4.50')).toBeInTheDocument();
   });
+
+  it('shows only the foil price for an F-numbered foil printing (SOR/SHD 059F)', async () => {
+    render(<CardPricePanel card={{ Set: 'SOR', Number: '059F' }} collectionData={{}} getCardPrice={price({ market: 9 }, { market: 9 })} />);
+    expect(await screen.findByText('Foil')).toBeInTheDocument();
+    expect(screen.queryByText('Standard')).not.toBeInTheDocument();
+  });
+
+  it('says no price data for your copies when none of them is priced', async () => {
+    render(<CardPricePanel card={CARD} collectionData={{ SOR_010_std: { quantity: 1 } }} getCardPrice={price(null, null)} />);
+    expect(await screen.findByText('1 + 0F · no price data')).toBeInTheDocument();
+  });
 });

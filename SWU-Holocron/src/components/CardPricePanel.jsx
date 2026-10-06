@@ -44,13 +44,16 @@ export default function CardPricePanel({ card, collectionData = {}, getCardPrice
     return () => { cancelled = true; };
   }, [card.Set, card.Number, getCardPrice]);
 
+  const foilOnly = /F$/i.test(String(card.Number));
   const { standard, foil } = getCardQuantities(collectionData, card.Set, card.Number);
   let copies = null;
   if (prices && standard + foil > 0) {
     const parts = [[standard, prices.std], [foil, prices.foil]].filter(([n]) => n > 0);
     const total = parts.reduce((s, [n, p]) => s + (isPriced(p) ? n * p.market : 0), 0);
-    const approx = parts.some(([, p]) => !isPriced(p));
-    copies = `${standard} + ${foil}F = ${approx ? '≈' : ''}${money(total)}`;
+    const pricedParts = parts.filter(([, p]) => isPriced(p));
+    copies = pricedParts.length === 0
+      ? `${standard} + ${foil}F · no price data`
+      : `${standard} + ${foil}F = ${pricedParts.length < parts.length ? '≈' : ''}${money(total)}`;
   }
 
   return (
@@ -62,7 +65,8 @@ export default function CardPricePanel({ card, collectionData = {}, getCardPrice
       {prices === null && <p className="text-gray-500">Price unavailable</p>}
       {prices && (
         <>
-          <PriceRow label="Standard" price={prices.std} other="foil" />
+          {/* SOR/SHD number foils "059F": that printing only exists as a foil. */}
+          {!foilOnly && <PriceRow label="Standard" price={prices.std} other="foil" />}
           <PriceRow label="Foil" price={prices.foil} other="standard" />
           {copies && (
             <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-gray-700">
