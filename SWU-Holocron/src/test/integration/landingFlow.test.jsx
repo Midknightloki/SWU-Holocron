@@ -42,6 +42,7 @@ vi.mock('firebase/firestore', () => ({
 vi.mock('../../services/CardService', () => ({
   CardService: {
     getAvailableSets: vi.fn(async () => ['SOR']),
+    getLastSync: vi.fn(async () => null),
     getSetRegistry: vi.fn(async () => [{ code: 'SOR', name: 'Spark of Rebellion', isBaseSet: true, releaseDate: '2024-03-08' }]),
     fetchSetData: vi.fn(async (setCode) => ({
       data: [

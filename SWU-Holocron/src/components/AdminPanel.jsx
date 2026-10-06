@@ -559,13 +559,13 @@ export default function AdminPanel() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-200 p-6">
-      <div className="max-w-6xl mx-auto space-y-6">
+    <div className="min-h-screen bg-gray-900 text-gray-200 p-3 sm:p-6">
+      <div className="max-w-6xl mx-auto space-y-4 sm:space-y-6">
 
         {/* Header */}
-        <div className="border-b border-gray-800 pb-6">
-          <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-            <Shield className="w-8 h-8 text-yellow-500" />
+        <div className="border-b border-gray-800 pb-3 sm:pb-6">
+          <h1 className="text-2xl sm:text-3xl font-bold text-white flex items-center gap-3">
+            <Shield className="w-6 h-6 sm:w-8 sm:h-8 text-yellow-500" />
             Admin Panel
           </h1>
           <p className="text-gray-500 mt-1">
@@ -581,8 +581,16 @@ export default function AdminPanel() {
           </div>
         )}
 
-        {/* Tabs */}
-        <div className="flex flex-wrap items-center gap-1 bg-gray-800 rounded-xl p-1 border border-gray-700 w-fit max-w-full">
+        {/* Sections: a dropdown on phones (six tabs don't fit), tabs from sm up */}
+        <select
+          aria-label="Admin section"
+          value={activeTab}
+          onChange={(e) => setActiveTab(e.target.value)}
+          className="sm:hidden w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-white font-semibold"
+        >
+          {tabs.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}
+        </select>
+        <div className="hidden sm:flex flex-wrap items-center gap-1 bg-gray-800 rounded-xl p-1 border border-gray-700 w-fit max-w-full">
           {tabs.map(({ id, label, icon: Icon }) => (
             <button
               key={id}

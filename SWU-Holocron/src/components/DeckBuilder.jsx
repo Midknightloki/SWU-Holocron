@@ -1597,7 +1597,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved, on
             <>
               {/* Step 0: Welcome / Import */}
               {step === 0 && (
-                <div className="flex-1 flex flex-col items-center justify-center max-w-2xl mx-auto w-full text-center space-y-8">
+                <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center [justify-content:safe_center] max-w-2xl mx-auto w-full text-center space-y-8">
                   <div>
                     <h3 className="text-2xl md:text-3xl font-bold text-white mb-2">Create New Deck</h3>
                     <p className="text-gray-400">Choose how you want to start building your Star Wars: Unlimited deck.</p>
@@ -1826,7 +1826,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved, on
 
               {/* Step 1: Format Selection */}
               {step === 1 && (
-                <div className="flex-1 flex flex-col items-center justify-center max-w-4xl mx-auto w-full text-center space-y-8">
+                <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center [justify-content:safe_center] max-w-4xl mx-auto w-full text-center space-y-8">
                   <div>
                     <h3 className="text-2xl md:text-3xl font-bold text-white mb-2">Select Format</h3>
                     <p className="text-gray-400">Choose the gameplay format for this deck.</p>
@@ -1991,7 +1991,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved, on
                           Sideboard {sideboardTotal > 0 && `(${sideboardTotal}/10)`}
                         </button>
                       </div>
-                      <div className="flex-1 overflow-auto">
+                      <div className="flex-1 overflow-y-auto overflow-x-hidden">
                         <AdvancedSearch
                           onCardClick={addTarget === 'sideboard' ? handleAddToSideboard : handleAddCard}
                           collectionData={collectionData}
@@ -2073,7 +2073,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved, on
                         <Loader2 size={32} className="animate-spin text-yellow-500" />
                       </div>
                     ) : (
-                      <div className="flex-1 overflow-auto">
+                      <div className="flex-1 overflow-y-auto overflow-x-hidden">
                         <AdvancedSearch
                           onCardClick={addTarget === 'sideboard' ? handleAddToSideboard : handleAddCard}
                           collectionData={collectionData}

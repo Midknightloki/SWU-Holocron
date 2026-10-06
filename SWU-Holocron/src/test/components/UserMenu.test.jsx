@@ -2,7 +2,7 @@
  * @vitest-environment happy-dom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from '../../App';
 
@@ -52,6 +52,7 @@ vi.mock('firebase/firestore', () => ({
 vi.mock('../../services/CardService', () => ({
   CardService: {
     getAvailableSets: vi.fn(async () => ['SOR']),
+    getLastSync: vi.fn(async () => null),
     getSetRegistry: vi.fn(async () => [{ code: 'SOR', name: 'Spark of Rebellion', isBaseSet: true, releaseDate: '2024-03-08' }]),
     fetchSetData: vi.fn(async (setCode) => ({
       data: [
@@ -115,164 +116,58 @@ describe('User Menu - Mobile Responsiveness', () => {
     });
   });
 
-  it('renders mobile user menu button', async () => {
-    render(<App />);
+  // Phones: the account menu is the "Me" sheet on the bottom bar (MobileNav).
+  const openMe = async (user) => {
+    await user.click(await screen.findByRole('button', { name: 'Me' }));
+    return screen.getByRole('dialog', { name: 'Me' });
+  };
 
-    await waitFor(() => {
-      // The button should have a title attribute for accessibility
-      const menuButton = screen.getByTitle('User menu');
-      expect(menuButton).toBeInTheDocument();
-    });
+  it('renders the Me button on the phone bottom bar', async () => {
+    render(<App />);
+    const nav = await screen.findByRole('navigation', { name: 'Main' });
+    expect(within(nav).getByRole('button', { name: 'Me' })).toBeInTheDocument();
   });
 
-  it('opens mobile user menu dropdown on click', async () => {
+  it('opens Me with the user details', async () => {
     const user = userEvent.setup();
     render(<App />);
-
-    await waitFor(() => {
-      expect(screen.getByTitle('User menu')).toBeInTheDocument();
-    });
-
-    const menuButton = screen.getByTitle('User menu');
-    await user.click(menuButton);
-
-    // After clicking, the dropdown should show user info
-    await waitFor(() => {
-      // The dropdown should contain the user name
-      const userNames = screen.getAllByText('Test User');
-      expect(userNames.length).toBeGreaterThan(0);
-    });
+    const sheet = await openMe(user);
+    expect(within(sheet).getByText('Test User')).toBeInTheDocument();
+    expect(within(sheet).getByText('test@example.com')).toBeInTheDocument();
   });
 
-  it('closes mobile user menu when X button is clicked', async () => {
-    const user = userEvent.setup();
-    const { container } = render(<App />);
-
-    await waitFor(() => {
-      expect(screen.getByTitle('User menu')).toBeInTheDocument();
-    });
-
-    // Open the menu
-    const menuButton = screen.getByTitle('User menu');
-    await user.click(menuButton);
-
-    await waitFor(() => {
-      // Look for the dropdown container
-      const dropdown = container.querySelector('.user-menu-container');
-      expect(dropdown).toBeInTheDocument();
-    });
-
-    // The dropdown should be visible
-    // Note: In the actual implementation, clicking the button again toggles it closed
-    await user.click(menuButton);
-
-    // Menu should close (toggle behavior)
-    // We can't easily test the visibility change without checking the DOM structure
-    // but we've verified the toggle mechanism works
-  });
-
-  it('calls logout when logout button is clicked from mobile menu', async () => {
+  it('closes Me with its close button', async () => {
     const user = userEvent.setup();
     render(<App />);
-
-    await waitFor(() => {
-      expect(screen.getByTitle('User menu')).toBeInTheDocument();
-    });
-
-    // Open the menu
-    const menuButton = screen.getByTitle('User menu');
-    await user.click(menuButton);
-
-    await waitFor(() => {
-      // Find the logout button - there should be multiple (desktop and mobile)
-      const logoutButtons = screen.getAllByText(/log out/i);
-      expect(logoutButtons.length).toBeGreaterThan(0);
-    });
-
-    // Click any logout button
-    const logoutButtons = screen.getAllByText(/log out/i);
-    await user.click(logoutButtons[0]);
-
-    // Logout should be called
-    await waitFor(() => {
-      expect(mockLogout).toHaveBeenCalledTimes(1);
-    });
+    const sheet = await openMe(user);
+    await user.click(within(sheet).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog', { name: 'Me' })).not.toBeInTheDocument();
   });
 
-  it('displays cloud sync status in mobile menu for authenticated users', async () => {
+  it('logs out from Me', async () => {
     const user = userEvent.setup();
     render(<App />);
-
-    await waitFor(() => {
-      expect(screen.getByTitle('User menu')).toBeInTheDocument();
-    });
-
-    // Open the menu
-    const menuButton = screen.getByTitle('User menu');
-    await user.click(menuButton);
-
-    await waitFor(() => {
-      // Should show cloud sync active for non-anonymous users
-      expect(screen.getByText(/cloud sync active/i)).toBeInTheDocument();
-    });
+    const sheet = await openMe(user);
+    await user.click(within(sheet).getByRole('button', { name: 'Log out' }));
+    await waitFor(() => expect(mockLogout).toHaveBeenCalledTimes(1));
   });
 
-  it('displays guest mode status in mobile menu for anonymous users', async () => {
-    mockAuthState = { 
-      user: { 
-        uid: 'anon-1', 
-        displayName: null, 
-        email: null, 
-        isAnonymous: true 
-      }, 
-      loading: false 
+  it('shows cloud sync status in Me for signed-in users', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const sheet = await openMe(user);
+    expect(within(sheet).getByText(/cloud sync active/i)).toBeInTheDocument();
+  });
+
+  it('shows guest mode in Me for anonymous users', async () => {
+    mockAuthState = {
+      user: { uid: 'anon-1', displayName: null, email: null, isAnonymous: true },
+      loading: false,
     };
-
     const user = userEvent.setup();
     render(<App />);
-
-    await waitFor(() => {
-      expect(screen.getByTitle('User menu')).toBeInTheDocument();
-    });
-
-    // Open the menu
-    const menuButton = screen.getByTitle('User menu');
-    await user.click(menuButton);
-
-    await waitFor(() => {
-      // Should show guest mode for anonymous users (multiple instances expected)
-      const guestModeTexts = screen.getAllByText(/guest mode/i);
-      expect(guestModeTexts.length).toBeGreaterThan(0);
-    });
-  });
-
-  it('maintains user menu state independently from header expansion', async () => {
-    const user = userEvent.setup();
-    render(<App />);
-
-    await waitFor(() => {
-      expect(screen.getByTitle('User menu')).toBeInTheDocument();
-    });
-
-    // Open user menu
-    const menuButton = screen.getByTitle('User menu');
-    await user.click(menuButton);
-
-    // Find and click header expansion toggle
-    const chevronButtons = screen.getAllByRole('button');
-    const expandButton = chevronButtons.find(btn => 
-      btn.querySelector('svg')?.classList.contains('lucide-chevron-up') ||
-      btn.querySelector('svg')?.classList.contains('lucide-chevron-down')
-    );
-
-    if (expandButton) {
-      await user.click(expandButton);
-    }
-
-    // User menu should still be accessible
-    await waitFor(() => {
-      expect(screen.getByTitle('User menu')).toBeInTheDocument();
-    });
+    const sheet = await openMe(user);
+    expect(within(sheet).getByText(/guest mode/i)).toBeInTheDocument();
   });
 });
 

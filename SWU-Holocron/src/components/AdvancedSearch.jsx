@@ -511,7 +511,7 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
                     <button
                       key={`${card.Set}-${card.Number}`}
                       onClick={() => handleCardClick(card)}
-                      className="w-full flex items-center gap-4 p-3 bg-gray-900 hover:bg-gray-800 border border-gray-700 hover:border-blue-500 rounded-lg transition-all text-left group"
+                      className="w-full flex items-center gap-3 sm:gap-4 p-3 bg-gray-900 hover:bg-gray-800 border border-gray-700 hover:border-blue-500 rounded-lg transition-all text-left group"
                     >
                       <div className="flex-shrink-0 w-16 h-22 bg-gray-800 rounded overflow-hidden">
                         <img
@@ -536,7 +536,7 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
                           <p className="text-sm text-gray-400 truncate mb-1">{card.Subtitle}</p>
                         )}
 
-                        <div className="flex items-center gap-3 text-xs text-gray-500">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-gray-500">
                           <span>{card.Type}</span>
                           {card.Cost !== undefined && <span>Cost: {card.Cost}</span>}
                           {card.Aspects && card.Aspects.length > 0 && (

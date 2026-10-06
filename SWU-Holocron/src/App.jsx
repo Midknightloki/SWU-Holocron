@@ -31,6 +31,9 @@ import ErrorBoundary from './components/ErrorBoundary';
 import CardScanner from './components/CardScanner';
 import ScanButton from './components/ScanButton';
 import { matchesNameOrNumber } from './utils/cardNumberQuery';
+import { dbSyncLabel } from './utils/syncLabel';
+import { showsSetPicker } from './utils/viewChrome';
+import MobileNav from './components/MobileNav';
 
 // Version info
 const VERSION = __APP_VERSION__;
@@ -78,7 +81,8 @@ export default function App() {
   const [activeSet, setActiveSet] = useState('SOR');
   const [cards, setCards] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [lastSync, setLastSync] = useState(null);
+  // When the card database last synced (epoch ms); undefined until read.
+  const [lastSync, setLastSync] = useState(undefined);
   const [error, setError] = useState(null);
   const [reconstructedData, setReconstructedData] = useState(false);
   const [setRegistry, setSetRegistry] = useState([]);
@@ -126,12 +130,20 @@ export default function App() {
     setIsScannerOpen(false);
   }, [user?.uid]);
 
+  // The card database's last sync time, for the header. Read once signed in
+  // (the metadata needs auth); cards themselves may come from the local cache.
+  useEffect(() => {
+    if (!user) return undefined;
+    let cancelled = false;
+    CardService.getLastSync().then((ms) => { if (!cancelled) setLastSync(ms); });
+    return () => { cancelled = true; };
+  }, [user?.uid]);
+
   // Bumped when the scanner closes, so the Command Center's batch list reloads.
   const [batchesRefresh, setBatchesRefresh] = useState(0);
   // Handed only to users who can scan; views render no scan button without it.
   const openScanner = canScan ? () => setIsScannerOpen(true) : undefined;
   const [importing, setImporting] = useState(false);
-  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [activeDeck, setActiveDeck] = useState(null);
   const [sortBy, setSortBy] = useState('number'); // 'number' | 'cost' | 'recent'
   const [sortDir, setSortDir] = useState('asc');   // 'asc' | 'desc'
@@ -179,18 +191,6 @@ export default function App() {
       setAuthError(e?.message || 'Logout failed.');
     }
   };
-
-  // Close user menu when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (isUserMenuOpen && !event.target.closest('.user-menu-container')) {
-        setIsUserMenuOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isUserMenuOpen]);
 
   // Mark visit once authentication restores an existing session
   useEffect(() => {
@@ -347,9 +347,8 @@ export default function App() {
 
       // 1. IndexedDB cache (no TTL), else 2. fetch through the service and cache.
       // @environment:web-indexeddb
-      const { cards: loaded, source } = await loadSet(activeSet, { force });
+      const { cards: loaded } = await loadSet(activeSet, { force });
       setCards(loaded);
-      if (source !== 'cache') setLastSync(source);
     } catch (e) {
       console.error(e);
       // 3. Fallback: Reconstruct from Collection
@@ -637,13 +636,15 @@ export default function App() {
               </div>
               <div>
                 <h1 className="text-lg font-bold tracking-tight text-white leading-tight">SWU Holocron</h1>
-                <div className="flex items-center gap-2 text-[10px] text-gray-500">
+                <div className="hidden md:flex items-center gap-2 text-[10px] text-gray-500">
                   {loading ? (
                     <span className="flex items-center gap-1 text-yellow-500">
                       <RefreshCw size={8} className="animate-spin" /> Syncing...
                     </span>
                   ) : (
-                    <span className="flex items-center gap-1">DB: {lastSync || 'Never'}</span>
+                    <span className="flex items-center gap-1" title={lastSync ? new Date(lastSync).toLocaleString() : undefined}>
+                      DB: {dbSyncLabel(lastSync)}
+                    </span>
                   )}
                   <div className="flex items-center gap-1 pl-2 border-l border-gray-700">
                     {authLoading ? (
@@ -659,8 +660,8 @@ export default function App() {
               </div>
             </div>
 
-            {/* View Toggle */}
-            <div className="flex items-center gap-1 md:gap-2">
+            {/* View Toggle: desktop only -- phones use the bottom bar (MobileNav) */}
+            <div className="hidden md:flex items-center gap-2">
               <button
                 onClick={() => setIsSearchOpen(true)}
                 className="flex items-center gap-2 px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-all group border border-gray-700 hover:border-blue-500/50"
@@ -718,15 +719,6 @@ export default function App() {
               </button>
               {user && (
                 <div className="relative user-menu-container">
-                  {/* Mobile User Menu Button */}
-                  <button
-                    onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                    className="md:hidden flex items-center gap-2 bg-gray-800 px-2 py-2 rounded-lg border border-gray-700 hover:border-gray-600 transition-colors"
-                    title="User menu"
-                  >
-                    <User className="text-gray-400" size={18} />
-                  </button>
-
                   {/* Desktop User Info - Always visible on md+ screens */}
                   <div className="hidden md:flex items-center gap-2 bg-gray-800 px-3 py-1.5 rounded-lg border border-gray-700 text-xs text-gray-200">
                     <div className="flex flex-col leading-tight">
@@ -748,47 +740,6 @@ export default function App() {
                       Log out
                     </button>
                   </div>
-
-                  {/* Mobile User Menu Dropdown */}
-                  {isUserMenuOpen && (
-                    <div className="md:hidden absolute right-0 top-full mt-2 w-64 bg-gray-800 rounded-lg border border-gray-700 shadow-xl z-50 overflow-hidden">
-                      <div className="p-4 border-b border-gray-700">
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="flex-1">
-                            <div className="font-semibold text-sm text-white mb-1">{user.displayName || 'Guest user'}</div>
-                            <div className="text-xs text-gray-400">{user.email || 'Anonymous session'}</div>
-                          </div>
-                          <button
-                            onClick={() => setIsUserMenuOpen(false)}
-                            className="text-gray-400 hover:text-white p-1"
-                          >
-                            <X size={16} />
-                          </button>
-                        </div>
-                        <div className="flex items-center gap-2 mt-3 text-xs">
-                          {authLoading ? (
-                            <Loader2 size={12} className="animate-spin text-gray-400" />
-                          ) : (
-                            <>
-                              <Cloud size={12} className={user?.isAnonymous ? 'text-yellow-500' : 'text-green-500'} />
-                              <span className="text-gray-300">{user?.isAnonymous ? 'Guest mode' : 'Cloud sync active'}</span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                      <div className="p-2">
-                        <button
-                          onClick={() => {
-                            handleLogout();
-                            setIsUserMenuOpen(false);
-                          }}
-                          className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 rounded-lg transition-colors"
-                        >
-                          Log out
-                        </button>
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
             </div>
@@ -828,9 +779,9 @@ export default function App() {
               </div>
             )}
 
-            {/* Row 2: Set selector (all views) · Sort · Direction · Type · Aspect (binder only) */}
+            {/* Row 2: Set selector (binder + Command Center) · Sort · Direction · Type · Aspect (binder only) */}
+            {showsSetPicker(view) && (
             <div className="flex items-center gap-2 flex-wrap pb-2">
-              {/* Set selector — always visible so dashboard can switch sets */}
               <select
                 value={activeSet}
                 onChange={(e) => setActiveSet(e.target.value)}
@@ -912,6 +863,7 @@ export default function App() {
                 </>
               )}
             </div>
+            )}
           </div>
         </div>
       </header>
@@ -932,7 +884,7 @@ export default function App() {
         </div>
       )}
 
-      <main className="max-w-7xl mx-auto p-4 md:p-6">
+      <main className="max-w-7xl mx-auto p-4 md:p-6 pb-24 md:pb-6">
         {error && (
           <div className="mb-6 p-4 bg-red-900/20 border border-red-500/30 rounded-xl text-red-200 flex items-center gap-2">
             <Info size={18} />
@@ -1169,6 +1121,23 @@ export default function App() {
             onScan={openScanner}
           />
         </ErrorBoundary>
+      )}
+
+      {/* Phone navigation: bottom bar + Me sheet (the header holds these from md up) */}
+      {user && (
+        <MobileNav
+          view={view}
+          onNavigate={setView}
+          onSearch={() => setIsSearchOpen(true)}
+          onLogout={handleLogout}
+          onRedeem={() => setIsRedeemOpen(true)}
+          onForceSync={() => loadSetData(true)}
+          syncing={loading}
+          user={user}
+          isAdmin={isAdmin}
+          isContributor={isContributor}
+          dbLabel={dbSyncLabel(lastSync)}
+        />
       )}
 
       {/* Scanner floating button: phone width, binder and dashboard */}
