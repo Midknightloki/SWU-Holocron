@@ -20,7 +20,7 @@ vi.mock('../WantsFromGaps', () => ({
 import SavedListsPage from '../SavedListsPage';
 
 const LISTS = {
-  trade: [{ id: 't1', kind: 'trade', name: 'Binder dupes', items: { a: { qty: 4 } }, source: { type: 'surplus', label: 'Surplus' }, updatedAt: 1 }],
+  trade: [{ id: 't1', kind: 'trade', name: 'Binder dupes', items: { a: { qty: 4 } }, source: { type: 'surplus', label: 'Surplus' }, publicCode: 'abcd2345', updatedAt: 1 }],
   wants: [{ id: 'w1', kind: 'wants', name: 'Gaps', items: {}, source: null, updatedAt: 1 }],
 };
 let service;
@@ -88,5 +88,10 @@ describe('SavedListsPage', () => {
     service.listLists.mockResolvedValue({ error: 'offline' });
     open({ initialTab: 'wants' });
     expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't load your lists");
+  });
+
+  it('marks shared lists', async () => {
+    open({ initialTab: 'trade' });
+    expect(await screen.findByText('Shared')).toBeInTheDocument();
   });
 });

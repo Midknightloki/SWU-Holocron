@@ -119,7 +119,10 @@ export default function SavedListsPage({ uid, collectionData, batchesRefresh = 0
                 {lists.map((l) => (
                   <li key={l.id}>
                     <button type="button" onClick={() => setOpenList(l)} className="w-full py-2 px-2 text-left hover:bg-gray-800/50 rounded-lg">
-                      <span className="block font-medium truncate">{l.name}</span>
+                      <span className="flex items-center gap-2">
+                        <span className="font-medium truncate">{l.name}</span>
+                        {l.publicCode && <span className="shrink-0 rounded-full bg-green-900/60 text-green-300 text-[10px] px-2 py-0.5">Shared</span>}
+                      </span>
                       {l.source?.label && <span className="block text-xs text-gray-500">{l.source.label}</span>}
                       <span className="block text-xs text-gray-500">{cardCount(l)} cards · {new Date(l.updatedAt).toLocaleDateString()}</span>
                     </button>

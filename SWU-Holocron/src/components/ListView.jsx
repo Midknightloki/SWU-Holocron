@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, ClipboardCopy, Download, FileText, Minus, Plus, Trash2, X } from 'lucide-react';
+import { ArrowLeft, ClipboardCopy, Download, FileText, Link2, Minus, Plus, Share2, Trash2, X } from 'lucide-react';
 import CardPickerModal from './CardPickerModal';
 import { ListService } from '../services/ListService';
 import { loadListPrices } from '../services/listLoader';
 import { downloadText } from '../utils/downloadText';
 import {
-  FINISH_LABEL, cardItem, changeFinish, itemKey, listLines, listSummary, mergeItems, toListCsv, toListText,
+  FINISH_LABEL, cardItem, changeFinish, itemKey, listLines, listSummary, mergeItems, toListCsv, toListText, toPublicList,
 } from '../utils/cardLists';
 
 const money = (v) => `$${v.toFixed(2)}`;
@@ -25,6 +25,12 @@ export default function ListView({ uid, list, collectionData, onBack, onDeleted,
   const [printing, setPrinting] = useState(false);
   const [picking, setPicking] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [publicCode, setPublicCode] = useState(list.publicCode ?? null);
+  const [syncError, setSyncError] = useState(false);
+  const [shareError, setShareError] = useState(false);
+  const [confirmStop, setConfirmStop] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const wants = list.kind === 'wants';
 
   // Re-price only when the set of cards changes, not on every quantity tap.
@@ -47,6 +53,19 @@ export default function ListView({ uid, list, collectionData, onBack, onDeleted,
 
   const lines = useMemo(() => listLines(items, prices ?? {}), [items, prices]);
   const summary = useMemo(() => listSummary(lines), [lines]);
+
+  const publicBody = () => toPublicList({ kind: list.kind, name: savedName }, lines, { showPrices, now: Date.now() });
+
+  // While shared, keep the public copy current: once prices load (which also
+  // refreshes "prices as of") and after every change.
+  useEffect(() => {
+    if (!publicCode || prices === null) return undefined;
+    let cancelled = false;
+    service.updatePublic(uid, publicCode, publicBody()).then((res) => {
+      if (!cancelled) setSyncError(Boolean(res?.error));
+    });
+    return () => { cancelled = true; };
+  }, [publicCode, lines, savedName, showPrices]); // eslint-disable-line react-hooks/exhaustive-deps -- publish on content change
 
   const save = async (patch) => {
     setCopyState(null);
@@ -94,9 +113,35 @@ export default function ListView({ uid, list, collectionData, onBack, onDeleted,
   };
   const del = async () => {
     if (!confirmDelete) { setConfirmDelete(true); return; }
-    const res = await service.deleteList(uid, list.id);
+    const res = publicCode ? await service.deleteList(uid, list.id, publicCode) : await service.deleteList(uid, list.id);
     if (res?.error) { setSaveError(true); setConfirmDelete(false); return; }
     onDeleted();
+  };
+
+  const link = publicCode ? `${window.location.origin}/list/${publicCode}` : '';
+  const share = async () => {
+    setSharing(true);
+    setShareError(false);
+    const res = await service.shareList(uid, list.id, publicBody());
+    setSharing(false);
+    if (res?.code) setPublicCode(res.code); else setShareError(true);
+  };
+  const stopSharing = async () => {
+    if (!confirmStop) { setConfirmStop(true); return; }
+    setConfirmStop(false);
+    const res = await service.unshareList(uid, list.id, publicCode);
+    if (res?.error) { setShareError(true); return; }
+    setPublicCode(null);
+    setSyncError(false);
+    setLinkCopied(false);
+  };
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(link);
+      setLinkCopied(true);
+    } catch {
+      // The link is in a selectable field right above.
+    }
   };
 
   return (
@@ -125,6 +170,29 @@ export default function ListView({ uid, list, collectionData, onBack, onDeleted,
         <button type="button" onClick={copyText} disabled={lines.length === 0} className={`${btn} disabled:opacity-40`}><ClipboardCopy className="w-4 h-4" /> Copy as text</button>
         <button type="button" onClick={exportCsv} disabled={lines.length === 0} className={`${btn} disabled:opacity-40`}><Download className="w-4 h-4" /> Download CSV</button>
         <button type="button" onClick={() => setPrinting(true)} disabled={lines.length === 0} className={`${btn} disabled:opacity-40`}><FileText className="w-4 h-4" /> Save as PDF</button>
+      </div>
+
+      <div className="rounded-lg border border-gray-800 p-3 space-y-2 print:hidden">
+        {publicCode ? (
+          <>
+            <p className="text-sm text-gray-300">Shared — anyone with the link can see this list. It updates as you edit.</p>
+            <input readOnly aria-label="Share link" value={link} onFocus={(e) => e.target.select()}
+              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-sm font-mono" />
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={copyLink} className={btn}><Link2 className="w-4 h-4" /> Copy link</button>
+              <button type="button" onClick={stopSharing} className={`${btn} text-red-300`}>
+                {confirmStop ? 'Tap again to stop sharing' : 'Stop sharing'}
+              </button>
+            </div>
+            {linkCopied && <p role="status" className="text-xs text-green-400">Link copied</p>}
+            {syncError && <p role="status" className="text-xs text-yellow-300">Shared link not updated yet — check your connection.</p>}
+          </>
+        ) : (
+          <button type="button" onClick={share} disabled={sharing} className={`${btn} disabled:opacity-40`}>
+            <Share2 className="w-4 h-4" /> Share link
+          </button>
+        )}
+        {shareError && <p role="alert" className="text-sm text-red-400">Couldn&apos;t update sharing — check your connection.</p>}
       </div>
 
       {copyState?.kind === 'copied' && <p role="status" className="text-sm text-green-400 print:hidden">Copied {copyState.count} cards</p>}
