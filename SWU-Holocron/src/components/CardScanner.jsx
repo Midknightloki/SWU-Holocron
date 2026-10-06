@@ -830,7 +830,10 @@ export default function CardScanner({ uid, collectionRef, setCodes, setOptions, 
             aria-label={`Auto settings: ${autoCapturing ? 'Capturing… hold still' : AUTO_STATUS[autoPhase]}`}
             onClick={(e) => { e.stopPropagation(); setShowAutoSettings(true); }}
             className={`absolute top-3 left-3 px-3 py-1 rounded-full text-xs font-bold border ${
-              autoPhase === 'captured' ? 'bg-green-500/20 border-green-400 text-green-300'
+              // Orange while the photo is being taken: green reads as "grab
+              // the card", and pulling it now ruins the capture.
+              autoCapturing ? 'bg-orange-500/25 border-orange-400 text-orange-300'
+                : autoPhase === 'captured' ? 'bg-green-500/20 border-green-400 text-green-300'
                 : autoPhase === 'arriving' ? 'bg-yellow-500/20 border-yellow-400 text-yellow-300'
                   : 'bg-gray-900/80 border-gray-700 text-gray-200'
             }`}
