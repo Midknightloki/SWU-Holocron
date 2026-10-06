@@ -121,6 +121,17 @@ describe('syncPrebuiltDecks', () => {
     expect(db.docs.get(`${BASE}/prebuiltDecks/1`).issues).toEqual([]);
   });
 
+  it('knows cards whose stored numbers are not zero-padded (TS26)', async () => {
+    const db = fakeDb({
+      [`${BASE}/cardDatabase/sets`]: { sets: [{ code: 'TS26' }] },
+      [`${BASE}/cardDatabase/sets/TS26/data`]: { cards: [{ Set: 'TS26', Number: '2' }, { Set: 'TS26', Number: '11' }] },
+    });
+    const deck = { metadata: { name: 'Aggresive Negotiations (TS26)' }, leader: { id: 'TS26_002', count: 1 }, base: { id: 'TS26_011', count: 1 }, deck: [] };
+    const fetchImpl = fetcher({ listed: [{ id: 147115, updatedDate: 'a' }], decks: { 147115: deck }, groups, products });
+    await syncPrebuiltDecks({ db, appId: 'app', fetchImpl, wait: async () => {} });
+    expect(db.docs.get(`${BASE}/prebuiltDecks/147115`).issues).toEqual([]);
+  });
+
   it('leaves ignored and unchanged decks alone', async () => {
     const db = fakeDb({ ...seedCards, [`${BASE}/prebuiltDecks/1`]: { status: 'ignored', sourceUpdatedAt: '2026-01-01' } });
     const fetchImpl = fetcher({ listed: [{ id: 1, updatedDate: '2026-09-01' }], decks: {}, groups, products });

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   parseDeckLink, splitCardId, parseDeckApi, findMissingCards, isPreconProduct,
-  deckSetCode, suggestProduct, planSync, deckApiUrl, sameCards,
+  deckSetCode, suggestProduct, planSync, deckApiUrl, sameCards, knownIdsFrom,
 } from '../../utils/prebuiltDecks';
 
 const PALPATINE = {
@@ -73,6 +73,15 @@ describe('findMissingCards', () => {
   it('flags cards missing from the database', () => {
     const known = new Set(['ASH_015', 'ASH_021', 'ASH_118', 'SEC_185']);
     expect(findMissingCards(parseDeckApi(PALPATINE, 1).cards, known)).toEqual([{ id: 'LOF_091', problem: 'unknown-card' }]);
+  });
+});
+
+describe('card numbers in either format', () => {
+  it('matches deck ids to database cards whose numbers are not zero-padded', () => {
+    // swu-db stores TS26 numbers as "1"; sw-unlimited-db's deck ids say TS26_001.
+    const known = knownIdsFrom([{ Set: 'TS26', Number: '1' }, { Set: 'TS26', Number: '10' }, { Set: 'SOR', Number: '010' }]);
+    expect(findMissingCards([{ id: 'TS26_001', qty: 1 }, { id: 'TS26_010', qty: 1 }, { id: 'SOR_010', qty: 1 }, { id: 'TS26_002', qty: 1 }], known))
+      .toEqual([{ id: 'TS26_002', problem: 'unknown-card' }]);
   });
 });
 

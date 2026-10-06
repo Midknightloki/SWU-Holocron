@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { PrebuiltDeckService } from '../services/PrebuiltDeckService';
 import { loadSet } from '../services/setLoader';
+import { knownIdsFrom } from '../utils/prebuiltDecks';
 
 /**
  * Admin review of prebuilt (precon) decks. The weekly sync brings in the
@@ -23,7 +24,7 @@ async function defaultLoadKnownIds(setCodes) {
   await Promise.all(setCodes.map(async (code) => {
     try {
       const { cards } = await loadSet(code);
-      for (const c of cards ?? []) known.add(`${c.Set}_${c.Number}`);
+      for (const id of knownIdsFrom(cards)) known.add(id);
       checkedSets.add(code);
     } catch {
       // Unchecked: the weekly sync rechecks every deck anyway.

@@ -15,7 +15,7 @@
  * Never fails the card sync: on error it reports `degraded`.
  */
 import {
-  SOURCE_USER_ID, deckApiUrl, parseDeckApi, findMissingCards, isPreconProduct, suggestProduct, planSync, sameCards,
+  SOURCE_USER_ID, deckApiUrl, parseDeckApi, findMissingCards, isPreconProduct, suggestProduct, planSync, sameCards, knownIdsFrom,
 } from '../src/utils/prebuiltDecks.js';
 import { buildGroupsUrl, buildProductsUrl, buildRequestHeaders } from '../src/tcgPrices.js';
 
@@ -77,7 +77,7 @@ export async function syncPrebuiltDecks({ db, appId, fetchImpl = fetch, wait = s
     const known = new Set();
     for (const { code } of registry) {
       const snap = await data.collection('cardDatabase').doc('sets').collection(code).doc('data').get();
-      for (const c of (snap.exists ? snap.data()?.cards : null) ?? []) known.add(`${c.Set}_${c.Number}`);
+      for (const id of knownIdsFrom(snap.exists ? snap.data()?.cards : null)) known.add(id);
     }
 
     // The owner's published decks, and what we already hold.

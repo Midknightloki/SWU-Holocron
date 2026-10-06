@@ -42,8 +42,21 @@ export function parseDeckApi(json, sourceId) {
   };
 }
 
+// One spelling for a card id, whichever source it came from: swu-db stores
+// some sets' numbers unpadded (TS26 "1"), sw-unlimited-db always pads
+// (TS26_001). Digits pad to 3, like getCollectionId; "059F" is left alone.
+const padNumber = (n) => (/^\d+$/.test(String(n)) ? String(n).padStart(3, '0') : String(n));
+export const cardKey = (set, number) => `${set}_${padNumber(number)}`;
+const normalizeId = (id) => {
+  const parts = splitCardId(id);
+  return parts ? cardKey(parts.set, parts.number) : id;
+};
+
+/** Card ids known to the database, from card-data rows ({ Set, Number }). */
+export const knownIdsFrom = (cards) => new Set((cards ?? []).map((c) => cardKey(c.Set, c.Number)));
+
 export function findMissingCards(cards, knownIds) {
-  return cards.filter((c) => !knownIds.has(c.id)).map((c) => ({ id: c.id, problem: 'unknown-card' }));
+  return cards.filter((c) => !knownIds.has(normalizeId(c.id))).map((c) => ({ id: c.id, problem: 'unknown-card' }));
 }
 
 // "<Set> - Spotlight Deck: X", "Twin Suns - X Deck", "<Set> - Two-Player
@@ -102,5 +115,5 @@ export function planSync(listed, stored) {
   return out;
 }
 
-const cardKey = (cards) => (cards ?? []).map((c) => `${c.id}x${c.qty}`).sort().join(',');
-export const sameCards = (a, b) => cardKey(a) === cardKey(b);
+const listKey = (cards) => (cards ?? []).map((c) => `${c.id}x${c.qty}`).sort().join(',');
+export const sameCards = (a, b) => listKey(a) === listKey(b);
