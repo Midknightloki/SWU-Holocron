@@ -18,6 +18,7 @@ import {
   updateDoc,
   deleteDoc,
   getDocs,
+  getDocsFromServer,
   getDoc,
   query,
   orderBy,
@@ -196,6 +197,17 @@ export const DeckService = {
   listDecks: async (uid) => {
     const q = query(decksRef(uid), orderBy('updatedAt', 'desc'));
     const snap = await getDocs(q);
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  },
+
+  /**
+   * Every deck, read from the server only. Offline, getDocs answers from the
+   * local cache -- empty unless the decks were opened this session -- which
+   * would make the surplus report list deck cards for trade. This rejects
+   * instead.
+   */
+  listDecksFromServer: async (uid) => {
+    const snap = await getDocsFromServer(query(decksRef(uid)));
     return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   },
 

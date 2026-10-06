@@ -390,6 +390,17 @@ as $0. The card detail view shows the same prices per card
 (`CardPricePanel.jsx`), plus what the user's copies are worth. Reports share
 `src/utils/breakdown.js`.
 
+**Surplus mode** (the same report, an All cards / Surplus switch) lists copies
+beyond deck use and a playset (`src/utils/surplus.js`): deck usage is summed
+across every deck (main, sideboard, leader, base); a deck card takes its
+printing's standard copies, then foil; the Normal printing in standard keeps 3
+(leader/base 1) and every other printing or finish keeps 1. If the decks can't
+be read it shows **no** surplus -- never a list that ignores decks. A **Show
+prices** toggle removes every dollar amount from the screen and the exports,
+and **Copy as text** gives a trade list for chat (a selectable box when the
+clipboard is blocked). Mode and the toggle persist in `swu-value-mode` /
+`swu-value-show-prices`.
+
 ### Prebuilt decks
 
 Precon decks (Spotlight, starters, Twin Suns, Intro Battle) are added to a
@@ -564,7 +575,7 @@ it is an ESLint *error*, so CI blocks on it.
 - `localStorage` keys are `swu-`-prefixed: `swu-available-sets`,
   `swu-active-set`, `swu-has-visited`, `swu-sync-code`, `swu-holocron`,
   `swu-scan-draft-{uid}`, `swu-scan-help-seen`, `swu-scan-rig`, `swu-scan-sets`, `swu-scan-auto`,
-  `swu-deck-owned-only`, `swu-value-filters`.
+  `swu-deck-owned-only`, `swu-value-filters`, `swu-value-mode`, `swu-value-show-prices`.
 - Leaders and Bases are horizontal: `aspect-[88/63] col-span-2`. Everything else
   is `aspect-[63/88] col-span-1` (`App.jsx:982`).
 - Owned counts render as a dual `3 +2F` — standard count prominent, foil count as

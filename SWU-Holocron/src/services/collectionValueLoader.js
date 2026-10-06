@@ -1,5 +1,6 @@
 import { loadSet } from './setLoader';
 import { PricingService } from './PricingService';
+import { DeckService } from './DeckService';
 import { buildCollectionLines } from '../utils/collectionValue';
 import { LEGACY_SET_CODES } from '../setCatalog';
 
@@ -9,7 +10,9 @@ import { LEGACY_SET_CODES } from '../setCatalog';
  * card. A set that won't load keeps its cards by their stored name; failed
  * prices leave every line unpriced. Never throws.
  */
-export async function loadCollectionValue(collectionData, { loadSetImpl = loadSet, pricing = PricingService } = {}) {
+export async function loadCollectionValue(collectionData, {
+  loadSetImpl = loadSet, pricing = PricingService, uid, includeDecks = false, decksService = DeckService,
+} = {}) {
   const owned = Object.entries(collectionData ?? {}).filter(([, d]) => (Number(d?.quantity) || 0) > 0);
   // PROMO/OTHER are legacy collection buckets, not sets: there is nothing to
   // load, and trying fails every time.
@@ -35,5 +38,21 @@ export async function loadCollectionValue(collectionData, { loadSetImpl = loadSe
   // A failed read (offline, denied) leaves cards unpriced without throwing:
   // say so, rather than show an unexplained $0.
   if (!error && (pricing.failedSets?.() ?? []).some((code) => setCodes.includes(code))) error = 'prices';
-  return { lines: buildCollectionLines(collectionData, cardsBySet, prices), missingSets: missingSets.sort(), ...(error ? { error } : {}) };
+  // The surplus report needs the decks; without them it must not guess.
+  let decks;
+  let decksError;
+  if (includeDecks) {
+    try {
+      decks = await decksService.listDecksFromServer(uid);
+    } catch {
+      decksError = true;
+    }
+  }
+  return {
+    lines: buildCollectionLines(collectionData, cardsBySet, prices),
+    missingSets: missingSets.sort(),
+    ...(error ? { error } : {}),
+    ...(decks ? { decks } : {}),
+    ...(decksError ? { decksError } : {}),
+  };
 }

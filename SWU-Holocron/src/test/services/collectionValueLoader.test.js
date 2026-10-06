@@ -57,4 +57,17 @@ describe('loadCollectionValue', () => {
     expect(res.missingSets).toEqual([]);
     expect(res.lines[0]).toMatchObject({ name: 'Old promo' });
   });
+
+  it('reads decks when asked', async () => {
+    const decksService = { listDecksFromServer: vi.fn(async () => [{ cards: { SOR_010: 2 } }]) };
+    const res = await loadCollectionValue(COLLECTION, { uid: 'u1', includeDecks: true, decksService, loadSetImpl: async () => ({ cards: [] }), pricing: { getBulkPrices: async () => ({}) } });
+    expect(decksService.listDecksFromServer).toHaveBeenCalledWith('u1');
+    expect(res.decks).toEqual([{ cards: { SOR_010: 2 } }]);
+  });
+
+  it('flags decks it could not read', async () => {
+    const res = await loadCollectionValue(COLLECTION, { uid: 'u1', includeDecks: true, decksService: { listDecksFromServer: async () => { throw new Error('offline'); } }, loadSetImpl: async () => ({ cards: [] }), pricing: { getBulkPrices: async () => ({}) } });
+    expect(res.decksError).toBe(true);
+    expect(res.decks).toBeUndefined();
+  });
 });

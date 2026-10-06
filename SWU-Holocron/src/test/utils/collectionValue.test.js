@@ -145,3 +145,21 @@ describe('review fixes', () => {
     expect(ls[0]).toMatchObject({ set: 'JTL', number: '017', isFoil: true, value: 3 });
   });
 });
+
+describe('toCollectionCsv options', () => {
+  it('drops price columns when prices are hidden', () => {
+    const rows = toCollectionCsv(lines, summarize(lines), DEFAULT_FILTERS, { showPrices: false }).split('\r\n');
+    expect(rows[0]).toBe('\uFEFFSet,Number,Name,Subtitle,Type,Rarity,Aspects,Variant,Finish,Qty');
+    expect(rows.some((r) => r.startsWith('Total value'))).toBe(false);
+    expect(rows.some((r) => r.startsWith('Priced share'))).toBe(false);
+    expect(rows.join('\n')).not.toMatch(/\$|40\.00/);
+  });
+
+  it('adds the surplus columns in surplus mode', () => {
+    const surplus = [{ ...lines.find((l) => l.id === 'SOR_050_std'), owned: 10, inDecks: 2, kept: 3, qty: 5, value: 0.25 }];
+    const rows = toCollectionCsv(surplus, summarize(surplus), DEFAULT_FILTERS, { mode: 'surplus' }).split('\r\n');
+    expect(rows[0]).toBe('\uFEFFSet,Number,Name,Subtitle,Type,Rarity,Aspects,Variant,Finish,Owned,In decks,Kept,Surplus,Unit price,Value,Price note');
+    expect(rows[1]).toBe('SOR,050,Battle Droid,,Unit,Common,,Normal,Standard,10,2,3,5,0.05,0.25,');
+    expect(rows).toContain('Mode,Surplus');
+  });
+});

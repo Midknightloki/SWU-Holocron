@@ -89,6 +89,16 @@ vi.mock('firebase/firestore', () => ({
       }));
     return { docs, size: docs.length };
   }),
+  // A server-only read: rejects when offline instead of answering from cache.
+  getDocsFromServer: vi.fn(async (q) => {
+    if (globalThis.__decksOffline) throw Object.assign(new Error('offline'), { code: 'unavailable' });
+    const prefix = q._colPath || '';
+    const prefixDepth = prefix.split('/').length;
+    const docs = Object.entries(firestoreStore)
+      .filter(([path]) => path.startsWith(prefix + '/') && path.split('/').length === prefixDepth + 1)
+      .map(([path, data]) => ({ id: path.split('/').pop(), ref: makeRef(path), data: () => ({ ...data }) }));
+    return { docs, size: docs.length };
+  }),
   query: vi.fn((colRef, ...constraints) => ({
     _colPath: colRef._path,
     _constraints: constraints,
@@ -176,6 +186,19 @@ describe('DeckService', () => {
   });
 
   // -------------------------------------------------------------------------
+  describe('listDecksFromServer', () => {
+    it('reads decks from the server, and fails offline instead of answering from cache', async () => {
+      await DeckService.createDeck(UID, sampleDeck);
+      expect(await DeckService.listDecksFromServer(UID)).toHaveLength(1);
+      globalThis.__decksOffline = true;
+      try {
+        await expect(DeckService.listDecksFromServer(UID)).rejects.toThrow('offline');
+      } finally {
+        globalThis.__decksOffline = false;
+      }
+    });
+  });
+
   describe('getDeck', () => {
     it('returns null for a nonexistent deck', async () => {
       const result = await DeckService.getDeck(UID, 'nonexistent-id');

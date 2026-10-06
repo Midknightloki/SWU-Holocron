@@ -155,6 +155,14 @@ these on real hardware and record the results in the PR:
   on binder and dashboard at phone width. A non-Pro, non-admin account and a
   guest see none of them.
 
+## Surplus report — manual checks
+
+- Value → **Surplus**: pick a card you know (e.g. 6 copies, 2 in decks) and
+  check its row reads `Surplus 1 · own 6 · decks 2 · keep 3`.
+- **Copy as text** and paste into a chat: one line per card, a total at the end.
+- Turn **Show prices** off: no dollar amount on screen; Download CSV and Save
+  as PDF carry none either.
+
 ## Collection value — manual checks
 
 - Binder → **Value** on the phone: totals load, the priced share shows.

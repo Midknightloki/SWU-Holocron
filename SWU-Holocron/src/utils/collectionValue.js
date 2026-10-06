@@ -144,18 +144,27 @@ export function describeFilters(filters) {
   return parts.join('; ') || 'None';
 }
 
-export function toCollectionCsv(lines, summary, filters) {
-  const out = [row(['Set', 'Number', 'Name', 'Subtitle', 'Type', 'Rarity', 'Aspects', 'Variant', 'Finish', 'Qty', 'Unit price', 'Value', 'Price note'])];
-  for (const l of sortLines(lines, 'set', 'asc')) {
-    const note = l.unitPrice === null ? 'no price data' : l.priceIsFallback ? 'from other finish' : '';
-    out.push(row([l.set, l.number, l.name, l.subtitle, l.type, l.rarity, l.aspects.join('/'), l.variant,
-      l.isFoil ? 'Foil' : 'Standard', l.qty, money(l.unitPrice), money(l.value), note]));
-  }
+export function toCollectionCsv(lines, summary, filters, { showPrices = true, mode = 'all' } = {}) {
+  const surplusMode = mode === 'surplus';
+  const cols = [
+    ['Set', (l) => l.set], ['Number', (l) => l.number], ['Name', (l) => l.name], ['Subtitle', (l) => l.subtitle],
+    ['Type', (l) => l.type], ['Rarity', (l) => l.rarity], ['Aspects', (l) => l.aspects.join('/')], ['Variant', (l) => l.variant],
+    ['Finish', (l) => (l.isFoil ? 'Foil' : 'Standard')],
+    ...(surplusMode ? [['Owned', (l) => l.owned], ['In decks', (l) => l.inDecks], ['Kept', (l) => l.kept]] : []),
+    [surplusMode ? 'Surplus' : 'Qty', (l) => l.qty],
+    ...(showPrices ? [
+      ['Unit price', (l) => money(l.unitPrice)], ['Value', (l) => money(l.value)],
+      ['Price note', (l) => (l.unitPrice === null ? 'no price data' : l.priceIsFallback ? 'from other finish' : '')],
+    ] : []),
+  ];
+  const out = [row(cols.map(([h]) => h))];
+  for (const l of sortLines(lines, 'set', 'asc')) out.push(row(cols.map(([, get]) => get(l))));
   out.push('');
-  out.push(row(['Total value', money(summary.value)]));
+  if (surplusMode) out.push(row(['Mode', 'Surplus']));
+  if (showPrices) out.push(row(['Total value', money(summary.value)]));
   out.push(row(['Cards', summary.cards]));
   out.push(row(['Unique cards', summary.unique]));
-  out.push(row(['Priced share', `${Math.round(summary.pricedShare * 100)}%`]));
+  if (showPrices) out.push(row(['Priced share', `${Math.round(summary.pricedShare * 100)}%`]));
   out.push(row(['Filters', describeFilters(filters)]));
   return `\uFEFF${out.join('\r\n')}`;
 }
