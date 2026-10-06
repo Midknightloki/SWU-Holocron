@@ -145,6 +145,50 @@ describe('public decks', () => {
     await seedDoc(p('publicDecks', 'abc12345'), { uid: 'other-uid', name: 'Theirs' });
     await assertFails(deleteDoc(doc(asUser('plain-uid'), p('publicDecks', 'abc12345'))));
   });
+
+  it('stops a user taking over someone else’s shared deck', async () => {
+    await seedDoc(p('publicDecks', 'abc12345'), { uid: 'other-uid', name: 'Theirs' });
+    await assertFails(setDoc(doc(asUser('plain-uid'), p('publicDecks', 'abc12345')), { uid: 'plain-uid', name: 'Mine now' }));
+  });
+
+  it('still lets the owner update their shared deck', async () => {
+    await seedDoc(p('publicDecks', 'abc12345'), { uid: 'plain-uid', name: 'Mine' });
+    await assertSucceeds(setDoc(doc(asUser('plain-uid'), p('publicDecks', 'abc12345')), { uid: 'plain-uid', name: 'Renamed' }));
+  });
+});
+
+describe('public lists', () => {
+  const L = (uid) => ({ uid, kind: 'trade', name: 'Dupes', showPrices: false, lines: [], cards: 0, updatedAt: 1 });
+
+  it('lets anyone read a shared list, including a signed-out visitor', async () => {
+    await seedDoc(p('publicLists', 'abcd2345'), L('plain-uid'));
+    await assertSucceeds(getDoc(doc(asGuest(), p('publicLists', 'abcd2345'))));
+  });
+
+  it('lets the owner share, update and stop sharing', async () => {
+    const db = asUser('plain-uid');
+    await assertSucceeds(setDoc(doc(db, p('publicLists', 'abcd2345')), L('plain-uid')));
+    await assertSucceeds(setDoc(doc(db, p('publicLists', 'abcd2345')), { ...L('plain-uid'), name: 'New' }));
+    await assertSucceeds(deleteDoc(doc(db, p('publicLists', 'abcd2345'))));
+  });
+
+  it('stops sharing under someone else’s uid', async () => {
+    await assertFails(setDoc(doc(asUser('plain-uid'), p('publicLists', 'abcd2345')), L('other-uid')));
+  });
+
+  it('stops a user taking over someone else’s shared list', async () => {
+    await seedDoc(p('publicLists', 'abcd2345'), L('other-uid'));
+    await assertFails(setDoc(doc(asUser('plain-uid'), p('publicLists', 'abcd2345')), L('plain-uid')));
+  });
+
+  it('stops a user deleting someone else’s shared list', async () => {
+    await seedDoc(p('publicLists', 'abcd2345'), L('other-uid'));
+    await assertFails(deleteDoc(doc(asUser('plain-uid'), p('publicLists', 'abcd2345'))));
+  });
+
+  it('stops a signed-out visitor sharing', async () => {
+    await assertFails(setDoc(doc(asGuest(), p('publicLists', 'abcd2345')), L('plain-uid')));
+  });
 });
 
 describe('card submissions', () => {

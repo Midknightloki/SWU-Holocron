@@ -95,7 +95,26 @@ service cloud.firestore {
     // ---------------------------------------------------------------------
     match /artifacts/{appId}/publicDecks/{slug} {
       allow read: if true;
-      allow create, update: if isSignedIn()
+      allow create: if isSignedIn()
+        && request.resource.data.uid == request.auth.uid;
+      // Update needs the existing owner too: checking only the new data let
+      // any signed-in user take over a shared deck by writing their own uid.
+      allow update: if isSignedIn()
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    // ---------------------------------------------------------------------
+    // Shared trade/wants lists: a self-contained public copy of a saved list
+    // (users/{uid}/lists/{id}), readable by anyone with the link.
+    // ---------------------------------------------------------------------
+    match /artifacts/{appId}/publicLists/{code} {
+      allow read: if true;
+      allow create: if isSignedIn()
+        && request.resource.data.uid == request.auth.uid;
+      allow update: if isSignedIn()
+        && resource.data.uid == request.auth.uid
         && request.resource.data.uid == request.auth.uid;
       allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
     }
