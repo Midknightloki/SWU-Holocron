@@ -570,8 +570,12 @@ describe('CardScanner', () => {
       sampler.queue.push(...handFrames(3), ...many(8, 200));
       await tick(11);
       expect(screen.getByTestId('auto-status')).toHaveTextContent(/capturing/i);
+      // A warning colour while the card must stay put: green reads as "grab it".
+      expect(screen.getByTestId('auto-status').className).toMatch(/orange/);
+      expect(screen.getByTestId('auto-status').className).not.toMatch(/green/);
       await act(async () => { finish(PHOTO); });
       expect(screen.getByTestId('auto-status')).toHaveTextContent(/remove card/i);
+      expect(screen.getByTestId('auto-status').className).toMatch(/green/);
     });
 
     it('catches the next card when it settles while a capture is still in flight', async () => {
