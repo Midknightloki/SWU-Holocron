@@ -115,6 +115,7 @@ artifacts/{APP_ID}/public/data/prebuiltDecks/{sourceId}       precon decks (sync
 artifacts/{APP_ID}/public/data/cardDatabase/preconProducts    TCGplayer precon products (sync writes)
 artifacts/{APP_ID}/users/{uid}/prebuiltAdds/{sourceId}        when a user added a precon
 artifacts/{APP_ID}/users/{uid}/lists/{listId}                 saved trade/wants lists (Saved reports/lists)
+artifacts/{APP_ID}/publicLists/{code}                         shared trade/wants lists (anyone can read)
 ```
 
 Firestore requires alternating collection/document segments, so path arity is
@@ -147,6 +148,11 @@ Firestore rules **are** deployed by CI: `deploy-firestore-rules.yml` publishes
 tests in `src/test/rules/` passing. `storage.rules` is still manual. Changing a
 path in code usually means changing rules too, so expect the rules tests to fail
 first — that is the gate working.
+
+`publicDecks` and `publicLists` updates require the existing owner as well as
+the new data's uid: checking only the new uid let any signed-in user take over
+a shared deck. Running `npm run test:rules` locally needs JDK 21+ (the
+emulator refuses older Java).
 
 ### Card data: four tiers, and a cache with no expiry
 
@@ -414,7 +420,15 @@ wants lists from collection gaps (`WantsFromGaps`: the Command Center's
 unique-title logic, missing titles or up to a playset), from a deck's Shop
 tab (**Save as wants list**), or Add card. Each list is edited in place
 (`ListView`: quantity, finish, note, rename) and exports as text, CSV and PDF;
-its Show prices choice is stored on the list. Public links are phase 2b.
+its Show prices choice is stored on the list.
+
+**Share link** publishes a list at `/list/<code>`: a self-contained copy at
+`publicLists/{code}` (`toPublicList`: no owner name, prices only with Show
+prices on, frozen as "prices as of"), readable without signing in
+(`PublicListView.jsx`, routed in `main.jsx` like `/deck/<slug>`). The copy
+can't lean on the card or price database -- both need a signed-in reader. While
+shared, `ListView` re-publishes after every change and whenever prices load.
+Stop sharing and deleting the list both remove the copy.
 
 ### Prebuilt decks
 
