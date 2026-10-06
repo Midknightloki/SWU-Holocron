@@ -130,11 +130,19 @@ export default function CollectionValueReport({ uid, collectionData, onClose, lo
     return buildSurplusLines(allLines, deckUsage(data.decks ?? []));
   }, [mode, allLines, data]);
   const options = useMemo(() => filterOptions(baseLines), [baseLines]);
-  const lines = useMemo(() => applyFilters(baseLines, filters), [baseLines, filters]);
+  const activeFilters = useMemo(
+    () => (showPrices ? filters : { ...filters, price: 'all', minPrice: null }),
+    [filters, showPrices],
+  );
+  const lines = useMemo(() => applyFilters(baseLines, activeFilters), [baseLines, activeFilters]);
   const summary = useMemo(() => summarize(lines), [lines]);
-  const sorted = useMemo(() => sortLines(lines, sortBy, sortDir), [lines, sortBy, sortDir]);
+  const byValueHidden = !showPrices && sortBy === 'value';
+  const listSortBy = byValueHidden ? 'set' : sortBy;
+  const listSortDir = byValueHidden ? 'asc' : sortDir;
+  const sorted = useMemo(() => sortLines(lines, listSortBy, listSortDir), [lines, listSortBy, listSortDir]);
 
-  const update = (patch) => { setFilters((f) => ({ ...f, ...patch })); setShown(PAGE); };
+  // Any change makes a shown copy box stale.
+  const update = (patch) => { setFilters((f) => ({ ...f, ...patch })); setShown(PAGE); setCopyState(null); };
   const addTo = (field, key) => update({ [field]: filters[field].includes(key) ? filters[field] : [...filters[field], key] });
   const removeFrom = (field, key) => update({ [field]: filters[field].filter((k) => k !== key) });
   const clearAll = () => { setMinPriceText(''); update(DEFAULT_FILTERS); };
@@ -142,12 +150,14 @@ export default function CollectionValueReport({ uid, collectionData, onClose, lo
   const chips = [
     ...LIST_FIELDS.flatMap(({ field, label }) => filters[field].map((key) => ({ name: `${label}: ${key}`, remove: () => removeFrom(field, key) }))),
     ...(filters.finish !== 'all' ? [{ name: `Finish: ${filters.finish}`, remove: () => update({ finish: 'all' }) }] : []),
-    ...(filters.price !== 'all' ? [{ name: `Price: ${filters.price}`, remove: () => update({ price: 'all' }) }] : []),
-    ...(filters.minPrice !== null ? [{ name: `Min price: ${money(filters.minPrice)}`, remove: () => { setMinPriceText(''); update({ minPrice: null }); } }] : []),
+    ...(activeFilters.price !== 'all' ? [{ name: `Price: ${activeFilters.price}`, remove: () => update({ price: 'all' }) }] : []),
+    ...(activeFilters.minPrice !== null ? [{ name: `Min price: ${money(activeFilters.minPrice)}`, remove: () => { setMinPriceText(''); update({ minPrice: null }); } }] : []),
     ...(filters.search.trim() ? [{ name: `Search: ${filters.search.trim()}`, remove: () => update({ search: '' }) }] : []),
   ];
 
   const surplusMode = mode === 'surplus';
+  // Nothing to export when the decks couldn't be read.
+  const noExport = surplusMode && Boolean(data?.decksError);
 
   const changeMode = (next) => {
     setMode(next);
@@ -159,13 +169,14 @@ export default function CollectionValueReport({ uid, collectionData, onClose, lo
   const togglePrices = () => {
     const next = !showPrices;
     setShowPrices(next);
+    setCopyState(null);
     writeSetting(PRICES_KEY, next ? '1' : '0');
   };
 
   const exportCsv = () => {
     const date = new Date().toISOString().slice(0, 10);
     downloadText(
-      toCollectionCsv(lines, summary, filters, { showPrices, mode }),
+      toCollectionCsv(lines, summary, activeFilters, { showPrices, mode }),
       `${surplusMode ? 'surplus' : 'collection-value'}-${date}.csv`,
     );
   };
@@ -230,13 +241,13 @@ export default function CollectionValueReport({ uid, collectionData, onClose, lo
             )}
 
             <div className="flex flex-wrap gap-2 print:hidden">
-              <button type="button" onClick={copyText} className="flex items-center gap-1 px-3 py-2 rounded-lg bg-gray-800 text-sm">
+              <button type="button" onClick={copyText} disabled={noExport} className="disabled:opacity-40 flex items-center gap-1 px-3 py-2 rounded-lg bg-gray-800 text-sm">
                 <ClipboardCopy className="w-4 h-4" /> Copy as text
               </button>
-              <button type="button" onClick={exportCsv} className="flex items-center gap-1 px-3 py-2 rounded-lg bg-gray-800 text-sm">
+              <button type="button" onClick={exportCsv} disabled={noExport} className="disabled:opacity-40 flex items-center gap-1 px-3 py-2 rounded-lg bg-gray-800 text-sm">
                 <Download className="w-4 h-4" /> Download CSV
               </button>
-              <button type="button" onClick={() => setPrinting(true)} className="flex items-center gap-1 px-3 py-2 rounded-lg bg-gray-800 text-sm">
+              <button type="button" onClick={() => setPrinting(true)} disabled={noExport} className="disabled:opacity-40 flex items-center gap-1 px-3 py-2 rounded-lg bg-gray-800 text-sm">
                 <FileText className="w-4 h-4" /> Save as PDF
               </button>
             </div>
@@ -400,15 +411,15 @@ export default function CollectionValueReport({ uid, collectionData, onClose, lo
                 <h3 className="flex-1 text-sm font-semibold text-gray-300">Cards ({sorted.length})</h3>
                 <label className="text-xs text-gray-400 flex items-center gap-1">
                   Sort by
-                  <select aria-label="Sort by" value={sortBy} onChange={(e) => setSortBy(e.target.value)} className={select}>
-                    <option value="value">Value</option>
+                  <select aria-label="Sort by" value={listSortBy} onChange={(e) => setSortBy(e.target.value)} className={select}>
+                    {showPrices && <option value="value">Value</option>}
                     <option value="qty">Quantity</option>
                     <option value="name">Name</option>
                     <option value="set">Set</option>
                   </select>
                 </label>
                 <button type="button" onClick={() => setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))} className="px-2 py-1.5 rounded-lg bg-gray-800 text-xs">
-                  {sortDir === 'desc' ? 'Descending' : 'Ascending'}
+                  {listSortDir === 'desc' ? 'Descending' : 'Ascending'}
                 </button>
               </div>
               <ul aria-label="Cards" className="divide-y divide-gray-800 text-sm print:divide-gray-200">

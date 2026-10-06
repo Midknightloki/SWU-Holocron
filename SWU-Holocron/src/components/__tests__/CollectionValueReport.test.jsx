@@ -216,4 +216,39 @@ describe('Surplus mode', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Copy as text' }));
     expect((await screen.findByLabelText('Trade list')).value).toContain('1× Darth Vader');
   });
+
+  it('with prices off, ignores hidden price filters and shows no price anywhere', async () => {
+    localStorage.getItem.mockImplementation((k) => (k === 'swu-value-filters' ? JSON.stringify({ minPrice: 1, price: 'priced' }) : null));
+    render(<CollectionValueReport uid="u1" collectionData={{}} onClose={vi.fn()} load={loadWith()} />);
+    await screen.findByTestId('total-value');
+    expect(screen.getByRole('button', { name: /Remove Min price/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show prices' }));
+    expect(screen.queryByRole('button', { name: /Remove Min price/ })).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/\$/);
+    // Price filters no longer narrow the list: both cards are back.
+    expect(screen.getByTestId('total-cards')).toHaveTextContent('9');
+  });
+
+  it('clears the copy box when prices or filters change', async () => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async () => { throw new Error('denied'); } } });
+    await openSurplus(loadWith());
+    fireEvent.click(screen.getByRole('button', { name: 'Copy as text' }));
+    await screen.findByLabelText('Trade list');
+    fireEvent.click(screen.getByRole('button', { name: 'Show prices' }));
+    expect(screen.queryByLabelText('Trade list')).not.toBeInTheDocument();
+  });
+
+  it('sorts by set when prices are hidden, since value order hints at worth', async () => {
+    await openSurplus(loadWith());
+    fireEvent.click(screen.getByRole('button', { name: 'Show prices' }));
+    expect(screen.getByLabelText('Sort by')).toHaveValue('set');
+    expect(screen.queryByRole('option', { name: 'Value' })).not.toBeInTheDocument();
+  });
+
+  it('offers no export when the decks could not be read', async () => {
+    await openSurplus(loadWith({ decks: undefined, decksError: true }));
+    expect(screen.getByRole('button', { name: 'Copy as text' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Download CSV' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save as PDF' })).toBeDisabled();
+  });
 });
