@@ -155,6 +155,16 @@ these on real hardware and record the results in the PR:
   on binder and dashboard at phone width. A non-Pro, non-admin account and a
   guest see none of them.
 
+## Collection value — manual checks
+
+- Binder → **Value** on the phone: totals load, the priced share shows.
+- Slice by set and rarity; tap a breakdown row to drill down; remove a chip;
+  Clear all. Close and reopen: the filters are remembered.
+- Download CSV (opens in Sheets, accents and leading zeros intact) and Save as
+  PDF (only the report prints).
+- Open a card: its standard and foil market prices match TCGplayer (the
+  links open it), and "Your copies" values what you own.
+
 ## User management — manual checks
 
 - Grant the runtime account `roles/firebaseauth.viewer` once (`docs/FUNCTIONS-RUNTIME-SA.md`), then

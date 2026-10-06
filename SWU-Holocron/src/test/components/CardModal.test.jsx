@@ -16,6 +16,9 @@ vi.mock('../../services/CardService', () => ({
   }
 }));
 
+// The price panel loads its own data; here it only matters whether it shows.
+vi.mock('../../components/CardPricePanel', () => ({ default: () => <div>price panel</div> }));
+
 // Mock Firebase
 vi.mock('../../firebase', () => ({
   db: {},
@@ -265,6 +268,16 @@ describe('CardModal - placeholder cards', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('shows no market price for a placeholder, which has nothing to price', () => {
+    renderModal(placeholder);
+    expect(screen.queryByText('price panel')).not.toBeInTheDocument();
+  });
+
+  it('shows the market price for a real card', () => {
+    renderModal({ Set: 'SOR', Number: '010', Name: 'Darth Vader', FrontText: 'x' });
+    expect(screen.getByText('price panel')).toBeInTheDocument();
   });
 
   it('should explain what a placeholder is', () => {

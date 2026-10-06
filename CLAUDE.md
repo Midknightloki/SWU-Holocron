@@ -373,6 +373,23 @@ that cross-check is what keeps a misread number from adding the wrong card.
   only approximately — the live stream and the still photo can frame
   differently — but the crop is exact because it is applied to the photo.
 
+### Collection value
+
+The binder's **Value** button opens a report of what the collection is worth
+at today's market prices (`CollectionValueReport.jsx`). The pure model in
+`src/utils/collectionValue.js` builds one line per owned collection doc and
+holds the filters (set, rarity, type, aspect, printing, finish, priced /
+unpriced / minimum price, search), summary, sorting and CSV;
+`src/services/collectionValueLoader.js` gathers card details through
+`loadSet` (the IndexedDB cache) and prices through
+`PricingService.getBulkPrices`. Breakdown rows are shortcuts to filter by
+them, and filters persist in `swu-value-filters`. It prints via the batch
+report's `#batch-report` id. Only sets the weekly price sync covers are
+priced; unpriced cards are listed and the priced share shown, never counted
+as $0. The card detail view shows the same prices per card
+(`CardPricePanel.jsx`), plus what the user's copies are worth. Reports share
+`src/utils/breakdown.js`.
+
 ### Prebuilt decks
 
 Precon decks (Spotlight, starters, Twin Suns, Intro Battle) are added to a
@@ -546,7 +563,8 @@ it is an ESLint *error*, so CI blocks on it.
 - `ASPECTS` is an array of objects, not strings — render `aspect.name`.
 - `localStorage` keys are `swu-`-prefixed: `swu-available-sets`,
   `swu-active-set`, `swu-has-visited`, `swu-sync-code`, `swu-holocron`,
-  `swu-scan-draft-{uid}`, `swu-scan-help-seen`, `swu-scan-rig`, `swu-scan-sets`, `swu-scan-auto`.
+  `swu-scan-draft-{uid}`, `swu-scan-help-seen`, `swu-scan-rig`, `swu-scan-sets`, `swu-scan-auto`,
+  `swu-deck-owned-only`, `swu-value-filters`.
 - Leaders and Bases are horizontal: `aspect-[88/63] col-span-2`. Everything else
   is `aspect-[63/88] col-span-1` (`App.jsx:982`).
 - Owned counts render as a dual `3 +2F` — standard count prominent, foil count as

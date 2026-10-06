@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { X, RefreshCw, Sparkles, Plus, Minus, Loader2, ImageIcon, Info } from 'lucide-react';
 import { CardService } from '../services/CardService';
+import CardPricePanel from './CardPricePanel';
 import { db, APP_ID } from '../firebase';
 import { doc, setDoc, deleteDoc, collection } from 'firebase/firestore';
 
@@ -119,9 +120,12 @@ export default function CardModal({ initialCard, allCards, setCode, user, collec
                  )}
                </div>
              ) : (
-               <div className="bg-gray-800/50 p-4 rounded-xl border border-gray-700">
-                 <p className="whitespace-pre-wrap">{isFlipped && hasBack ? currentCard.BackText : currentCard.FrontText}</p>
-               </div>
+               <>
+                 <div className="bg-gray-800/50 p-4 rounded-xl border border-gray-700">
+                   <p className="whitespace-pre-wrap">{isFlipped && hasBack ? currentCard.BackText : currentCard.FrontText}</p>
+                 </div>
+                 <CardPricePanel card={currentCard} collectionData={collectionData} />
+               </>
              )}
           </div>
        </div>

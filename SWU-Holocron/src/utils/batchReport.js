@@ -3,24 +3,14 @@
  * it is worth. Pure -- built from the saved batch record and, optionally, the
  * current prices. Lines with no price are listed, never counted as $0.
  */
+import { breakdown } from './breakdown';
+
 const cents = (v) => Math.round(v * 100) / 100;
 const isPriced = (v) => typeof v === 'number' && Number.isFinite(v);
 const cardKey = (l) => `${l.set}_${l.number}`;
 
-function breakdown(lines, keysOf) {
-  const groups = new Map();
-  for (const l of lines) {
-    for (const key of keysOf(l)) {
-      const g = groups.get(key) ?? { key, count: 0, value: 0 };
-      g.count += l.qty;
-      if (isPriced(l.priceAtAdd)) g.value += l.priceAtAdd * l.qty;
-      groups.set(key, g);
-    }
-  }
-  return [...groups.values()]
-    .map((g) => ({ ...g, value: cents(g.value) }))
-    .sort((a, b) => b.value - a.value || b.count - a.count || a.key.localeCompare(b.key));
-}
+// Batch lines are valued at the price when they were added.
+const atAdd = (l) => (isPriced(l.priceAtAdd) ? l.priceAtAdd * l.qty : null);
 
 export function buildReport(batch, currentPrices = null) {
   const lines = Object.entries(batch.cards ?? {})
@@ -62,10 +52,10 @@ export function buildReport(batch, currentPrices = null) {
     otherFinish: lines.filter((l) => l.priceIsFallback && isPriced(l.priceAtAdd)),
     net: pricePaid === null ? null : cents(valueAtAdd - pricePaid),
     multiple: pricePaid ? cents(valueAtAdd / pricePaid) : null,
-    byRarity: breakdown(lines, (l) => [l.rarity ?? 'Unknown']),
-    byType: breakdown(lines, (l) => [l.type ?? 'Unknown']),
-    byAspect: breakdown(lines, (l) => (l.aspects?.length ? l.aspects : ['Neutral'])),
-    byVariant: breakdown(lines, (l) => [l.variant ?? 'Unknown']),
+    byRarity: breakdown(lines, (l) => [l.rarity ?? 'Unknown'], atAdd),
+    byType: breakdown(lines, (l) => [l.type ?? 'Unknown'], atAdd),
+    byAspect: breakdown(lines, (l) => (l.aspects?.length ? [...new Set(l.aspects)] : ['Neutral']), atAdd),
+    byVariant: breakdown(lines, (l) => [l.variant ?? 'Unknown'], atAdd),
     topPulls: [...priced]
       .sort((a, b) => b.priceAtAdd - a.priceAtAdd || a.name.localeCompare(b.name))
       .slice(0, 10),

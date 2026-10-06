@@ -262,4 +262,23 @@ describe('PricingService', () => {
       expect(PricingService.getTCGPlayerUrl(null)).toContain('q=');
     });
   });
+
+  describe('failed reads', () => {
+    it('retries a set whose read failed, and reports it as failed until it succeeds', async () => {
+      mockGetDoc.mockRejectedValueOnce(new Error('offline'));
+      expect(await PricingService.getSetPrices('SOR')).toBeNull();
+      expect(PricingService.failedSets()).toEqual(['SOR']);
+      mockGetDoc.mockResolvedValueOnce(found(SOR_PRICES));
+      expect(await PricingService.getSetPrices('SOR')).toEqual(SOR_PRICES);
+      expect(PricingService.failedSets()).toEqual([]);
+    });
+
+    it('still remembers a set that simply has no prices', async () => {
+      mockGetDoc.mockResolvedValue(missing());
+      await PricingService.getSetPrices('LAW');
+      await PricingService.getSetPrices('LAW');
+      expect(mockGetDoc).toHaveBeenCalledTimes(1);
+      expect(PricingService.failedSets()).toEqual([]);
+    });
+  });
 });
