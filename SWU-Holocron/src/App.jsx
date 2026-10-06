@@ -32,6 +32,7 @@ import CardScanner from './components/CardScanner';
 import ScanButton from './components/ScanButton';
 import { matchesNameOrNumber } from './utils/cardNumberQuery';
 import { dbSyncLabel } from './utils/syncLabel';
+import { showsSetPicker } from './utils/viewChrome';
 
 // Version info
 const VERSION = __APP_VERSION__;
@@ -840,9 +841,9 @@ export default function App() {
               </div>
             )}
 
-            {/* Row 2: Set selector (all views) · Sort · Direction · Type · Aspect (binder only) */}
+            {/* Row 2: Set selector (binder + Command Center) · Sort · Direction · Type · Aspect (binder only) */}
+            {showsSetPicker(view) && (
             <div className="flex items-center gap-2 flex-wrap pb-2">
-              {/* Set selector — always visible so dashboard can switch sets */}
               <select
                 value={activeSet}
                 onChange={(e) => setActiveSet(e.target.value)}
@@ -924,6 +925,7 @@ export default function App() {
                 </>
               )}
             </div>
+            )}
           </div>
         </div>
       </header>
