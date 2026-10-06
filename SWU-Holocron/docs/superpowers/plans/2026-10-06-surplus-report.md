@@ -19,7 +19,7 @@
 - **Where to run things:** npm/npx from `SWU-Holocron/`; lint in Bash.
 - **Gated commits:** run `npm run test:unit`, lint (stop on any output) and `npm run build`, then commit.
 - **Commit trailer:** `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
-- **Unicode:** never put a literal U+FEFF in source; use the `﻿` escape.
+- **Unicode:** never put a literal U+FEFF in source; use the `\uFEFF` escape.
 - **Keep rules:** a line counts as Normal standard when `!isFoil && (variant === 'Normal' || variant === 'Unknown')`. That printing keeps 3, or 1 for a `Leader` or `Base`. Every other line keeps 1.
 - **Deck usage:** summed across decks (`cards`, `sideboard`, `leaderId`, `baseId`), with ids normalised to `SET_NNN` (numbers padded to 3).
 - **Allocation:** standard copies first, then foil, within one `SET_NNN`.
@@ -242,7 +242,7 @@ export function toTradeText(lines, { showPrices }) {
 describe('toCollectionCsv options', () => {
   it('drops price columns when prices are hidden', () => {
     const rows = toCollectionCsv(lines, summarize(lines), DEFAULT_FILTERS, { showPrices: false }).split('\r\n');
-    expect(rows[0]).toBe('﻿Set,Number,Name,Subtitle,Type,Rarity,Aspects,Variant,Finish,Qty');
+    expect(rows[0]).toBe('\uFEFFSet,Number,Name,Subtitle,Type,Rarity,Aspects,Variant,Finish,Qty');
     expect(rows.some((r) => r.startsWith('Total value'))).toBe(false);
     expect(rows.some((r) => r.startsWith('Priced share'))).toBe(false);
     expect(rows.join('\n')).not.toMatch(/\$|40\.00/);
@@ -251,7 +251,7 @@ describe('toCollectionCsv options', () => {
   it('adds the surplus columns in surplus mode', () => {
     const surplus = [{ ...lines.find((l) => l.id === 'SOR_050_std'), owned: 10, inDecks: 2, kept: 3, qty: 5 }];
     const rows = toCollectionCsv(surplus, summarize(surplus), DEFAULT_FILTERS, { mode: 'surplus' }).split('\r\n');
-    expect(rows[0]).toBe('﻿Set,Number,Name,Subtitle,Type,Rarity,Aspects,Variant,Finish,Owned,In decks,Kept,Surplus,Unit price,Value,Price note');
+    expect(rows[0]).toBe('\uFEFFSet,Number,Name,Subtitle,Type,Rarity,Aspects,Variant,Finish,Owned,In decks,Kept,Surplus,Unit price,Value,Price note');
     expect(rows[1]).toBe('SOR,050,Battle Droid,,Unit,Common,,Normal,Standard,10,2,3,5,0.05,0.25,');
     expect(rows).toContain('Mode,Surplus');
   });
@@ -285,11 +285,11 @@ export function toCollectionCsv(lines, summary, filters, { showPrices = true, mo
   out.push(row(['Unique cards', summary.unique]));
   if (showPrices) out.push(row(['Priced share', `${Math.round(summary.pricedShare * 100)}%`]));
   out.push(row(['Filters', describeFilters(filters)]));
-  return `﻿${out.join('\r\n')}`;
+  return `\uFEFF${out.join('\r\n')}`;
 }
 ```
 
-  Write `﻿` as the six-character escape, never the raw character.
+  Write `\uFEFF` as the six-character escape, never the raw character.
 
 - [ ] **Step 4: Pass** (the old CSV test must still pass unchanged). **Step 5: Commit** — `feat(surplus): CSV options for prices and surplus mode`.
 
