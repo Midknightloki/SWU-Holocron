@@ -88,3 +88,17 @@ describe('toTradeText', () => {
     ].join('\n'));
   });
 });
+
+describe('deckUsage across deck shapes', () => {
+  it('counts a leader and base once whether the deck also lists them in its cards (builder) or not (import)', () => {
+    const builder = { cards: { SOR_005: 1, SOR_020: 1, SOR_010: 3 }, leaderId: 'SOR_005', baseId: 'SOR_020' };
+    const imported = { cards: { SOR_010: 3 }, leaderId: 'SOR_005', baseId: 'SOR_020' };
+    expect(deckUsage([builder])).toEqual({ SOR_005: 1, SOR_020: 1, SOR_010: 3 });
+    expect(deckUsage([imported])).toEqual({ SOR_005: 1, SOR_020: 1, SOR_010: 3 });
+  });
+
+  it('counts the second Twin Suns leader', () => {
+    expect(deckUsage([{ cards: {}, leaderId: 'TS26_002', leaderId2: 'TS26_004', baseId: 'TS26_011' }]))
+      .toEqual({ TS26_002: 1, TS26_004: 1, TS26_011: 1 });
+  });
+});

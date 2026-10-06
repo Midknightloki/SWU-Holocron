@@ -21,8 +21,12 @@ export function deckUsage(decks) {
   for (const deck of decks ?? []) {
     for (const [id, n] of Object.entries(deck.cards ?? {})) add(id, Number(n) || 0);
     for (const [id, n] of Object.entries(deck.sideboard ?? {})) add(id, Number(n) || 0);
-    if (deck.leaderId) add(deck.leaderId, 1);
-    if (deck.baseId) add(deck.baseId, 1);
+    // The deck builder also lists the leader(s) and base in `cards`; an
+    // imported deck only names them. Count each once either way.
+    const listed = new Set(Object.keys(deck.cards ?? {}).map(printingId));
+    for (const id of [deck.leaderId, deck.leaderId2, deck.baseId]) {
+      if (id && !listed.has(printingId(id))) add(id, 1);
+    }
   }
   return usage;
 }
@@ -52,7 +56,8 @@ export function buildSurplusLines(lines, usage) {
     });
   }
   // Back to the order they came in.
-  return lines.map((l) => out.find((s) => s.id === l.id)).filter(Boolean);
+  const byId = new Map(out.map((s) => [s.id, s]));
+  return lines.map((l) => byId.get(l.id)).filter(Boolean);
 }
 
 export function toTradeText(lines, { showPrices }) {
