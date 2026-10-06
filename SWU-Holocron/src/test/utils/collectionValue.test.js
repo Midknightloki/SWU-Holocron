@@ -115,7 +115,7 @@ describe('toCollectionCsv', () => {
   it('writes a BOM, a header, quoted rows, and a summary with the filters', () => {
     const csv = toCollectionCsv(lines, summarize(lines), { ...DEFAULT_FILTERS, sets: ['SOR'] });
     const rows = csv.split('\r\n');
-    expect(rows[0]).toBe('﻿Set,Number,Name,Subtitle,Type,Rarity,Aspects,Variant,Finish,Qty,Unit price,Value,Price note');
+    expect(rows[0]).toBe('\uFEFFSet,Number,Name,Subtitle,Type,Rarity,Aspects,Variant,Finish,Qty,Unit price,Value,Price note');
     expect(rows).toContain('SOR,300,Luke Skywalker,Faithful Friend,Unit,Legendary,Vigilance/Heroism,Hyperspace,Standard,1,40.00,40.00,from other finish');
     expect(rows).toContain('SHD,001,Mystery Card,,Unknown,Unknown,,Unknown,Standard,1,,,no price data');
     expect(rows).toContain('Total value,49.50');

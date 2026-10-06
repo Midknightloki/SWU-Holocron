@@ -153,5 +153,5 @@ export function toCollectionCsv(lines, summary, filters) {
   out.push(row(['Unique cards', summary.unique]));
   out.push(row(['Priced share', `${Math.round(summary.pricedShare * 100)}%`]));
   out.push(row(['Filters', describeFilters(filters)]));
-  return `﻿${out.join('\r\n')}`;
+  return `\uFEFF${out.join('\r\n')}`;
 }
