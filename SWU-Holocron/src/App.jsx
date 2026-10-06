@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Layers, RefreshCw, Loader2, Cloud, LayoutGrid, BarChart3,
   Search, Plus, Minus, Info, AlertCircle, FileText,
-  User, Menu, X, Shield, Swords, HelpCircle
+  User, Menu, X, Shield, Swords, HelpCircle, DollarSign
 } from 'lucide-react';
 import { SETS, ASPECTS } from './constants';
 import { db, APP_ID } from './firebase';
@@ -34,6 +34,7 @@ import { matchesNameOrNumber } from './utils/cardNumberQuery';
 import { dbSyncLabel } from './utils/syncLabel';
 import { showsSetPicker } from './utils/viewChrome';
 import MobileNav from './components/MobileNav';
+import CollectionValueReport from './components/CollectionValueReport';
 
 // Version info
 const VERSION = __APP_VERSION__;
@@ -149,6 +150,7 @@ export default function App() {
   const [sortDir, setSortDir] = useState('asc');   // 'asc' | 'desc'
   const [showMyCollection, setShowMyCollection] = useState(false);
   const [isRedeemOpen, setIsRedeemOpen] = useState(false);
+  const [isValueOpen, setIsValueOpen] = useState(false);
 
   const fileInputRef = useRef(null);
 
@@ -762,6 +764,16 @@ export default function App() {
                 </div>
                 {/* Phone width uses the floating button instead: this row is already full */}
                 {openScanner && <ScanButton onOpen={openScanner} className="hidden md:flex rounded-full" />}
+                {/* What the collection is worth (all sets, filterable) */}
+                {Object.keys(collectionData).length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setIsValueOpen(true)}
+                    className="shrink-0 flex items-center gap-1 px-3 py-2 rounded-full text-xs font-medium border bg-gray-800 border-gray-700 text-gray-300 hover:text-white hover:border-gray-500"
+                  >
+                    <DollarSign size={14} aria-hidden="true" /> Value
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     const next = !showMyCollection;
@@ -1121,6 +1133,10 @@ export default function App() {
             onScan={openScanner}
           />
         </ErrorBoundary>
+      )}
+
+      {isValueOpen && (
+        <CollectionValueReport collectionData={collectionData} onClose={() => setIsValueOpen(false)} />
       )}
 
       {/* Phone navigation: bottom bar + Me sheet (the header holds these from md up) */}
