@@ -15,6 +15,7 @@
 import { SETS } from '../src/cardData.js';
 import { fetchSetCatalog, writeSetRegistry } from './setDiscovery.js';
 import { initFirestore } from './firebaseAdmin.js';
+import { writeSetData } from './setWrite.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -115,39 +116,11 @@ async function saveSetToFirestore(setCode, setName, cards) {
     .collection(setCode)
     .doc('data');
   
-  const dataHash = calculateDataHash(cards);
-
   // FORCE_UPDATE rewrites every set even when the upstream payload is
-  // unchanged. sync-cards.yml has always set this and exposed a force_update
-  // dispatch input, but nothing read it -- so there was no way to repair a
-  // damaged document, because the hash check kept skipping the write.
+  // unchanged (sync-cards.yml's force_update input) -- the way to repair a
+  // damaged document, since an unchanged hash otherwise skips the write.
   const forceUpdate = String(process.env.FORCE_UPDATE || '').toLowerCase() === 'true';
-
-  // Check if data has changed
-  const existing = await setRef.get();
-  if (!forceUpdate && existing.exists && existing.data().dataHash === dataHash) {
-    console.log(`  No changes detected for ${setCode}, skipping write`);
-    return { updated: false, cardCount: cards.length };
-  }
-  if (forceUpdate && existing.exists && existing.data().dataHash === dataHash) {
-    console.log(`  FORCE_UPDATE: rewriting ${setCode} despite unchanged hash`);
-  }
-  
-  const setData = {
-    code: setCode,
-    name: setName,
-    totalCards: cards.length,
-    lastSync: Date.now(),
-    syncVersion: '1.0',
-    syncSource: 'swu-db.com',
-    dataHash: dataHash,
-    cards: cards
-  };
-  
-  await setRef.set(setData);
-  console.log(`✓ Saved ${cards.length} cards to Firestore (${setCode})`);
-  
-  return { updated: true, cardCount: cards.length };
+  return writeSetData(setRef, { setCode, setName, cards, dataHash: calculateDataHash(cards), forceUpdate });
 }
 
 /**
