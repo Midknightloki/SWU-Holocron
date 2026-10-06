@@ -110,6 +110,19 @@ describe('AdminPanel', () => {
       expect(screen.getByText('user management')).toBeInTheDocument();
     });
 
+    it('offers a section dropdown (the phone layout) that switches sections', async () => {
+      const user = userEvent.setup();
+      render(
+        <AuthContext.Provider value={{ user: mockAdminUser, isAdmin: true, loading: false, adminLoading: false }}>
+          <AdminPanel />
+        </AuthContext.Provider>
+      );
+      const section = await screen.findByLabelText('Admin section');
+      expect([...section.options].map((o) => o.textContent)).toEqual(['Card Database', 'Shells', 'Packets', 'Users', 'Contributors', 'Prebuilt Decks']);
+      await user.selectOptions(section, 'users');
+      expect(screen.getByText('user management')).toBeInTheDocument();
+    });
+
     it('should show loading state while checking admin status', () => {
       render(
         <AuthContext.Provider value={{ user: mockAdminUser, isAdmin: false, loading: false, adminLoading: true }}>
