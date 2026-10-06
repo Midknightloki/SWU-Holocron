@@ -23,7 +23,7 @@ export default function ScanButton({ onOpen, variant = 'inline', className = '' 
         aria-label="Scan cards"
         title="Scan cards"
         data-variant="fab"
-        className="md:hidden fixed bottom-4 right-4 z-30 w-14 h-14 rounded-full bg-yellow-500 hover:bg-yellow-400 text-black shadow-lg shadow-yellow-500/30 flex items-center justify-center transition-colors"
+        className="md:hidden fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] right-4 z-30 w-14 h-14 rounded-full bg-yellow-500 hover:bg-yellow-400 text-black shadow-lg shadow-yellow-500/30 flex items-center justify-center transition-colors"
       >
         <ScanLine size={26} />
       </button>
