@@ -64,7 +64,7 @@ export default function BatchesPanel({ uid, refreshKey = 0 }) {
         <BatchReport
           uid={uid}
           batchId={open}
-          onClose={() => setOpen(null)}
+          onClose={() => { setOpen(null); load(); }}
           onDeleted={() => { setOpen(null); load(); }}
         />
       )}
