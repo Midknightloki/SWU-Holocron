@@ -93,3 +93,10 @@ describe('buildReport current prices and new cards', () => {
     expect(both.newUnique).toBe(1);
   });
 });
+
+describe('buildReport aspects', () => {
+  it('counts a card that repeats an aspect once per aspect', () => {
+    const r = buildReport({ name: 'x', createdAt: 1, cards: { SOR_155_std: { set: 'SOR', number: '155', name: 'Twin', aspects: ['Aggression', 'Aggression'], qty: 2, priceAtAdd: 1 } } });
+    expect(r.byAspect).toEqual([{ key: 'Aggression', count: 2, value: 2 }]);
+  });
+});

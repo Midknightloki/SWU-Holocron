@@ -40,7 +40,7 @@ describe('buildCollectionLines', () => {
   });
 
   it('keeps a card whose set details are missing, by its stored name', () => {
-    expect(byId('SHD_001_std')).toMatchObject({ name: 'Mystery Card', type: 'Unknown', rarity: 'Unknown', aspects: [], variant: 'Unknown', unitPrice: null, value: null });
+    expect(byId('SHD_001_std')).toMatchObject({ name: 'Mystery Card', type: 'Unknown', rarity: 'Unknown', aspects: ['Unknown'], variant: 'Unknown', unitPrice: null, value: null });
   });
 });
 
@@ -53,7 +53,7 @@ describe('summarize', () => {
     expect(s.otherFinish.map((l) => l.id)).toEqual(['SOR_300_std']);
     expect(s.bySet).toEqual([{ key: 'SOR', count: 14, value: 49.5 }, { key: 'SHD', count: 1, value: 0 }]);
     expect(s.byAspect.find((g) => g.key === 'Villainy')).toEqual({ key: 'Villainy', count: 3, value: 9 });
-    expect(s.byAspect.find((g) => g.key === 'Neutral')).toEqual({ key: 'Neutral', count: 11, value: 0.5 });
+    expect(s.byAspect.find((g) => g.key === 'Neutral')).toEqual({ key: 'Neutral', count: 10, value: 0.5 });
   });
 
   it('is all zeros for no lines', () => {
@@ -79,7 +79,7 @@ describe('applyFilters', () => {
 
   it('aspect filter matches any aspect; Neutral matches none', () => {
     expect(ids({ aspects: ['Heroism'] })).toEqual(['SOR_300_std']);
-    expect(ids({ aspects: ['Neutral'] })).toEqual(['SHD_001_std', 'SOR_050_std']);
+    expect(ids({ aspects: ['Neutral'] })).toEqual(['SOR_050_std']);
     expect(ids({ aspects: ['Villainy', 'Heroism'] })).toEqual(['SOR_010_foil', 'SOR_010_std', 'SOR_300_std']);
   });
 
@@ -99,7 +99,7 @@ describe('filterOptions and sortLines', () => {
   it('lists each field with counts', () => {
     const o = filterOptions(lines);
     expect(o.sets).toEqual([{ key: 'SHD', count: 1 }, { key: 'SOR', count: 14 }]);
-    expect(o.aspects.find((a) => a.key === 'Neutral')).toEqual({ key: 'Neutral', count: 11 });
+    expect(o.aspects.find((a) => a.key === 'Neutral')).toEqual({ key: 'Neutral', count: 10 });
   });
 
   it('sorts by value with unpriced last, and by name, quantity and set', () => {
@@ -117,8 +117,31 @@ describe('toCollectionCsv', () => {
     const rows = csv.split('\r\n');
     expect(rows[0]).toBe('\uFEFFSet,Number,Name,Subtitle,Type,Rarity,Aspects,Variant,Finish,Qty,Unit price,Value,Price note');
     expect(rows).toContain('SOR,300,Luke Skywalker,Faithful Friend,Unit,Legendary,Vigilance/Heroism,Hyperspace,Standard,1,40.00,40.00,from other finish');
-    expect(rows).toContain('SHD,001,Mystery Card,,Unknown,Unknown,,Unknown,Standard,1,,,no price data');
+    expect(rows).toContain('SHD,001,Mystery Card,,Unknown,Unknown,Unknown,Unknown,Standard,1,,,no price data');
     expect(rows).toContain('Total value,49.50');
     expect(rows).toContain('Filters,Set: SOR');
+  });
+});
+
+describe('review fixes', () => {
+  it('counts a card that repeats an aspect once per aspect', () => {
+    const ls = buildCollectionLines(
+      { SOR_155_std: { quantity: 2, set: 'SOR', number: '155', isFoil: false } },
+      { SOR: [{ Set: 'SOR', Number: '155', Name: 'Twin', Aspects: ['Aggression', 'Aggression'] }] },
+      { SOR_155_std: { market: 1 } },
+    );
+    expect(summarize(ls).byAspect).toEqual([{ key: 'Aggression', count: 2, value: 2 }]);
+    expect(filterOptions(ls).aspects).toEqual([{ key: 'Aggression', count: 2 }]);
+  });
+
+  it('files cards without details under Unknown, not Neutral', () => {
+    const ls = buildCollectionLines({ SHD_001_std: { quantity: 1, set: 'SHD', number: '001' } }, {}, {});
+    expect(summarize(ls).byAspect.map((g) => g.key)).toEqual(['Unknown']);
+    expect(applyFilters(ls, { ...DEFAULT_FILTERS, aspects: ['Neutral'] })).toEqual([]);
+  });
+
+  it('reads set and number from the id when an old doc lacks them', () => {
+    const ls = buildCollectionLines({ JTL_017_foil: { quantity: 1 } }, {}, { JTL_017_foil: { market: 3 } });
+    expect(ls[0]).toMatchObject({ set: 'JTL', number: '017', isFoil: true, value: 3 });
   });
 });

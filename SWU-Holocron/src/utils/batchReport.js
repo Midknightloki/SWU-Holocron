@@ -54,7 +54,7 @@ export function buildReport(batch, currentPrices = null) {
     multiple: pricePaid ? cents(valueAtAdd / pricePaid) : null,
     byRarity: breakdown(lines, (l) => [l.rarity ?? 'Unknown'], atAdd),
     byType: breakdown(lines, (l) => [l.type ?? 'Unknown'], atAdd),
-    byAspect: breakdown(lines, (l) => (l.aspects?.length ? l.aspects : ['Neutral']), atAdd),
+    byAspect: breakdown(lines, (l) => (l.aspects?.length ? [...new Set(l.aspects)] : ['Neutral']), atAdd),
     byVariant: breakdown(lines, (l) => [l.variant ?? 'Unknown'], atAdd),
     topPulls: [...priced]
       .sort((a, b) => b.priceAtAdd - a.priceAtAdd || a.name.localeCompare(b.name))

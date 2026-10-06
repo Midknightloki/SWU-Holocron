@@ -19,8 +19,10 @@ export function buildCollectionLines(collectionData, cardsBySet, pricesById) {
   for (const [id, doc] of Object.entries(collectionData ?? {})) {
     const qty = Number(doc?.quantity) || 0;
     if (qty <= 0) continue;
-    const set = doc.set;
-    const number = padNumber(doc.number);
+    // Old docs can lack set/number: the id carries both (SET_NNN_std|foil).
+    const parsed = /^(.+)_([^_]+)_(std|foil)$/.exec(id);
+    const set = doc.set ?? parsed?.[1];
+    const number = padNumber(doc.number ?? parsed?.[2]);
     const card = (cardsBySet?.[set] ?? []).find((c) => padNumber(c.Number) === number);
     const price = pricesById?.[id] ?? null;
     const unitPrice = isPriced(price?.market) ? price.market : null;
@@ -30,7 +32,9 @@ export function buildCollectionLines(collectionData, cardsBySet, pricesById) {
       subtitle: card?.Subtitle ?? null,
       type: card?.Type ?? 'Unknown',
       rarity: card?.Rarity ?? 'Unknown',
-      aspects: card?.Aspects ?? [],
+      // A card can list one aspect twice (SOR 155 is Aggression/Aggression);
+      // it counts once. With no card details at all the aspects are unknown.
+      aspects: card ? [...new Set(card.Aspects ?? [])] : ['Unknown'],
       variant: card?.VariantType ?? 'Unknown',
       isFoil: Boolean(doc.isFoil ?? id.endsWith('_foil')),
       qty,
