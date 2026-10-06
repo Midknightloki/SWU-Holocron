@@ -146,3 +146,34 @@ export function toListCsv(list, lines, { showPrices }) {
   if (showPrices) out.push(row(['Total value', money(s.value)]));
   return `${BOM}${out.join('\r\n')}`;
 }
+
+/** The public copy of a list: self-contained, no owner name, prices only when shown. */
+export function toPublicList(list, lines, { showPrices, now }) {
+  const s = listSummary(lines);
+  const body = {
+    kind: list.kind,
+    name: list.name,
+    showPrices: Boolean(showPrices),
+    lines: lines.map((l) => {
+      const out = { set: l.set, number: l.number, name: l.name, subtitle: l.subtitle ?? null, finish: l.finish, qty: l.qty };
+      if (l.note) out.note = l.note;
+      if (showPrices && l.unitPrice !== null) out.unitPrice = l.unitPrice;
+      return out;
+    }),
+    cards: s.cards,
+  };
+  if (showPrices) {
+    body.pricesAsOf = now;
+    if (s.priced) body.value = s.value;
+  }
+  return body;
+}
+
+/** A public copy's lines in listLines shape, for text and totals. */
+export const publicLines = (doc) => (doc?.lines ?? []).map((l, i) => {
+  const unitPrice = typeof l.unitPrice === 'number' ? l.unitPrice : null;
+  return {
+    key: `${i}`, ...l, subtitle: l.subtitle ?? null, unitPrice, priceIsFallback: false,
+    value: unitPrice === null ? null : cents(unitPrice * l.qty),
+  };
+});

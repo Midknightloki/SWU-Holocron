@@ -23,12 +23,34 @@ vi.mock('firebase/firestore', () => {
           .map(([p, d]) => ({ id: p.split('/').pop(), data: () => d })),
       };
     },
-    updateDoc: async (ref, patch) => { if (store.hang) return pending(); guard(); store.docs.set(ref.path, { ...store.docs.get(ref.path), ...patch }); },
+    updateDoc: async (ref, patch) => {
+      if (store.hang) return pending();
+      guard();
+      if (!store.docs.has(ref.path)) throw Object.assign(new Error('No document to update'), { code: 'not-found' });
+      const next = { ...store.docs.get(ref.path), ...patch };
+      for (const k of Object.keys(next)) if (next[k] === '__delete__') delete next[k];
+      store.docs.set(ref.path, next);
+    },
     deleteDoc: async (ref) => { if (store.hang) return pending(); guard(); store.docs.delete(ref.path); },
+    setDoc: async (ref, data) => { if (store.hang) return pending(); guard(); store.docs.set(ref.path, data); },
+    deleteField: () => '__delete__',
+    writeBatch: () => {
+      const ops = [];
+      return {
+        set: (ref, data) => ops.push(() => store.docs.set(ref.path, data)),
+        update: (ref, patch) => ops.push(() => {
+          const next = { ...store.docs.get(ref.path), ...patch };
+          for (const k of Object.keys(next)) if (next[k] === '__delete__') delete next[k];
+          store.docs.set(ref.path, next);
+        }),
+        delete: (ref) => ops.push(() => store.docs.delete(ref.path)),
+        commit: async () => { if (store.hang) return pending(); guard(); ops.forEach((op) => op()); },
+      };
+    },
   };
 });
 
-import { ListService } from '../../services/ListService';
+import { ListService, newListCode } from '../../services/ListService';
 
 const BASE = 'artifacts/app/users/u1/lists';
 beforeEach(() => { store.docs.clear(); store.fail = false; store.hang = false; store.next = 0; vi.useRealTimers(); });
@@ -93,4 +115,81 @@ describe('ListService', () => {
     expect(await ListService.updateList('u1', 'a', {})).toEqual({ error: 'offline' });
     expect(await ListService.deleteList('u1', 'a')).toEqual({ error: 'offline' });
   });
+});
+
+const PUB = 'artifacts/app/publicLists';
+const BODY = { kind: 'trade', name: 'Dupes', showPrices: false, lines: [], cards: 0 };
+
+describe('sharing', () => {
+  beforeEach(() => { store.docs.set(`${BASE}/l1`, { kind: 'trade', name: 'Dupes', updatedAt: 1 }); });
+
+  it('makes 8-character codes without look-alike characters', () => {
+    const code = newListCode();
+    expect(code).toMatch(/^[abcdefghjkmnpqrstuvwxyz23456789]{8}$/);
+  });
+
+  it('shares: writes the public copy and records the code on the list', async () => {
+    const res = await ListService.shareList('u1', 'l1', BODY, { makeCode: () => 'abcd2345' });
+    expect(res).toEqual({ code: 'abcd2345' });
+    expect(store.docs.get(`${PUB}/abcd2345`)).toMatchObject({ ...BODY, uid: 'u1' });
+    expect(store.docs.get(`${BASE}/l1`).publicCode).toBe('abcd2345');
+  });
+
+  it('tries another code when one is taken', async () => {
+    store.docs.set(`${PUB}/taken111`, { uid: 'x' });
+    const codes = ['taken111', 'free2222'];
+    expect(await ListService.shareList('u1', 'l1', BODY, { makeCode: () => codes.shift() })).toEqual({ code: 'free2222' });
+  });
+
+  it('updates the public copy', async () => {
+    await ListService.shareList('u1', 'l1', BODY, { makeCode: () => 'abcd2345' });
+    expect(await ListService.updatePublic('u1', 'abcd2345', { ...BODY, name: 'New' })).toEqual({ ok: true });
+    expect(store.docs.get(`${PUB}/abcd2345`)).toMatchObject({ name: 'New', uid: 'u1' });
+  });
+
+  it('stops sharing: removes the copy and the code', async () => {
+    await ListService.shareList('u1', 'l1', BODY, { makeCode: () => 'abcd2345' });
+    expect(await ListService.unshareList('u1', 'l1', 'abcd2345')).toEqual({ ok: true });
+    expect(store.docs.has(`${PUB}/abcd2345`)).toBe(false);
+    expect(store.docs.get(`${BASE}/l1`)).not.toHaveProperty('publicCode');
+  });
+
+  it('deleting a shared list removes its public copy', async () => {
+    await ListService.shareList('u1', 'l1', BODY, { makeCode: () => 'abcd2345' });
+    expect(await ListService.deleteList('u1', 'l1', 'abcd2345')).toEqual({ ok: true });
+    expect(store.docs.has(`${BASE}/l1`)).toBe(false);
+    expect(store.docs.has(`${PUB}/abcd2345`)).toBe(false);
+  });
+
+  it('reads a public list, or not-found', async () => {
+    store.docs.set(`${PUB}/abcd2345`, { ...BODY, uid: 'u1' });
+    expect((await ListService.getPublicList('abcd2345')).list).toMatchObject({ code: 'abcd2345', name: 'Dupes' });
+    expect(await ListService.getPublicList('nope2345')).toEqual({ error: 'not-found' });
+  });
+
+  it('returns errors instead of throwing', async () => {
+    store.fail = true;
+    expect(await ListService.shareList('u1', 'l1', BODY, { makeCode: () => 'abcd2345' })).toEqual({ error: 'offline' });
+    expect(await ListService.updatePublic('u1', 'abcd2345', BODY)).toEqual({ error: 'offline' });
+    expect(await ListService.unshareList('u1', 'l1', 'abcd2345')).toEqual({ error: 'offline' });
+    expect(await ListService.getPublicList('abcd2345')).toEqual({ error: 'offline' });
+  });
+
+describe('keeping a shared copy current', () => {
+  beforeEach(() => { store.docs.set(`${BASE}/l1`, { kind: 'trade', name: 'Dupes', updatedAt: 1 }); });
+
+  it('never recreates a copy that sharing was stopped for', async () => {
+    expect(await ListService.updatePublic('u1', 'gone2345', BODY)).toEqual({ error: 'not-shared' });
+    expect(store.docs.has(`${PUB}/gone2345`)).toBe(false);
+  });
+
+  it('drops prices from the copy when they are turned off', async () => {
+    await ListService.shareList('u1', 'l1', { ...BODY, showPrices: true, value: 3, pricesAsOf: 9 }, { makeCode: () => 'abcd2345' });
+    expect(await ListService.updatePublic('u1', 'abcd2345', BODY)).toEqual({ ok: true });
+    const copy = store.docs.get(`${PUB}/abcd2345`);
+    expect(copy).not.toHaveProperty('value');
+    expect(copy).not.toHaveProperty('pricesAsOf');
+    expect(copy).toMatchObject({ showPrices: false, uid: 'u1' });
+  });
+});
 });

@@ -25,7 +25,13 @@ const renderView = (list = LIST) => render(
 
 beforeEach(() => {
   vi.clearAllMocks();
-  service = { updateList: vi.fn(async () => ({ ok: true })), deleteList: vi.fn(async () => ({ ok: true })) };
+  service = {
+    updateList: vi.fn(async () => ({ ok: true })),
+    deleteList: vi.fn(async () => ({ ok: true })),
+    shareList: vi.fn(async () => ({ code: 'abcd2345' })),
+    updatePublic: vi.fn(async () => ({ ok: true })),
+    unshareList: vi.fn(async () => ({ ok: true })),
+  };
 });
 
 describe('ListView', () => {
@@ -126,5 +132,78 @@ describe('ListView', () => {
     renderView({ ...LIST, kind: 'trade', items: { SOR_010_standard: item({ finish: 'standard' }) } });
     expect(screen.queryByLabelText('Finish for Vader')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add card' })).not.toBeInTheDocument();
+  });
+
+  it('shares the list and shows its link', async () => {
+    renderView();
+    await screen.findByTestId('list-value');
+    fireEvent.click(screen.getByRole('button', { name: 'Share link' }));
+    expect(await screen.findByLabelText('Share link')).toHaveValue(`${window.location.origin}/list/abcd2345`);
+    const [uid, id, body] = service.shareList.mock.calls[0];
+    expect([uid, id]).toEqual(['u1', 'l1']);
+    expect(body).toMatchObject({ kind: 'wants', name: 'Gaps', showPrices: true, cards: 4 });
+  });
+
+  it('keeps a shared list current: every edit updates the public copy', async () => {
+    renderView({ ...LIST, publicCode: 'abcd2345' });
+    await waitFor(() => expect(service.updatePublic).toHaveBeenCalled());
+    service.updatePublic.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'More Luke' }));
+    await waitFor(() => expect(service.updatePublic).toHaveBeenCalled());
+    const [, code, body] = service.updatePublic.mock.calls.at(-1);
+    expect(code).toBe('abcd2345');
+    expect(body.lines.find((l) => l.name === 'Luke').qty).toBe(2);
+  });
+
+  it('drops prices from the public copy when they are turned off', async () => {
+    renderView({ ...LIST, publicCode: 'abcd2345' });
+    await waitFor(() => expect(service.updatePublic).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: 'Show prices' }));
+    await waitFor(() => expect(service.updatePublic.mock.calls.at(-1)[2].showPrices).toBe(false));
+    const body = service.updatePublic.mock.calls.at(-1)[2];
+    expect(JSON.stringify(body)).not.toMatch(/unitPrice|pricesAsOf|"value"/);
+  });
+
+  it('says so quietly when the public copy could not be updated', async () => {
+    service.updatePublic.mockResolvedValue({ error: 'timeout' });
+    renderView({ ...LIST, publicCode: 'abcd2345' });
+    expect(await screen.findByRole('status')).toHaveTextContent('Shared link not updated yet');
+  });
+
+  it('stops sharing only on the second tap', async () => {
+    renderView({ ...LIST, publicCode: 'abcd2345' });
+    fireEvent.click(screen.getByRole('button', { name: 'Stop sharing' }));
+    expect(service.unshareList).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Tap again to stop sharing' }));
+    await screen.findByRole('button', { name: 'Share link' });
+    expect(service.unshareList).toHaveBeenCalledWith('u1', 'l1', 'abcd2345');
+  });
+
+  it('deleting a shared list deletes its public copy', async () => {
+    renderView({ ...LIST, publicCode: 'abcd2345' });
+    fireEvent.click(screen.getByRole('button', { name: 'Delete list' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Tap again to delete' }));
+    await waitFor(() => expect(service.deleteList).toHaveBeenCalledWith('u1', 'l1', 'abcd2345'));
+  });
+
+  it('does not touch a public copy for a list that is not shared', async () => {
+    renderView();
+    await screen.findByTestId('list-value');
+    fireEvent.click(screen.getByRole('button', { name: 'More Luke' }));
+    expect(service.updatePublic).not.toHaveBeenCalled();
+  });
+
+  it('shows the list as not shared when sharing was stopped elsewhere', async () => {
+    service.updatePublic.mockResolvedValue({ error: 'not-shared' });
+    renderView({ ...LIST, publicCode: 'abcd2345' });
+    expect(await screen.findByRole('button', { name: 'Share link' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Share link')).not.toBeInTheDocument();
+  });
+
+  it('does not republish a shared list when its prices failed to load', async () => {
+    loadPrices.mockResolvedValueOnce({ prices: {}, error: 'prices' });
+    renderView({ ...LIST, publicCode: 'abcd2345' });
+    await screen.findByText('Prices are unavailable right now.');
+    expect(service.updatePublic).not.toHaveBeenCalled();
   });
 });

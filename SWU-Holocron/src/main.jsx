@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import PublicDeckView from './components/PublicDeckView.jsx'
+import PublicListView from './components/PublicListView.jsx'
 import './index.css'
 import { AuthProvider } from './contexts/AuthContext.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
@@ -12,6 +13,13 @@ function Root() {
     return (
       <ErrorBoundary label="the shared deck">
         <PublicDeckView slug={parts[1]} />
+      </ErrorBoundary>
+    );
+  }
+  if (parts.length >= 1 && parts[0] === 'list' && parts[1]) {
+    return (
+      <ErrorBoundary label="the shared list">
+        <PublicListView code={parts[1]} />
       </ErrorBoundary>
     );
   }

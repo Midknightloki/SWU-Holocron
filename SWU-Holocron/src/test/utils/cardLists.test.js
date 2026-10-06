@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   itemKey, cardItem, itemsFromSurplus, itemsFromGaps, itemsFromDeckGaps, mergeItems, changeFinish,
-  priceRequests, listLines, listSummary, toListText, toListCsv,
+  priceRequests, listLines, listSummary, toListText, toListCsv, toPublicList, publicLines,
 } from '../../utils/cardLists';
 
 const card = (o) => ({ Set: 'SOR', Number: '010', Name: 'Darth Vader', Subtitle: 'Dark Lord of the Sith', Type: 'Leader', ...o });
@@ -123,5 +123,44 @@ describe('text and CSV', () => {
     const bare = toListCsv({ kind: 'wants', name: 'Gaps' }, lines, { showPrices: false });
     expect(bare).not.toContain('Unit price');
     expect(bare).not.toContain('Total value');
+  });
+});
+
+describe('public copy', () => {
+  const items = {
+    SOR_010_any: { ...cardItem(card(), 'any', 2), note: 'any art' },
+    SOR_005_foil: cardItem(card({ Number: 5, Name: 'Luke', Subtitle: '' }), 'foil', 1),
+  };
+  const lines = listLines(items, { SOR_010_any: { market: 1.5 } });
+
+  it('carries prices only on priced lines, with a date and value', () => {
+    const body = toPublicList({ kind: 'wants', name: 'Gaps', uid: 'u1' }, lines, { showPrices: true, now: 99 });
+    expect(body).toEqual({
+      kind: 'wants', name: 'Gaps', showPrices: true, cards: 3, value: 3, pricesAsOf: 99,
+      lines: [
+        { set: 'SOR', number: '005', name: 'Luke', subtitle: null, finish: 'foil', qty: 1 },
+        { set: 'SOR', number: '010', name: 'Darth Vader', subtitle: 'Dark Lord of the Sith', finish: 'any', qty: 2, note: 'any art', unitPrice: 1.5 },
+      ],
+    });
+  });
+
+  it('drops every price when prices are hidden', () => {
+    const body = toPublicList({ kind: 'trade', name: 'T' }, lines, { showPrices: false, now: 99 });
+    expect(body).not.toHaveProperty('value');
+    expect(body).not.toHaveProperty('pricesAsOf');
+    expect(body.lines.some((l) => 'unitPrice' in l)).toBe(false);
+    expect(JSON.stringify(body)).not.toContain('undefined');
+  });
+
+  it('has no value when nothing is priced', () => {
+    expect(toPublicList({ kind: 'trade', name: 'T' }, listLines(items, {}), { showPrices: true, now: 1 })).not.toHaveProperty('value');
+  });
+
+  it('turns a public copy back into text-ready lines', () => {
+    const doc = toPublicList({ kind: 'wants', name: 'Gaps' }, lines, { showPrices: true, now: 99 });
+    const back = publicLines(doc);
+    expect(back[1]).toMatchObject({ unitPrice: 1.5, value: 3, note: 'any art' });
+    expect(back[0]).toMatchObject({ unitPrice: null, value: null });
+    expect(toListText(doc, back, { showPrices: true })).toContain('2× Darth Vader, Dark Lord of the Sith (SOR 010) — $1.50 ea (any art)');
   });
 });
