@@ -43,7 +43,7 @@ export async function loadCollectionValue(collectionData, {
   let decksError;
   if (includeDecks) {
     try {
-      decks = await decksService.listDecks(uid);
+      decks = await decksService.listDecksFromServer(uid);
     } catch {
       decksError = true;
     }
