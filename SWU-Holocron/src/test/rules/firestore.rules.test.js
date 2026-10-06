@@ -29,7 +29,7 @@ import {
   assertFails,
   assertSucceeds,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, deleteDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, updateDoc, collection, getDocs } from 'firebase/firestore';
 
 const APP_ID = 'swu-holocron-v1';
 const p = (...segments) => ['artifacts', APP_ID, ...segments].join('/');
@@ -188,6 +188,35 @@ describe('public lists', () => {
 
   it('stops a signed-out visitor sharing', async () => {
     await assertFails(setDoc(doc(asGuest(), p('publicLists', 'abcd2345')), L('plain-uid')));
+  });
+
+  it('lets the owner delete a list whose shared copy is already gone', async () => {
+    await assertSucceeds(deleteDoc(doc(asUser('plain-uid'), p('publicLists', 'gone2345'))));
+  });
+
+  it('never recreates a stopped copy through an update', async () => {
+    await assertFails(updateDoc(doc(asUser('plain-uid'), p('publicLists', 'gone2345')), { name: 'Back' }));
+  });
+
+  it('refuses to list every shared list or deck', async () => {
+    await seedDoc(p('publicLists', 'abcd2345'), L('plain-uid'));
+    await assertFails(getDocs(collection(asGuest(), p('publicLists'))));
+    await assertFails(getDocs(collection(asUser('plain-uid'), p('publicLists'))));
+    await assertFails(getDocs(collection(asGuest(), p('publicDecks'))));
+  });
+
+  it('refuses vanity codes and unexpected content', async () => {
+    const db = asUser('plain-uid');
+    await assertFails(setDoc(doc(db, p('publicLists', 'free-packs-giveaway')), L('plain-uid')));
+    await assertFails(setDoc(doc(db, p('publicLists', 'abcd2345')), { ...L('plain-uid'), link: 'https://evil.example' }));
+    await assertFails(setDoc(doc(db, p('publicLists', 'abcd2345')), { ...L('plain-uid'), kind: 'scam' }));
+    await assertFails(setDoc(doc(db, p('publicLists', 'abcd2345')), { ...L('plain-uid'), name: 'x'.repeat(201) }));
+    await assertFails(setDoc(doc(db, p('publicLists', 'abcd2345')), { ...L('plain-uid'), lines: 'nope' }));
+  });
+
+  it('accepts a full public copy with prices', async () => {
+    const full = { ...L('plain-uid'), showPrices: true, value: 3, pricesAsOf: 9, lines: [{ set: 'SOR', number: '010', name: 'V', subtitle: null, finish: 'any', qty: 2, unitPrice: 1.5 }] };
+    await assertSucceeds(setDoc(doc(asUser('plain-uid'), p('publicLists', 'abcd2345')), full));
   });
 });
 

@@ -23,7 +23,14 @@ vi.mock('firebase/firestore', () => {
           .map(([p, d]) => ({ id: p.split('/').pop(), data: () => d })),
       };
     },
-    updateDoc: async (ref, patch) => { if (store.hang) return pending(); guard(); store.docs.set(ref.path, { ...store.docs.get(ref.path), ...patch }); },
+    updateDoc: async (ref, patch) => {
+      if (store.hang) return pending();
+      guard();
+      if (!store.docs.has(ref.path)) throw Object.assign(new Error('No document to update'), { code: 'not-found' });
+      const next = { ...store.docs.get(ref.path), ...patch };
+      for (const k of Object.keys(next)) if (next[k] === '__delete__') delete next[k];
+      store.docs.set(ref.path, next);
+    },
     deleteDoc: async (ref) => { if (store.hang) return pending(); guard(); store.docs.delete(ref.path); },
     setDoc: async (ref, data) => { if (store.hang) return pending(); guard(); store.docs.set(ref.path, data); },
     deleteField: () => '__delete__',
@@ -167,4 +174,22 @@ describe('sharing', () => {
     expect(await ListService.unshareList('u1', 'l1', 'abcd2345')).toEqual({ error: 'offline' });
     expect(await ListService.getPublicList('abcd2345')).toEqual({ error: 'offline' });
   });
+
+describe('keeping a shared copy current', () => {
+  beforeEach(() => { store.docs.set(`${BASE}/l1`, { kind: 'trade', name: 'Dupes', updatedAt: 1 }); });
+
+  it('never recreates a copy that sharing was stopped for', async () => {
+    expect(await ListService.updatePublic('u1', 'gone2345', BODY)).toEqual({ error: 'not-shared' });
+    expect(store.docs.has(`${PUB}/gone2345`)).toBe(false);
+  });
+
+  it('drops prices from the copy when they are turned off', async () => {
+    await ListService.shareList('u1', 'l1', { ...BODY, showPrices: true, value: 3, pricesAsOf: 9 }, { makeCode: () => 'abcd2345' });
+    expect(await ListService.updatePublic('u1', 'abcd2345', BODY)).toEqual({ ok: true });
+    const copy = store.docs.get(`${PUB}/abcd2345`);
+    expect(copy).not.toHaveProperty('value');
+    expect(copy).not.toHaveProperty('pricesAsOf');
+    expect(copy).toMatchObject({ showPrices: false, uid: 'u1' });
+  });
+});
 });

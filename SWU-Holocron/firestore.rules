@@ -94,7 +94,9 @@ service cloud.firestore {
     // before rules were ever consulted and sharing had never worked.
     // ---------------------------------------------------------------------
     match /artifacts/{appId}/publicDecks/{slug} {
-      allow read: if true;
+      // Anyone with the link; never a listing of every shared deck.
+      allow get: if true;
+      allow list: if false;
       allow create: if isSignedIn()
         && request.resource.data.uid == request.auth.uid;
       // Update needs the existing owner too: checking only the new data let
@@ -109,14 +111,33 @@ service cloud.firestore {
     // Shared trade/wants lists: a self-contained public copy of a saved list
     // (users/{uid}/lists/{id}), readable by anyone with the link.
     // ---------------------------------------------------------------------
+    // The page lives on our domain and is posted to Discord, so its shape is
+    // pinned: app-made codes only (no vanity /list/free-packs), known fields,
+    // bounded size.
+    function isPublicListBody(code) {
+      let d = request.resource.data;
+      return code.matches('^[a-hjkmnp-z2-9]{8}$')
+        && d.keys().hasOnly(['uid', 'kind', 'name', 'showPrices', 'lines', 'cards', 'value', 'pricesAsOf', 'updatedAt'])
+        && d.kind in ['trade', 'wants']
+        && d.name is string && d.name.size() <= 200
+        && d.lines is list && d.lines.size() <= 5000;
+    }
+
     match /artifacts/{appId}/publicLists/{code} {
-      allow read: if true;
+      // Anyone with the link; never a listing of every shared list.
+      allow get: if true;
+      allow list: if false;
       allow create: if isSignedIn()
-        && request.resource.data.uid == request.auth.uid;
+        && request.resource.data.uid == request.auth.uid
+        && isPublicListBody(code);
       allow update: if isSignedIn()
         && resource.data.uid == request.auth.uid
-        && request.resource.data.uid == request.auth.uid;
-      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+        && request.resource.data.uid == request.auth.uid
+        && isPublicListBody(code);
+      // A copy already gone (stopped on another device) must not block
+      // deleting or unsharing the list in the same batch.
+      allow delete: if isSignedIn()
+        && (resource == null || resource.data.uid == request.auth.uid);
     }
 
     // ---------------------------------------------------------------------

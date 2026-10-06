@@ -192,4 +192,18 @@ describe('ListView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'More Luke' }));
     expect(service.updatePublic).not.toHaveBeenCalled();
   });
+
+  it('shows the list as not shared when sharing was stopped elsewhere', async () => {
+    service.updatePublic.mockResolvedValue({ error: 'not-shared' });
+    renderView({ ...LIST, publicCode: 'abcd2345' });
+    expect(await screen.findByRole('button', { name: 'Share link' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Share link')).not.toBeInTheDocument();
+  });
+
+  it('does not republish a shared list when its prices failed to load', async () => {
+    loadPrices.mockResolvedValueOnce({ prices: {}, error: 'prices' });
+    renderView({ ...LIST, publicCode: 'abcd2345' });
+    await screen.findByText('Prices are unavailable right now.');
+    expect(service.updatePublic).not.toHaveBeenCalled();
+  });
 });

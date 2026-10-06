@@ -1,4 +1,4 @@
-import { addDoc, collection, deleteDoc, deleteField, doc, getDoc, getDocs, orderBy, query, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, deleteField, doc, getDoc, getDocs, orderBy, query, updateDoc, writeBatch } from 'firebase/firestore';
 import { db, APP_ID } from '../firebase';
 
 /**
@@ -116,9 +116,15 @@ export const ListService = {
   async updatePublic(uid, code, body) {
     if (!db) return { error: 'offline' };
     try {
-      await settle(setDoc(publicListRef(code), { ...body, uid, updatedAt: Date.now() }));
+      // An update, never a set: a late or queued write must not bring back a
+      // copy whose sharing was stopped (here or on another device). Fields
+      // the body no longer has -- prices turned off -- are removed.
+      await settle(updateDoc(publicListRef(code), {
+        value: deleteField(), pricesAsOf: deleteField(), ...body, uid, updatedAt: Date.now(),
+      }));
       return { ok: true };
     } catch (err) {
+      if (err?.code === 'not-found' || err?.code === 'permission-denied') return { error: 'not-shared' };
       return fail(err);
     }
   },

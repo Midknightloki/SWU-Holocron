@@ -59,10 +59,15 @@ export default function ListView({ uid, list, collectionData, onBack, onDeleted,
   // While shared, keep the public copy current: once prices load (which also
   // refreshes "prices as of") and after every change.
   useEffect(() => {
-    if (!publicCode || prices === null) return undefined;
+    // Not after a failed price load: that would publish "prices as of today"
+    // with every price missing.
+    if (!publicCode || prices === null || priceError) return undefined;
     let cancelled = false;
     service.updatePublic(uid, publicCode, publicBody()).then((res) => {
-      if (!cancelled) setSyncError(Boolean(res?.error));
+      if (cancelled) return;
+      // Stopped on another device: show it as not shared.
+      if (res?.error === 'not-shared') { setPublicCode(null); setSyncError(false); return; }
+      setSyncError(Boolean(res?.error));
     });
     return () => { cancelled = true; };
   }, [publicCode, lines, savedName, showPrices]); // eslint-disable-line react-hooks/exhaustive-deps -- publish on content change
