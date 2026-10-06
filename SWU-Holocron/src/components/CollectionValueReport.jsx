@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Download, FileText, SlidersHorizontal, X } from 'lucide-react';
+import { ChevronDown, ClipboardCopy, Download, FileText, SlidersHorizontal, X } from 'lucide-react';
 import { loadCollectionValue } from '../services/collectionValueLoader';
 import {
   DEFAULT_FILTERS, applyFilters, filterOptions, summarize, sortLines, toCollectionCsv,
 } from '../utils/collectionValue';
 import { parsePricePaid } from '../utils/scanDraft';
+import { buildSurplusLines, deckUsage, toTradeText } from '../utils/surplus';
 
 /**
  * What the collection is worth at today's market prices, sliced by any
@@ -14,6 +15,24 @@ import { parsePricePaid } from '../utils/scanDraft';
  * screen -- it reuses the batch report's print id (see index.css).
  */
 const FILTERS_KEY = 'swu-value-filters';
+const MODE_KEY = 'swu-value-mode';
+const PRICES_KEY = 'swu-value-show-prices';
+
+// @environment:web-localstorage
+const readSetting = (key, fallback) => {
+  try {
+    return localStorage.getItem(key) ?? fallback;
+  } catch {
+    return fallback;
+  }
+};
+const writeSetting = (key, value) => {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Not remembered this time.
+  }
+};
 const PAGE = 100;
 const LIST_FIELDS = [
   { field: 'sets', label: 'Set', option: 'sets', summary: 'bySet', noun: 'set' },
@@ -61,7 +80,7 @@ function downloadText(text, filename) {
 
 const select = 'bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-gray-100';
 
-export default function CollectionValueReport({ collectionData, onClose, load = loadCollectionValue }) {
+export default function CollectionValueReport({ uid, collectionData, onClose, load = loadCollectionValue }) {
   // undefined while loading.
   const [data, setData] = useState(undefined);
   const [initialFilters] = useState(loadFilters);
@@ -75,10 +94,15 @@ export default function CollectionValueReport({ collectionData, onClose, load = 
   // The filter controls take a lot of room: collapsed until asked for. The
   // chips below always show what is applied.
   const [filtersOpen, setFiltersOpen] = useState(false);
+  // 'all' = the whole collection; 'surplus' = beyond deck use and a playset.
+  const [mode, setMode] = useState(() => (readSetting(MODE_KEY, 'all') === 'surplus' ? 'surplus' : 'all'));
+  const [showPrices, setShowPrices] = useState(() => readSetting(PRICES_KEY, '1') !== '0');
+  // { kind: 'copied', count } | { kind: 'fallback', text } | null
+  const [copyState, setCopyState] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
-    load(collectionData).then((res) => { if (!cancelled) setData(res); });
+    load(collectionData, { uid, includeDecks: true }).then((res) => { if (!cancelled) setData(res); });
     return () => { cancelled = true; };
     // Loaded once per opening: the report is a snapshot of the collection.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -99,8 +123,14 @@ export default function CollectionValueReport({ collectionData, onClose, load = 
   }, [printing]);
 
   const allLines = useMemo(() => data?.lines ?? [], [data]);
-  const options = useMemo(() => filterOptions(allLines), [allLines]);
-  const lines = useMemo(() => applyFilters(allLines, filters), [allLines, filters]);
+  // Surplus never guesses: without the decks it would list deck cards for trade.
+  const baseLines = useMemo(() => {
+    if (mode !== 'surplus') return allLines;
+    if (!data || data.decksError) return [];
+    return buildSurplusLines(allLines, deckUsage(data.decks ?? []));
+  }, [mode, allLines, data]);
+  const options = useMemo(() => filterOptions(baseLines), [baseLines]);
+  const lines = useMemo(() => applyFilters(baseLines, filters), [baseLines, filters]);
   const summary = useMemo(() => summarize(lines), [lines]);
   const sorted = useMemo(() => sortLines(lines, sortBy, sortDir), [lines, sortBy, sortDir]);
 
@@ -117,9 +147,38 @@ export default function CollectionValueReport({ collectionData, onClose, load = 
     ...(filters.search.trim() ? [{ name: `Search: ${filters.search.trim()}`, remove: () => update({ search: '' }) }] : []),
   ];
 
+  const surplusMode = mode === 'surplus';
+
+  const changeMode = (next) => {
+    setMode(next);
+    setShown(PAGE);
+    setCopyState(null);
+    writeSetting(MODE_KEY, next);
+  };
+
+  const togglePrices = () => {
+    const next = !showPrices;
+    setShowPrices(next);
+    writeSetting(PRICES_KEY, next ? '1' : '0');
+  };
+
   const exportCsv = () => {
     const date = new Date().toISOString().slice(0, 10);
-    downloadText(toCollectionCsv(lines, summary, filters), `collection-value-${date}.csv`);
+    downloadText(
+      toCollectionCsv(lines, summary, filters, { showPrices, mode }),
+      `${surplusMode ? 'surplus' : 'collection-value'}-${date}.csv`,
+    );
+  };
+
+  const copyText = async () => {
+    const text = toTradeText(lines, { showPrices });
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyState({ kind: 'copied', count: summary.cards });
+    } catch {
+      // No clipboard (blocked, insecure context): show it to select by hand.
+      setCopyState({ kind: 'fallback', text });
+    }
   };
 
   return createPortal(
@@ -131,7 +190,7 @@ export default function CollectionValueReport({ collectionData, onClose, load = 
     >
       <div className="max-w-4xl mx-auto p-4 space-y-4">
         <header className="flex items-start gap-3">
-          <h2 className="flex-1 text-xl font-bold">Collection value</h2>
+          <h2 className="flex-1 text-xl font-bold">{surplusMode ? 'Surplus / trade list' : 'Collection value'}</h2>
           <button type="button" onClick={onClose} className="flex items-center gap-1 px-3 py-2 rounded-lg bg-gray-800 text-sm print:hidden">
             <X className="w-4 h-4" /> Close
           </button>
@@ -149,6 +208,31 @@ export default function CollectionValueReport({ collectionData, onClose, load = 
             {data.error === 'prices' && <p className="text-sm text-yellow-300">Prices are unavailable right now.</p>}
 
             <div className="flex flex-wrap gap-2 print:hidden">
+              <div className="flex rounded-lg bg-gray-800 p-1 border border-gray-700">
+                {[['all', 'All cards'], ['surplus', 'Surplus']].map(([id, label]) => (
+                  <button key={id} type="button" aria-pressed={mode === id} onClick={() => changeMode(id)}
+                    className={`px-3 py-1 rounded-md text-sm font-semibold ${mode === id ? 'bg-yellow-500 text-black' : 'text-gray-300'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <button type="button" aria-pressed={showPrices} onClick={togglePrices}
+                className={`px-3 py-2 rounded-lg text-sm border ${showPrices ? 'bg-gray-800 border-gray-600 text-gray-100' : 'bg-gray-900 border-gray-700 text-gray-500'}`}>
+                Show prices
+              </button>
+            </div>
+
+            {surplusMode && data.decksError && (
+              <p role="alert" className="text-sm text-red-400">Couldn&apos;t read your decks, so surplus can&apos;t be worked out.</p>
+            )}
+            {surplusMode && !data.decksError && baseLines.length === 0 && (
+              <p className="text-sm text-gray-400">No surplus — everything you own is in a deck or part of a playset.</p>
+            )}
+
+            <div className="flex flex-wrap gap-2 print:hidden">
+              <button type="button" onClick={copyText} className="flex items-center gap-1 px-3 py-2 rounded-lg bg-gray-800 text-sm">
+                <ClipboardCopy className="w-4 h-4" /> Copy as text
+              </button>
               <button type="button" onClick={exportCsv} className="flex items-center gap-1 px-3 py-2 rounded-lg bg-gray-800 text-sm">
                 <Download className="w-4 h-4" /> Download CSV
               </button>
@@ -156,6 +240,18 @@ export default function CollectionValueReport({ collectionData, onClose, load = 
                 <FileText className="w-4 h-4" /> Save as PDF
               </button>
             </div>
+
+            {copyState?.kind === 'copied' && (
+              <p role="status" className="text-sm text-green-400 print:hidden">Copied {copyState.count} cards</p>
+            )}
+            {copyState?.kind === 'fallback' && (
+              <div className="space-y-1 print:hidden">
+                <p className="text-xs text-gray-400">Select and copy:</p>
+                <textarea readOnly aria-label="Trade list" value={copyState.text} rows={6}
+                  onFocus={(e) => e.target.select()}
+                  className="w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs font-mono" />
+              </div>
+            )}
 
             <button
               type="button"
@@ -196,6 +292,8 @@ export default function CollectionValueReport({ collectionData, onClose, load = 
                   <option value="foil">Foil</option>
                 </select>
               </label>
+              {showPrices && (
+              <>
               <label className="flex flex-col gap-1 text-xs text-gray-400">
                 Price
                 <select aria-label="Price" value={filters.price} onChange={(e) => update({ price: e.target.value })} className={select}>
@@ -219,6 +317,8 @@ export default function CollectionValueReport({ collectionData, onClose, load = 
                   className={select}
                 />
               </label>
+              </>
+              )}
               <label className="flex flex-col gap-1 text-xs text-gray-400 col-span-2 sm:col-span-2">
                 Search cards
                 <input
@@ -246,23 +346,27 @@ export default function CollectionValueReport({ collectionData, onClose, load = 
 
             {/* Totals */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {showPrices && (
               <div className="rounded-lg bg-gray-900 border border-gray-800 p-3 print:bg-white">
-                <div className="text-xs text-gray-400">Value</div>
+                <div className="text-xs text-gray-400">{surplusMode ? 'Surplus value' : 'Value'}</div>
                 <div data-testid="total-value" className="text-lg font-semibold">{summary.pricedShare > 0 ? money(summary.value) : '—'}</div>
                 <div data-testid="priced-share" className="text-[11px] text-gray-500">{Math.round(summary.pricedShare * 100)}% of copies priced</div>
               </div>
+              )}
               <div className="rounded-lg bg-gray-900 border border-gray-800 p-3 print:bg-white">
-                <div className="text-xs text-gray-400">Cards</div>
+                <div className="text-xs text-gray-400">{surplusMode ? 'Surplus cards' : 'Cards'}</div>
                 <div data-testid="total-cards" className="text-lg font-semibold">{summary.cards}</div>
               </div>
               <div className="rounded-lg bg-gray-900 border border-gray-800 p-3 print:bg-white">
                 <div className="text-xs text-gray-400">Unique</div>
                 <div data-testid="total-unique" className="text-lg font-semibold">{summary.unique}</div>
               </div>
+              {showPrices && (
               <div className="rounded-lg bg-gray-900 border border-gray-800 p-3 print:bg-white">
                 <div className="text-xs text-gray-400">Standard / Foil</div>
                 <div className="text-sm font-semibold">{money(summary.standardValue)} / {money(summary.foilValue)}</div>
               </div>
+              )}
             </div>
 
             {/* Breakdowns: each row narrows the report to it */}
@@ -281,7 +385,7 @@ export default function CollectionValueReport({ collectionData, onClose, load = 
                         >
                           <span className="flex-1">{g.key}</span>
                           <span className="text-gray-400 print:text-gray-700">{g.count}</span>
-                          <span className="w-20 text-right">{money(g.value)}</span>
+                          {showPrices && <span className="w-20 text-right">{money(g.value)}</span>}
                         </button>
                       </li>
                     ))}
@@ -312,10 +416,17 @@ export default function CollectionValueReport({ collectionData, onClose, load = 
                   <li key={l.id} className="py-1.5 flex items-center gap-2">
                     <span className="flex-1 min-w-0">
                       <span className="block truncate print:whitespace-normal">{l.name}</span>
-                      <span className="block text-xs text-gray-500">{l.set} {l.number} · {l.isFoil ? 'Foil' : 'Standard'} · ×{l.qty}</span>
+                      <span className="block text-xs text-gray-500">{l.set} {l.number} · {l.isFoil ? 'Foil' : 'Standard'}{surplusMode ? '' : ` · ×${l.qty}`}</span>
+                      {surplusMode && (
+                        <span className="block text-xs text-gray-400">Surplus {l.qty} · own {l.owned} · decks {l.inDecks} · keep {l.kept}</span>
+                      )}
                     </span>
-                    <span className="text-xs text-gray-400 w-16 text-right">{money(l.unitPrice)}{l.priceIsFallback ? ' ↺' : ''}</span>
-                    <span className="w-20 text-right font-semibold">{money(l.value)}</span>
+                    {showPrices && (
+                      <>
+                        <span className="text-xs text-gray-400 w-16 text-right">{money(l.unitPrice)}{l.priceIsFallback ? ' ↺' : ''}</span>
+                        <span className="w-20 text-right font-semibold">{money(l.value)}</span>
+                      </>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -324,10 +435,10 @@ export default function CollectionValueReport({ collectionData, onClose, load = 
                   Show more
                 </button>
               )}
-              {summary.otherFinish.length > 0 && (
+              {showPrices && summary.otherFinish.length > 0 && (
                 <p className="text-xs text-gray-500">↺ {summary.otherFinish.length} priced from the other finish.</p>
               )}
-              {summary.unpriced.length > 0 && (
+              {showPrices && summary.unpriced.length > 0 && (
                 <p className="text-xs text-gray-500">{summary.unpriced.length} with no price data, not counted in the value.</p>
               )}
             </section>

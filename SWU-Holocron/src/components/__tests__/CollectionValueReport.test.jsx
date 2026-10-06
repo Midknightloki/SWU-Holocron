@@ -155,3 +155,65 @@ describe('CollectionValueReport', () => {
     expect(screen.queryByLabelText('Search cards')).not.toBeInTheDocument();
   });
 });
+
+describe('Surplus mode', () => {
+  const S = (id, o) => L(id, { qty: 1, unitPrice: 2, value: 2, ...o });
+  const OWN = [S('SOR_010_std', { name: 'Darth Vader', qty: 6, value: 12 }), S('SOR_005_std', { name: 'Luke', type: 'Leader', qty: 3, value: 6 })];
+  const loadWith = (extra) => vi.fn(async () => ({ lines: OWN, missingSets: [], decks: [{ cards: { SOR_010: 2 } }], ...extra }));
+
+  const openSurplus = async (load) => {
+    render(<CollectionValueReport uid="u1" collectionData={{}} onClose={vi.fn()} load={load} />);
+    await screen.findByTestId('total-value');
+    fireEvent.click(screen.getByRole('button', { name: 'Surplus' }));
+  };
+
+  it('lists the surplus with how it was worked out, and reads the decks', async () => {
+    const load = loadWith();
+    await openSurplus(load);
+    expect(load).toHaveBeenCalledWith({}, { uid: 'u1', includeDecks: true });
+    expect(screen.getByRole('heading', { name: 'Surplus / trade list' })).toBeInTheDocument();
+    // Vader 6 - 2 in decks - 3 kept = 1; Luke (leader) 3 - 1 kept = 2.
+    expect(screen.getByTestId('total-cards')).toHaveTextContent('3');
+    expect(screen.getByText('Surplus 1 · own 6 · decks 2 · keep 3')).toBeInTheDocument();
+    expect(screen.getByText('Surplus 2 · own 3 · decks 0 · keep 1')).toBeInTheDocument();
+    expect(localStorage.setItem).toHaveBeenCalledWith('swu-value-mode', 'surplus');
+  });
+
+  it('shows no surplus when decks cannot be read', async () => {
+    await openSurplus(loadWith({ decks: undefined, decksError: true }));
+    expect(screen.getByRole('alert')).toHaveTextContent(/Couldn.t read your decks/);
+    expect(screen.getByTestId('total-cards')).toHaveTextContent('0');
+  });
+
+  it('says when there is no surplus', async () => {
+    await openSurplus(vi.fn(async () => ({ lines: [S('SOR_010_std', { qty: 3 })], missingSets: [], decks: [] })));
+    expect(screen.getByText(/No surplus — everything you own/)).toBeInTheDocument();
+  });
+
+  it('hides every price when Show prices is off', async () => {
+    await openSurplus(loadWith());
+    fireEvent.click(screen.getByRole('button', { name: 'Show prices' }));
+    expect(screen.getByRole('button', { name: 'Show prices' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByTestId('total-value')).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/\$\d/);
+    expect(localStorage.setItem).toHaveBeenCalledWith('swu-value-show-prices', '0');
+  });
+
+  it('copies the trade list as text', async () => {
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    await openSurplus(loadWith());
+    fireEvent.click(screen.getByRole('button', { name: 'Copy as text' }));
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
+    expect(writeText.mock.calls[0][0]).toMatch(/^2× Luke \(SOR 005\)/);
+    expect(writeText.mock.calls[0][0]).toMatch(/Total: 3 cards/);
+    expect(await screen.findByRole('status')).toHaveTextContent('Copied 3 cards');
+  });
+
+  it('falls back to a selectable box when the clipboard is blocked', async () => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async () => { throw new Error('denied'); } } });
+    await openSurplus(loadWith());
+    fireEvent.click(screen.getByRole('button', { name: 'Copy as text' }));
+    expect((await screen.findByLabelText('Trade list')).value).toContain('1× Darth Vader');
+  });
+});

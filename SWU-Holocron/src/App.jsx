@@ -1136,7 +1136,7 @@ export default function App() {
       )}
 
       {isValueOpen && (
-        <CollectionValueReport collectionData={collectionData} onClose={() => setIsValueOpen(false)} />
+        <CollectionValueReport uid={user?.uid} collectionData={collectionData} onClose={() => setIsValueOpen(false)} />
       )}
 
       {/* Phone navigation: bottom bar + Me sheet (the header holds these from md up) */}
