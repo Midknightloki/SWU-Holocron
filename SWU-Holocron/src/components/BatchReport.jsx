@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Download, FileText, Pencil, Trash2, X } from 'lucide-react';
+import { DollarSign, Download, FileText, Pencil, Trash2, X } from 'lucide-react';
 import { BatchService } from '../services/BatchService';
 import { PricingService } from '../services/PricingService';
 import { buildReport } from '../utils/batchReport';
 import { batchCsvFilename, toBatchCsv } from '../utils/batchCsv';
+import { parsePricePaid } from '../utils/scanDraft';
 
 /**
  * The report for one scanning batch: what came out of it, what it was worth
@@ -82,6 +83,8 @@ export default function BatchReport({ uid, batchId, onClose, onDeleted }) {
   // undefined while loading, null when unavailable, else { [id]: market }.
   const [prices, setPrices] = useState(undefined);
   const [renaming, setRenaming] = useState(false);
+  // The price-paid text being edited, or null when not editing.
+  const [priceDraft, setPriceDraft] = useState(null);
   const [nameDraft, setNameDraft] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState(null);
@@ -123,6 +126,17 @@ export default function BatchReport({ uid, batchId, onClose, onDeleted }) {
     if (res?.error) { setError('Could not rename the report.'); return; }
     setBatch((b) => ({ ...b, name }));
     setRenaming(false);
+  };
+
+  // Blank clears the price paid; something unreadable is refused, not saved as nothing.
+  const savePrice = async () => {
+    const pricePaid = parsePricePaid(priceDraft);
+    if (pricePaid === undefined) { setError('Enter a price like 89.99, or leave it blank.'); return; }
+    const res = await BatchService.setBatchPricePaid(uid, batchId, pricePaid);
+    if (res?.error) { setError('Could not save the price paid.'); return; }
+    setError(null);
+    setBatch((b) => ({ ...b, pricePaid }));
+    setPriceDraft(null);
   };
 
   const remove = async () => {
@@ -183,6 +197,9 @@ export default function BatchReport({ uid, batchId, onClose, onDeleted }) {
         <button type="button" onClick={() => { setNameDraft(report.name); setRenaming(true); }} className={button}>
           <Pencil className="w-4 h-4" /> Rename
         </button>
+        <button type="button" onClick={() => setPriceDraft(report.pricePaid === null ? '' : String(report.pricePaid))} className={button}>
+          <DollarSign className="w-4 h-4" /> Edit price paid
+        </button>
         <button type="button" onClick={() => setConfirmDelete(true)} className={`${button} text-red-300`}>
           <Trash2 className="w-4 h-4" /> Delete report
         </button>
@@ -197,6 +214,20 @@ export default function BatchReport({ uid, batchId, onClose, onDeleted }) {
             className="flex-1 min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm"
           />
           <button type="button" onClick={saveName} className="px-3 py-1.5 rounded-lg bg-blue-600 text-sm">Save name</button>
+        </div>
+      )}
+      {priceDraft !== null && (
+        <div className="flex gap-2 print:hidden">
+          <input
+            aria-label="Price paid"
+            inputMode="decimal"
+            placeholder="Blank for none"
+            value={priceDraft}
+            onChange={(e) => setPriceDraft(e.target.value)}
+            className="flex-1 min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm"
+          />
+          <button type="button" onClick={savePrice} className="px-3 py-1.5 rounded-lg bg-blue-600 text-sm">Save price</button>
+          <button type="button" onClick={() => setPriceDraft(null)} className="px-3 py-1.5 rounded-lg bg-gray-800 text-sm">Cancel</button>
         </div>
       )}
       {confirmDelete && (

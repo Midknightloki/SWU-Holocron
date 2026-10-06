@@ -44,6 +44,13 @@ describe('BatchesPanel', () => {
     expect(m.listBatches).toHaveBeenCalledTimes(2);
   });
 
+  it('reloads after a report closes, so an edited name or price shows', async () => {
+    render(<BatchesPanel uid="u1" />);
+    fireEvent.click(await screen.findByRole('button', { name: /eBay SOR box/ }));
+    fireEvent.click(screen.getByText('close-mock'));
+    await waitFor(() => expect(m.listBatches).toHaveBeenCalledTimes(2));
+  });
+
   it('reloads when asked to, so a batch just finished appears', async () => {
     const { rerender } = render(<BatchesPanel uid="u1" refreshKey={0} />);
     await screen.findByRole('button', { name: /eBay SOR box/ });

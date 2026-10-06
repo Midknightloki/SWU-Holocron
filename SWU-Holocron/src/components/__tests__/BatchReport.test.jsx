@@ -5,8 +5,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import React from 'react';
 
-const m = vi.hoisted(() => ({ getBatch: vi.fn(), renameBatch: vi.fn(), deleteBatch: vi.fn(), getBulkPrices: vi.fn() }));
-vi.mock('../../services/BatchService', () => ({ BatchService: { getBatch: m.getBatch, renameBatch: m.renameBatch, deleteBatch: m.deleteBatch } }));
+const m = vi.hoisted(() => ({ getBatch: vi.fn(), renameBatch: vi.fn(), deleteBatch: vi.fn(), setBatchPricePaid: vi.fn(), getBulkPrices: vi.fn() }));
+vi.mock('../../services/BatchService', () => ({ BatchService: { getBatch: m.getBatch, renameBatch: m.renameBatch, deleteBatch: m.deleteBatch, setBatchPricePaid: m.setBatchPricePaid } }));
 vi.mock('../../services/PricingService', () => ({ PricingService: { getBulkPrices: m.getBulkPrices } }));
 
 import BatchReport from '../BatchReport';
@@ -25,6 +25,7 @@ beforeEach(() => {
   m.getBulkPrices.mockResolvedValue({ SOR_200_std: { market: 90 } });
   m.renameBatch.mockResolvedValue({ ok: true });
   m.deleteBatch.mockResolvedValue({ ok: true });
+  m.setBatchPricePaid.mockResolvedValue({ ok: true });
 });
 
 const renderReport = (props = {}) => render(<BatchReport uid="u1" batchId="b1" onClose={vi.fn()} onDeleted={vi.fn()} {...props} />);
@@ -80,6 +81,32 @@ describe('BatchReport', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete report' }));
     fireEvent.click(screen.getByRole('button', { name: 'Delete — your collection is not affected' }));
     await waitFor(() => expect(onDeleted).toHaveBeenCalled());
+  });
+
+  it('edits the price paid, which updates the net', async () => {
+    renderReport();
+    expect(await screen.findByTestId('net')).toHaveTextContent('-$20.00');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit price paid' }));
+    const input = screen.getByLabelText('Price paid');
+    expect(input).toHaveValue('100');
+    fireEvent.change(input, { target: { value: '$60' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save price' }));
+    await waitFor(() => expect(m.setBatchPricePaid).toHaveBeenCalledWith('u1', 'b1', 60));
+    expect(await screen.findByTestId('net')).toHaveTextContent('+$20.00');
+    expect(screen.queryByLabelText('Price paid')).not.toBeInTheDocument();
+  });
+
+  it('clears the price paid when left blank, and refuses what it cannot read', async () => {
+    renderReport();
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit price paid' }));
+    fireEvent.change(screen.getByLabelText('Price paid'), { target: { value: 'forty' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save price' }));
+    expect(screen.getByRole('alert')).toHaveTextContent(/price like 89.99/);
+    expect(m.setBatchPricePaid).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('Price paid'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save price' }));
+    await waitFor(() => expect(m.setBatchPricePaid).toHaveBeenCalledWith('u1', 'b1', null));
+    expect(await screen.findByTestId('net')).toHaveTextContent('—');
   });
 
   it('says so when value now cannot be loaded', async () => {
