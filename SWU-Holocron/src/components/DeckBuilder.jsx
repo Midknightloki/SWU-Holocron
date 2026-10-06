@@ -1991,7 +1991,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved, on
                           Sideboard {sideboardTotal > 0 && `(${sideboardTotal}/10)`}
                         </button>
                       </div>
-                      <div className="flex-1 overflow-auto">
+                      <div className="flex-1 overflow-y-auto overflow-x-hidden">
                         <AdvancedSearch
                           onCardClick={addTarget === 'sideboard' ? handleAddToSideboard : handleAddCard}
                           collectionData={collectionData}
@@ -2073,7 +2073,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved, on
                         <Loader2 size={32} className="animate-spin text-yellow-500" />
                       </div>
                     ) : (
-                      <div className="flex-1 overflow-auto">
+                      <div className="flex-1 overflow-y-auto overflow-x-hidden">
                         <AdvancedSearch
                           onCardClick={addTarget === 'sideboard' ? handleAddToSideboard : handleAddCard}
                           collectionData={collectionData}
