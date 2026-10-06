@@ -24,16 +24,27 @@ const LIST_FIELDS = [
 ];
 const money = (v) => (v === null || v === undefined ? '—' : `$${v.toFixed(2)}`);
 
+// Saved filters are checked field by field: anything of the wrong type falls
+// back to its default instead of crashing the report (and, being saved,
+// crashing it again on every open).
 // @environment:web-localstorage
 function loadFilters() {
+  let stored;
   try {
-    const stored = JSON.parse(localStorage.getItem(FILTERS_KEY));
-    if (!stored || typeof stored !== 'object') return DEFAULT_FILTERS;
-    const lists = LIST_FIELDS.every(({ field }) => stored[field] === undefined || Array.isArray(stored[field]));
-    return lists ? { ...DEFAULT_FILTERS, ...stored } : DEFAULT_FILTERS;
+    stored = JSON.parse(localStorage.getItem(FILTERS_KEY));
   } catch {
     return DEFAULT_FILTERS;
   }
+  if (!stored || typeof stored !== 'object') return DEFAULT_FILTERS;
+  const f = { ...DEFAULT_FILTERS };
+  for (const { field } of LIST_FIELDS) {
+    if (Array.isArray(stored[field])) f[field] = stored[field].filter((v) => typeof v === 'string');
+  }
+  if (['all', 'standard', 'foil'].includes(stored.finish)) f.finish = stored.finish;
+  if (['all', 'priced', 'unpriced'].includes(stored.price)) f.price = stored.price;
+  if (typeof stored.minPrice === 'number' && Number.isFinite(stored.minPrice) && stored.minPrice >= 0) f.minPrice = stored.minPrice;
+  if (typeof stored.search === 'string') f.search = stored.search;
+  return f;
 }
 
 // @environment:web-file-api
@@ -53,11 +64,14 @@ const select = 'bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-s
 export default function CollectionValueReport({ collectionData, onClose, load = loadCollectionValue }) {
   // undefined while loading.
   const [data, setData] = useState(undefined);
-  const [filters, setFilters] = useState(loadFilters);
-  const [minPriceText, setMinPriceText] = useState(() => (loadFilters().minPrice ?? '').toString());
+  const [initialFilters] = useState(loadFilters);
+  const [filters, setFilters] = useState(initialFilters);
+  const [minPriceText, setMinPriceText] = useState(() => (initialFilters.minPrice ?? '').toString());
   const [sortBy, setSortBy] = useState('value');
   const [sortDir, setSortDir] = useState('desc');
   const [shown, setShown] = useState(PAGE);
+  // Save as PDF prints every matching card: render them all, print, page again.
+  const [printing, setPrinting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,6 +88,12 @@ export default function CollectionValueReport({ collectionData, onClose, load = 
       // Not remembered this time.
     }
   }, [filters]);
+
+  useEffect(() => {
+    if (!printing) return;
+    window.print();
+    setPrinting(false);
+  }, [printing]);
 
   const allLines = useMemo(() => data?.lines ?? [], [data]);
   const options = useMemo(() => filterOptions(allLines), [allLines]);
@@ -129,7 +149,7 @@ export default function CollectionValueReport({ collectionData, onClose, load = 
               <button type="button" onClick={exportCsv} className="flex items-center gap-1 px-3 py-2 rounded-lg bg-gray-800 text-sm">
                 <Download className="w-4 h-4" /> Download CSV
               </button>
-              <button type="button" onClick={() => window.print()} className="flex items-center gap-1 px-3 py-2 rounded-lg bg-gray-800 text-sm">
+              <button type="button" onClick={() => setPrinting(true)} className="flex items-center gap-1 px-3 py-2 rounded-lg bg-gray-800 text-sm">
                 <FileText className="w-4 h-4" /> Save as PDF
               </button>
             </div>
@@ -211,7 +231,7 @@ export default function CollectionValueReport({ collectionData, onClose, load = 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <div className="rounded-lg bg-gray-900 border border-gray-800 p-3 print:bg-white">
                 <div className="text-xs text-gray-400">Value</div>
-                <div data-testid="total-value" className="text-lg font-semibold">{money(summary.value)}</div>
+                <div data-testid="total-value" className="text-lg font-semibold">{summary.pricedShare > 0 ? money(summary.value) : '—'}</div>
                 <div data-testid="priced-share" className="text-[11px] text-gray-500">{Math.round(summary.pricedShare * 100)}% of copies priced</div>
               </div>
               <div className="rounded-lg bg-gray-900 border border-gray-800 p-3 print:bg-white">
@@ -271,7 +291,7 @@ export default function CollectionValueReport({ collectionData, onClose, load = 
                 </button>
               </div>
               <ul aria-label="Cards" className="divide-y divide-gray-800 text-sm print:divide-gray-200">
-                {sorted.slice(0, shown).map((l) => (
+                {(printing ? sorted : sorted.slice(0, shown)).map((l) => (
                   <li key={l.id} className="py-1.5 flex items-center gap-2">
                     <span className="flex-1 min-w-0">
                       <span className="block truncate print:whitespace-normal">{l.name}</span>

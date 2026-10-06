@@ -37,7 +37,8 @@ describe('CollectionValueReport', () => {
     const set = screen.getByLabelText('Set');
     fireEvent.change(set, { target: { selectedOptions: [set.querySelector('option[value="SHD"]')] } });
     await waitFor(() => expect(screen.getByTestId('total-cards')).toHaveTextContent('1'));
-    expect(screen.getByTestId('total-value')).toHaveTextContent('$0.00');
+    // SHD's only card has no price: no money total, not $0.00.
+    expect(screen.getByTestId('total-value')).toHaveTextContent('—');
     expect(screen.getByRole('button', { name: 'Remove Set: SHD' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Remove Set: SHD' }));
     await waitFor(() => expect(screen.getByTestId('total-cards')).toHaveTextContent('13'));
@@ -101,5 +102,35 @@ describe('CollectionValueReport', () => {
     render(<CollectionValueReport collectionData={{}} onClose={vi.fn()} load={async () => ({ lines: LINES, missingSets: ['SHD'], error: 'prices' })} />);
     expect(await screen.findByText(/Couldn.t load card details for SHD/)).toBeInTheDocument();
     expect(screen.getByText('Prices are unavailable right now.')).toBeInTheDocument();
+  });
+
+  it('survives saved filters of the wrong type, field by field', async () => {
+    localStorage.getItem.mockImplementation(() => JSON.stringify({ minPrice: '5', search: 5, finish: 'weird', price: 7, sets: [1, 'SOR'], rarities: 'Rare' }));
+    await open();
+    // Only the readable part survives: sets ['SOR'] (the number is dropped).
+    expect(screen.getByTestId('total-cards')).toHaveTextContent('12');
+    expect(screen.getByRole('button', { name: 'Remove Set: SOR' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Search cards')).toHaveValue('');
+    expect(screen.getByLabelText('Finish')).toHaveValue('all');
+  });
+
+  it('prints every matching card, not just the rows on screen', async () => {
+    const many = Array.from({ length: 150 }, (_, i) => L(`SOR_${String(i).padStart(3, '0')}_std`, { value: i, unitPrice: i }));
+    let printedRows = 0;
+    const print = vi.spyOn(window, 'print').mockImplementation(() => {
+      printedRows = within(screen.getByRole('list', { name: 'Cards' })).getAllByRole('listitem').length;
+    });
+    render(<CollectionValueReport collectionData={{}} onClose={vi.fn()} load={async () => ({ lines: many, missingSets: [] })} />);
+    await screen.findByRole('list', { name: 'Cards' });
+    fireEvent.click(screen.getByRole('button', { name: 'Save as PDF' }));
+    await waitFor(() => expect(print).toHaveBeenCalled());
+    expect(printedRows).toBe(150);
+    await waitFor(() => expect(within(screen.getByRole('list', { name: 'Cards' })).getAllByRole('listitem')).toHaveLength(100));
+    print.mockRestore();
+  });
+
+  it('shows no money total when nothing is priced', async () => {
+    render(<CollectionValueReport collectionData={{}} onClose={vi.fn()} load={async () => ({ lines: [LINES[2]], missingSets: [] })} />);
+    expect(await screen.findByTestId('total-value')).toHaveTextContent('—');
   });
 });
