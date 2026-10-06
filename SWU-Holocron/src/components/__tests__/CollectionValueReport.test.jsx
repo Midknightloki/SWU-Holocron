@@ -4,6 +4,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within, cleanup } from '@testing-library/react';
 import React from 'react';
+vi.mock('../SaveListDialog', () => ({
+  default: ({ kind, items, showPrices, onClose }) => (
+    <div role="dialog" aria-label="save-dialog">{kind} {Object.keys(items).join(',')} prices:{String(showPrices)}<button type="button" onClick={onClose}>close-save</button></div>
+  ),
+}));
 import CollectionValueReport from '../CollectionValueReport';
 
 const L = (id, o) => ({ id, set: 'SOR', number: id.split('_')[1], name: id, subtitle: null, type: 'Unit', rarity: 'Common', aspects: [], variant: 'Normal', isFoil: id.endsWith('foil'), qty: 1, unitPrice: 1, priceIsFallback: false, value: 1, url: null, ...o });
@@ -29,6 +34,18 @@ const open = async () => {
 };
 
 describe('CollectionValueReport', () => {
+  it('is titled Market reports', async () => {
+    await open();
+    expect(screen.getByRole('heading', { name: 'Market reports' })).toBeInTheDocument();
+    expect(screen.getByTestId('report-mode')).toHaveTextContent('Collection value');
+  });
+
+  it('offers no Save as trade list outside Surplus mode', async () => {
+    render(<CollectionValueReport uid="u1" collectionData={{}} onClose={vi.fn()} load={load} />);
+    await screen.findByTestId('total-value');
+    expect(screen.queryByRole('button', { name: 'Save as trade list' })).not.toBeInTheDocument();
+  });
+
   it('shows totals and the priced share', async () => {
     expect(await open()).toHaveTextContent('$10.50');
     expect(screen.getByTestId('priced-share')).toHaveTextContent('92% of copies priced');
@@ -171,12 +188,24 @@ describe('Surplus mode', () => {
     const load = loadWith();
     await openSurplus(load);
     expect(load).toHaveBeenCalledWith({}, { uid: 'u1', includeDecks: true });
-    expect(screen.getByRole('heading', { name: 'Surplus / trade list' })).toBeInTheDocument();
+    expect(screen.getByTestId('report-mode')).toHaveTextContent('Surplus / trade list');
     // Vader 6 - 2 in decks - 3 kept = 1; Luke (leader) 3 - 1 kept = 2.
     expect(screen.getByTestId('total-cards')).toHaveTextContent('3');
     expect(screen.getByText('Surplus 1 · own 6 · decks 2 · keep 3')).toBeInTheDocument();
     expect(screen.getByText('Surplus 2 · own 3 · decks 0 · keep 1')).toBeInTheDocument();
     expect(localStorage.setItem).toHaveBeenCalledWith('swu-value-mode', 'surplus');
+  });
+
+  it('saves the filtered surplus as a trade list', async () => {
+    await openSurplus(loadWith());
+    fireEvent.click(screen.getByRole('button', { name: 'Save as trade list' }));
+    const dialog = screen.getByRole('dialog', { name: 'save-dialog' });
+    expect(dialog).toHaveTextContent(/^trade /);
+    expect(dialog.textContent).toContain('SOR_005_standard');
+    expect(dialog.textContent).toContain('SOR_010_standard');
+    expect(dialog.textContent).toContain('prices:true');
+    fireEvent.click(screen.getByText('close-save'));
+    expect(screen.queryByRole('dialog', { name: 'save-dialog' })).not.toBeInTheDocument();
   });
 
   it('shows no surplus when decks cannot be read', async () => {

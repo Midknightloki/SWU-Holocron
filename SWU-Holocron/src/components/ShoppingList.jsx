@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
-  ShoppingCart, ExternalLink, DollarSign, Loader2, Plus, Minus, Sparkles
+  ShoppingCart, ExternalLink, DollarSign, Loader2, Plus, Minus, Sparkles, ListPlus
 } from 'lucide-react';
 import { PricingService } from '../services/PricingService';
+import SaveListDialog from './SaveListDialog';
+import { itemsFromDeckGaps } from '../utils/cardLists';
+import { getCollectionId } from '../utils/collectionHelpers';
 
 /**
  * ShoppingList — Panel component showing cards needed to complete a deck
@@ -15,14 +18,16 @@ import { PricingService } from '../services/PricingService';
  *   puts collection controls in each row, so a card bought at a store is added
  *   here rather than by navigating to the binder (CLAUDE.md, House rules).
  *   Without it the list is read-only.
+ * - uid, deckName: optional; with a uid the gaps can be saved as a wants list.
  *
  * @environment:react
  */
-export default function ShoppingList({ deck, collectionData, cardDatabase, onUpdateQuantity }) {
+export default function ShoppingList({ deck, collectionData, cardDatabase, onUpdateQuantity, uid, deckName }) {
   const [prices, setPrices] = useState({});
   const [loading, setLoading] = useState(false);
   // cardId -> true when that row's controls are pointed at the foil printing.
   const [foilRows, setFoilRows] = useState({});
+  const [savingList, setSavingList] = useState(false);
 
   // Pricing is optional and needs no configuration: prices arrive with the
   // weekly card sync and are read from Firestore. What varies is whether the
@@ -43,9 +48,10 @@ export default function ShoppingList({ deck, collectionData, cardDatabase, onUpd
       const card = cardDatabase?.find(c => `${c.Set}_${c.Number}` === cardId);
       if (!card) return;
 
-      // Check collection (both std and foil variants)
-      const standard = collectionData?.[`${cardId}_std`]?.quantity || 0;
-      const foil = collectionData?.[`${cardId}_foil`]?.quantity || 0;
+      // Check collection (both std and foil variants). Deck ids can be
+      // unpadded (TS26_1); collection docs are always padded (TS26_001_std).
+      const standard = collectionData?.[getCollectionId(card.Set, card.Number, false)]?.quantity || 0;
+      const foil = collectionData?.[getCollectionId(card.Set, card.Number, true)]?.quantity || 0;
       const owned = standard + foil;
 
       const gap = needed - owned;
@@ -145,6 +151,12 @@ export default function ShoppingList({ deck, collectionData, cardDatabase, onUpd
         <ShoppingCart size={18} className="text-amber-400" />
         <h3 className="font-semibold text-zinc-100">Shopping List</h3>
         <span className="ml-auto text-sm text-zinc-400">{gapCards.length} cards needed</span>
+        {uid && gapCards.length > 0 && (
+          <button type="button" onClick={() => setSavingList(true)}
+            className="flex items-center gap-1 px-2 py-1 rounded-md bg-zinc-800 border border-zinc-700 text-xs text-zinc-200 hover:border-zinc-500">
+            <ListPlus size={13} /> Save as wants list
+          </button>
+        )}
       </div>
 
       {/* Loading State */}
@@ -302,6 +314,12 @@ export default function ShoppingList({ deck, collectionData, cardDatabase, onUpd
             )}
           </div>
         </div>
+      )}
+
+      {savingList && (
+        <SaveListDialog uid={uid} kind="wants" items={itemsFromDeckGaps(gapCards)}
+          source={{ type: 'deck', label: deckName || 'Deck' }} defaultName={`Wants: ${deckName || 'Deck'}`}
+          onClose={() => setSavingList(false)} />
       )}
     </div>
   );

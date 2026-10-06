@@ -40,11 +40,25 @@ describe('Dashboard Component', () => {
   });
 
 
-  it('shows the saved batches for the signed-in user', () => {
-    const { rerender } = render(<Dashboard {...defaultProps} uid="u1" />);
-    expect(screen.getByText(/batches for u1/)).toBeInTheDocument();
-    rerender(<Dashboard {...defaultProps} />);
+  it('no longer lists batches in the Command Center', () => {
+    render(<Dashboard {...defaultProps} uid="u1" />);
     expect(screen.queryByText(/batches for/)).not.toBeInTheDocument();
+  });
+
+  it('opens Market reports and Saved reports/lists', () => {
+    const onOpenMarketReports = vi.fn();
+    const onOpenSavedLists = vi.fn();
+    render(<Dashboard {...defaultProps} uid="u1" onOpenMarketReports={onOpenMarketReports} onOpenSavedLists={onOpenSavedLists} />);
+    fireEvent.click(screen.getByRole('button', { name: /Market reports/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Saved reports\/lists/ }));
+    expect(onOpenMarketReports).toHaveBeenCalled();
+    expect(onOpenSavedLists).toHaveBeenCalled();
+  });
+
+  it('hides the buttons it has no handler for', () => {
+    render(<Dashboard {...defaultProps} onOpenMarketReports={vi.fn()} />);
+    expect(screen.getByRole('button', { name: /Market reports/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Saved reports\/lists/ })).not.toBeInTheDocument();
   });
 
   it('shows prebuilt decks for the signed-in user, with the collection to add to', () => {
@@ -52,10 +66,6 @@ describe('Dashboard Component', () => {
     expect(screen.getByText('prebuilt for u1 ref')).toBeInTheDocument();
   });
 
-  it('passes the refresh key through so the list reloads after scanning', () => {
-    render(<Dashboard {...defaultProps} uid="u1" batchesRefresh={3} />);
-    expect(screen.getByText('batches for u1 #3')).toBeInTheDocument();
-  });
   it('shows no scan button without onScan (not Pro, not admin)', () => {
     render(<Dashboard {...defaultProps} />);
     expect(screen.queryByRole('button', { name: 'Scan cards' })).not.toBeInTheDocument();

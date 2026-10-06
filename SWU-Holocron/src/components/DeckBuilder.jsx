@@ -2023,6 +2023,8 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved, on
                         collectionData={collectionData}
                         cardDatabase={allCards}
                         onUpdateQuantity={onUpdateQuantity}
+                        uid={user?.uid}
+                        deckName={deckName}
                       />
                     </div>
                   )}
@@ -2149,6 +2151,8 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved, on
                           collectionData={collectionData}
                           cardDatabase={allCards}
                           onUpdateQuantity={onUpdateQuantity}
+                          uid={user?.uid}
+                          deckName={deckName}
                         />
                       </div>
                     )}

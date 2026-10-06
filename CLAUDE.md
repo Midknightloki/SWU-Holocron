@@ -114,6 +114,7 @@ artifacts/{APP_ID}/scanUsage/{uid}                            per-user daily sca
 artifacts/{APP_ID}/public/data/prebuiltDecks/{sourceId}       precon decks (sync writes; admins publish)
 artifacts/{APP_ID}/public/data/cardDatabase/preconProducts    TCGplayer precon products (sync writes)
 artifacts/{APP_ID}/users/{uid}/prebuiltAdds/{sourceId}        when a user added a precon
+artifacts/{APP_ID}/users/{uid}/lists/{listId}                 saved trade/wants lists (Saved reports/lists)
 ```
 
 Firestore requires alternating collection/document segments, so path arity is
@@ -337,7 +338,7 @@ that cross-check is what keeps a misread number from adding the wrong card.
   any matched cards first, closes the record and opens its report
   (`BatchReport.jsx`, built by the pure `batchReport.js`); rows still in the
   list go into the next batch (`endBatch`). Reports are
-  listed in the Command Center (`BatchesPanel`). Export is CSV
+  listed under Saved reports/lists → Batches (`BatchesPanel`). Export is CSV
   (`batchCsv.js`) and PDF via the browser's print dialog — a print rule in
   `index.css` shows only `#batch-report`. Cards with no price data are listed,
   never counted as $0.
@@ -373,9 +374,10 @@ that cross-check is what keeps a misread number from adding the wrong card.
   only approximately — the live stream and the still photo can frame
   differently — but the crop is exact because it is applied to the photo.
 
-### Collection value
+### Market reports and saved lists
 
-The binder's **Value** button opens a report of what the collection is worth
+The Command Center's **Market reports** button (the binder's old Value button
+is gone) opens a report of what the collection is worth
 at today's market prices (`CollectionValueReport.jsx`). The pure model in
 `src/utils/collectionValue.js` builds one line per owned collection doc and
 holds the filters (set, rarity, type, aspect, printing, finish, priced /
@@ -400,6 +402,19 @@ prices** toggle removes every dollar amount from the screen and the exports,
 and **Copy as text** gives a trade list for chat (a selectable box when the
 clipboard is blocked). Mode and the toggle persist in `swu-value-mode` /
 `swu-value-show-prices`.
+
+**Saved reports/lists** (the Command Center's other button,
+`SavedListsPage.jsx`) has tabs Batches (moved from the Command Center),
+Trade lists and Wants lists. Lists live at `users/{uid}/lists`
+(`ListService`); the pure model is `src/utils/cardLists.js`. Items are keyed
+`SET_NNN_standard|foil|any` -- a wants item's finish may be `any`, priced at
+standard with the pricing service's foil fallback. Trade lists come from
+Market reports → Surplus → **Save as trade list** (new, or replacing one);
+wants lists from collection gaps (`WantsFromGaps`: the Command Center's
+unique-title logic, missing titles or up to a playset), from a deck's Shop
+tab (**Save as wants list**), or Add card. Each list is edited in place
+(`ListView`: quantity, finish, note, rename) and exports as text, CSV and PDF;
+its Show prices choice is stored on the list. Public links are phase 2b.
 
 ### Prebuilt decks
 
@@ -575,7 +590,8 @@ it is an ESLint *error*, so CI blocks on it.
 - `localStorage` keys are `swu-`-prefixed: `swu-available-sets`,
   `swu-active-set`, `swu-has-visited`, `swu-sync-code`, `swu-holocron`,
   `swu-scan-draft-{uid}`, `swu-scan-help-seen`, `swu-scan-rig`, `swu-scan-sets`, `swu-scan-auto`,
-  `swu-deck-owned-only`, `swu-value-filters`, `swu-value-mode`, `swu-value-show-prices`.
+  `swu-deck-owned-only`, `swu-value-filters`, `swu-value-mode`, `swu-value-show-prices`,
+  `swu-saved-lists-tab`.
 - Leaders and Bases are horizontal: `aspect-[88/63] col-span-2`. Everything else
   is `aspect-[63/88] col-span-1` (`App.jsx:982`).
 - Owned counts render as a dual `3 +2F` — standard count prominent, foil count as

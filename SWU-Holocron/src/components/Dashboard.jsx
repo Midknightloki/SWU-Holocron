@@ -1,15 +1,12 @@
-import React, { useMemo, useState } from 'react';
-import { Database, Upload, Download, Loader2, CheckCircle2, Layers, Trophy, AlertCircle, Plus } from 'lucide-react';
+import React, { useMemo } from 'react';
+import { Database, Upload, Download, Loader2, CheckCircle2, Layers, Trophy, AlertCircle, Plus, TrendingUp, ListChecks } from 'lucide-react';
 import { SETS } from '../constants';
 import { calculateStats, calculateGlobalSummary } from '../utils/statsCalculator';
 import { generateMissingCardsCSV } from '../utils/csvParser';
 import ScanButton from './ScanButton';
-import BatchesPanel from './BatchesPanel';
 import PrebuiltDecksPanel from './PrebuiltDecksPanel';
 
-export default function Dashboard({ setCode, cards, collectionData, onImport, onExport, isImporting, hasDataToExport, onUpdateQuantity, onCardClick, onScan, uid, batchesRefresh = 0, collectionRef = null }) {
-  // A prebuilt deck added here is a new batch: the list below reloads.
-  const [batchesBump, setBatchesBump] = useState(0);
+export default function Dashboard({ setCode, cards, collectionData, onImport, onExport, isImporting, hasDataToExport, onUpdateQuantity, onCardClick, onScan, uid, collectionRef = null, onOpenMarketReports, onOpenSavedLists }) {
   const stats = useMemo(() => {
     return calculateStats(cards, collectionData, setCode);
   }, [cards, collectionData, setCode]);
@@ -74,6 +71,32 @@ export default function Dashboard({ setCode, cards, collectionData, onImport, on
         </div>
       </div>
 
+      {/* Collection management: reports and saved lists */}
+      {(onOpenMarketReports || onOpenSavedLists) && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {onOpenMarketReports && (
+            <button type="button" onClick={onOpenMarketReports}
+              className="flex items-center gap-3 p-4 rounded-xl bg-gray-800 border border-gray-700 hover:border-yellow-500/50 text-left transition-colors">
+              <TrendingUp size={24} className="text-yellow-500 shrink-0" aria-hidden="true" />
+              <span>
+                <span className="block font-bold text-white">Market reports</span>
+                <span className="block text-xs text-gray-400">Collection value and surplus to trade, at today&apos;s prices</span>
+              </span>
+            </button>
+          )}
+          {onOpenSavedLists && (
+            <button type="button" onClick={onOpenSavedLists}
+              className="flex items-center gap-3 p-4 rounded-xl bg-gray-800 border border-gray-700 hover:border-yellow-500/50 text-left transition-colors">
+              <ListChecks size={24} className="text-yellow-500 shrink-0" aria-hidden="true" />
+              <span>
+                <span className="block font-bold text-white">Saved reports/lists</span>
+                <span className="block text-xs text-gray-400">Batches, trade lists and wants lists</span>
+              </span>
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Stats Cards Row */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* ... Stats cards (same as before, concise for brevity) ... */}
@@ -107,16 +130,14 @@ export default function Dashboard({ setCode, cards, collectionData, onImport, on
         </div>
       </div>
 
-      {/* Saved scanning batches */}
+      {/* Prebuilt decks */}
       {uid && (
         <PrebuiltDecksPanel
           uid={uid}
           collectionRef={collectionRef}
           collectionData={collectionData}
-          onAdded={() => setBatchesBump((n) => n + 1)}
         />
       )}
-      {uid && <BatchesPanel uid={uid} refreshKey={batchesRefresh + batchesBump} />}
 
       {/* Missing Cards Table */}
       <div className="bg-gray-900 rounded-2xl border border-gray-800 shadow-xl overflow-hidden">
