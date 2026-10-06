@@ -2,11 +2,13 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Search, X, Filter, Loader2, Tag, Plus, Minus, ChevronDown } from 'lucide-react';
 import { SETS, ASPECTS } from '../constants';
 import { rankSearchResults } from '../utils/cardSearchRanking';
-import { dedupeToBasePrintings } from '../utils/cardIdentity';
+import { cardIdentity, dedupeToBasePrintings } from '../utils/cardIdentity';
 import { CardService } from '../services/CardService';
-import { getPlaysetQuantity } from '../utils/collectionHelpers';
+import { getCardQuantities, getPlaysetQuantity } from '../utils/collectionHelpers';
 import ScanButton from './ScanButton';
 import { matchesNumberQuery } from '../utils/cardNumberQuery';
+
+const OWNED_ONLY_KEY = 'swu-deck-owned-only';
 
 export default function AdvancedSearch({ onCardClick, collectionData, currentSet, onClose = () => {}, onUpdateQuantity, embedded = false, getDeckCount = () => 0, initialFilters = {}, onScan }) {
   const [searchText, setSearchText] = useState('');
@@ -16,6 +18,19 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
   const [costMin, setCostMin] = useState('');
   const [costMax, setCostMax] = useState('');
   const [searchResults, setSearchResults] = useState([]);
+  // Deck builder only: limit results to cards the player owns. Remembered per
+  // device (swu-deck-owned-only).
+  // @environment:web-localstorage
+  const [ownedOnly, setOwnedOnly] = useState(() => {
+    try {
+      return embedded && localStorage.getItem(OWNED_ONLY_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  // Identities (name + subtitle) owned in any printing and finish: results show
+  // the base printing, but owning only the Hyperspace one still counts.
+  const [ownedIdentities, setOwnedIdentities] = useState(() => new Set());
   const [isSearching, setIsSearching] = useState(false);
   const [allCards, setAllCards] = useState([]);
   const [loadedSets, setLoadedSets] = useState(new Set());
@@ -186,6 +201,9 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
       // by full name could return its prestige variant -- and then report it
       // missing from the collection, because the player owns the base.
       const uniqueCards = dedupeToBasePrintings(filtered, { baseSetCodes });
+      setOwnedIdentities(new Set(filtered
+        .filter((card) => getCardQuantities(collectionData, card.Set, card.Number).total > 0)
+        .map(cardIdentity)));
 
       // Order by relevance, not alphabetically. A trait match used to rank as
       // highly as a name match, so "trooper" buried the 29 cards named trooper
@@ -242,6 +260,21 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
     selectedTypes.length +
     (costMin ? 1 : 0) +
     (costMax ? 1 : 0);
+
+  const shownResults = useMemo(
+    () => (ownedOnly ? searchResults.filter((card) => ownedIdentities.has(cardIdentity(card))) : searchResults),
+    [ownedOnly, searchResults, ownedIdentities],
+  );
+
+  const toggleOwnedOnly = () => {
+    const next = !ownedOnly;
+    setOwnedOnly(next);
+    try {
+      localStorage.setItem(OWNED_ONLY_KEY, next ? '1' : '0');
+    } catch {
+      // Not remembered this time.
+    }
+  };
 
   return (
     <div className={embedded ? '' : 'fixed inset-0 z-40 bg-gray-950 overflow-y-auto'}>
@@ -310,6 +343,17 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
               {onScan && !embedded && <ScanButton onOpen={onScan} />}
             </div>
           </div>
+
+          {embedded && (
+            <button
+              type="button"
+              onClick={toggleOwnedOnly}
+              aria-pressed={ownedOnly}
+              className={`w-full mb-2 px-4 py-2 rounded-lg border text-sm font-semibold transition-colors ${ownedOnly ? 'bg-yellow-500/20 border-yellow-500/60 text-yellow-300' : 'bg-gray-800 border-gray-700 text-gray-300 hover:text-white'}`}
+            >
+              Owned only
+            </button>
+          )}
 
           {/* Filters Toggle Button (Mobile) */}
           <button
@@ -470,20 +514,20 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
                   ) : (
                     <>
                       <Filter size={20} className="text-blue-500" />
-                      {searchResults.length} {searchResults.length === 1 ? 'Result' : 'Results'}
+                      {shownResults.length} {shownResults.length === 1 ? 'Result' : 'Results'}
                     </>
                   )}
                 </h3>
-                {searchResults.length > 0 && (
+                {shownResults.length > 0 && (
                   <div className="text-sm text-gray-400">
-                    {[...new Set(searchResults.map(c => c.Set))].length} sets
+                    {[...new Set(shownResults.map(c => c.Set))].length} sets
                   </div>
                 )}
               </div>
 
               {/* Results Grid */}
               <div className={`${embedded ? '' : 'max-h-[600px] overflow-y-auto'} space-y-2 pr-2`}>
-                {searchResults.length === 0 && !isSearching && activeFiltersCount > 0 && (
+                {shownResults.length === 0 && !isSearching && activeFiltersCount > 0 && (
                   <div className="text-center py-12 text-gray-500">
                     <Filter size={48} className="mx-auto mb-4 opacity-30" />
                     <p className="text-lg font-medium mb-2">No cards found</p>
@@ -491,7 +535,7 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
                   </div>
                 )}
 
-                {searchResults.length === 0 && !isSearching && activeFiltersCount === 0 && (
+                {shownResults.length === 0 && !isSearching && activeFiltersCount === 0 && (
                   <div className="text-center py-12 text-gray-500">
                     <Search size={48} className="mx-auto mb-4 opacity-30" />
                     <p className="text-lg font-medium mb-2">Start searching</p>
@@ -499,7 +543,7 @@ export default function AdvancedSearch({ onCardClick, collectionData, currentSet
                   </div>
                 )}
 
-                {searchResults.map(card => {
+                {shownResults.map(card => {
                   const collectionId = CardService.getCollectionId(card.Set, card.Number, card.FrontImage || '', card.BackImage || '');
                   const owned = collectionData?.[collectionId]?.quantity || 0;
                   const cardId = `${card.Set}_${card.Number}`;
