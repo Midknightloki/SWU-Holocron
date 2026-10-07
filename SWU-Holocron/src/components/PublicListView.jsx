@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ClipboardCopy, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import CopyTextButton from './CopyTextButton';
 import { ListService } from '../services/ListService';
 import { CardService } from '../services/CardService';
 import { FINISH_LABEL, listSummary, publicLines, toListText } from '../utils/cardLists';
@@ -10,7 +11,6 @@ const HEADING = { trade: 'Trade list', wants: 'Wants list' };
 /** A shared trade or wants list, for anyone with the link. No sign-in. */
 export default function PublicListView({ code, service = ListService }) {
   const [state, setState] = useState({ status: 'loading' });
-  const [copyState, setCopyState] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -32,15 +32,7 @@ export default function PublicListView({ code, service = ListService }) {
     if (heading) document.title = `${heading} — SWU Holocron`;
   }, [heading]);
 
-  const copyText = async () => {
-    const text = toListText(doc, lines, { showPrices });
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopyState({ kind: 'copied' });
-    } catch {
-      setCopyState({ kind: 'fallback', text });
-    }
-  };
+  const text = useMemo(() => (doc ? toListText(doc, lines, { showPrices }) : ''), [doc, lines, showPrices]);
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
@@ -65,14 +57,9 @@ export default function PublicListView({ code, service = ListService }) {
               )}
             </header>
 
-            <button type="button" onClick={copyText} className="flex items-center gap-1 px-3 py-2 rounded-lg bg-gray-800 text-sm">
-              <ClipboardCopy className="w-4 h-4" /> Copy as text
-            </button>
-            {copyState?.kind === 'copied' && <p role="status" className="text-sm text-green-400">Copied</p>}
-            {copyState?.kind === 'fallback' && (
-              <textarea readOnly aria-label="List text" value={copyState.text} rows={6} onFocus={(e) => e.target.select()}
-                className="w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs font-mono" />
-            )}
+            <div className="flex flex-wrap gap-2">
+              <CopyTextButton text={text} fallbackLabel="List text" />
+            </div>
 
             <ul className="divide-y divide-gray-800">
               {lines.map((l) => (

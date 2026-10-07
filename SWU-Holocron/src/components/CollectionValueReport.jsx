@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, ClipboardCopy, Download, FileText, ListPlus, SlidersHorizontal, X } from 'lucide-react';
+import { ChevronDown, Download, FileText, ListPlus, SlidersHorizontal, X } from 'lucide-react';
 import { loadCollectionValue } from '../services/collectionValueLoader';
 import {
   DEFAULT_FILTERS, applyFilters, filterOptions, summarize, sortLines, toCollectionCsv,
@@ -9,6 +9,7 @@ import { parsePricePaid } from '../utils/scanDraft';
 import { buildSurplusLines, deckUsage, toTradeText } from '../utils/surplus';
 import { itemsFromSurplus } from '../utils/cardLists';
 import SaveListDialog from './SaveListDialog';
+import CopyTextButton from './CopyTextButton';
 
 /**
  * What the collection is worth at today's market prices, sliced by any
@@ -101,7 +102,6 @@ export default function CollectionValueReport({ uid, collectionData, onClose, lo
   const [mode, setMode] = useState(() => (readSetting(MODE_KEY, 'all') === 'surplus' ? 'surplus' : 'all'));
   const [showPrices, setShowPrices] = useState(() => readSetting(PRICES_KEY, '1') !== '0');
   // { kind: 'copied', count } | { kind: 'fallback', text } | null
-  const [copyState, setCopyState] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -139,13 +139,14 @@ export default function CollectionValueReport({ uid, collectionData, onClose, lo
   );
   const lines = useMemo(() => applyFilters(baseLines, activeFilters), [baseLines, activeFilters]);
   const summary = useMemo(() => summarize(lines), [lines]);
+  const tradeText = useMemo(() => toTradeText(lines, { showPrices }), [lines, showPrices]);
   const byValueHidden = !showPrices && sortBy === 'value';
   const listSortBy = byValueHidden ? 'set' : sortBy;
   const listSortDir = byValueHidden ? 'asc' : sortDir;
   const sorted = useMemo(() => sortLines(lines, listSortBy, listSortDir), [lines, listSortBy, listSortDir]);
 
   // Any change makes a shown copy box stale.
-  const update = (patch) => { setFilters((f) => ({ ...f, ...patch })); setShown(PAGE); setCopyState(null); };
+  const update = (patch) => { setFilters((f) => ({ ...f, ...patch })); setShown(PAGE); };
   const addTo = (field, key) => update({ [field]: filters[field].includes(key) ? filters[field] : [...filters[field], key] });
   const removeFrom = (field, key) => update({ [field]: filters[field].filter((k) => k !== key) });
   const clearAll = () => { setMinPriceText(''); update(DEFAULT_FILTERS); };
@@ -165,14 +166,12 @@ export default function CollectionValueReport({ uid, collectionData, onClose, lo
   const changeMode = (next) => {
     setMode(next);
     setShown(PAGE);
-    setCopyState(null);
     writeSetting(MODE_KEY, next);
   };
 
   const togglePrices = () => {
     const next = !showPrices;
     setShowPrices(next);
-    setCopyState(null);
     writeSetting(PRICES_KEY, next ? '1' : '0');
   };
 
@@ -184,16 +183,6 @@ export default function CollectionValueReport({ uid, collectionData, onClose, lo
     );
   };
 
-  const copyText = async () => {
-    const text = toTradeText(lines, { showPrices });
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopyState({ kind: 'copied', count: summary.cards });
-    } catch {
-      // No clipboard (blocked, insecure context): show it to select by hand.
-      setCopyState({ kind: 'fallback', text });
-    }
-  };
 
   return createPortal(
     <div
@@ -247,9 +236,7 @@ export default function CollectionValueReport({ uid, collectionData, onClose, lo
             )}
 
             <div className="flex flex-wrap gap-2 print:hidden">
-              <button type="button" onClick={copyText} disabled={noExport} className="disabled:opacity-40 flex items-center gap-1 px-3 py-2 rounded-lg bg-gray-800 text-sm">
-                <ClipboardCopy className="w-4 h-4" /> Copy as text
-              </button>
+              <CopyTextButton text={tradeText} count={summary.cards} fallbackLabel="Trade list" disabled={noExport} />
               <button type="button" onClick={exportCsv} disabled={noExport} className="disabled:opacity-40 flex items-center gap-1 px-3 py-2 rounded-lg bg-gray-800 text-sm">
                 <Download className="w-4 h-4" /> Download CSV
               </button>
@@ -262,18 +249,6 @@ export default function CollectionValueReport({ uid, collectionData, onClose, lo
                 </button>
               )}
             </div>
-
-            {copyState?.kind === 'copied' && (
-              <p role="status" className="text-sm text-green-400 print:hidden">Copied {copyState.count} cards</p>
-            )}
-            {copyState?.kind === 'fallback' && (
-              <div className="space-y-1 print:hidden">
-                <p className="text-xs text-gray-400">Select and copy:</p>
-                <textarea readOnly aria-label="Trade list" value={copyState.text} rows={6}
-                  onFocus={(e) => e.target.select()}
-                  className="w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs font-mono" />
-              </div>
-            )}
 
             <button
               type="button"

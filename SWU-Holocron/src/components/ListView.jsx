@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, ClipboardCopy, Download, FileText, Link2, Minus, Plus, Share2, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Download, FileText, Link2, Minus, Plus, Share2, Trash2, X } from 'lucide-react';
 import CardPickerModal from './CardPickerModal';
+import CopyTextButton from './CopyTextButton';
 import { ListService } from '../services/ListService';
 import { loadListPrices } from '../services/listLoader';
 import { downloadText } from '../utils/downloadText';
@@ -21,7 +22,6 @@ export default function ListView({ uid, list, collectionData, onBack, onDeleted,
   const [prices, setPrices] = useState(null);
   const [priceError, setPriceError] = useState(false);
   const [saveError, setSaveError] = useState(false);
-  const [copyState, setCopyState] = useState(null);
   const [printing, setPrinting] = useState(false);
   const [picking, setPicking] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -53,6 +53,7 @@ export default function ListView({ uid, list, collectionData, onBack, onDeleted,
 
   const lines = useMemo(() => listLines(items, prices ?? {}), [items, prices]);
   const summary = useMemo(() => listSummary(lines), [lines]);
+  const listText = useMemo(() => toListText({ kind: list.kind, name: savedName }, lines, { showPrices }), [list.kind, savedName, lines, showPrices]);
 
   const publicBody = () => toPublicList({ kind: list.kind, name: savedName }, lines, { showPrices, now: Date.now() });
 
@@ -73,7 +74,6 @@ export default function ListView({ uid, list, collectionData, onBack, onDeleted,
   }, [publicCode, lines, savedName, showPrices]); // eslint-disable-line react-hooks/exhaustive-deps -- publish on content change
 
   const save = async (patch) => {
-    setCopyState(null);
     const res = await service.updateList(uid, list.id, patch);
     setSaveError(Boolean(res?.error));
   };
@@ -103,15 +103,6 @@ export default function ListView({ uid, list, collectionData, onBack, onDeleted,
   const togglePrices = () => { const next = !showPrices; setShowPrices(next); save({ showPrices: next }); };
 
   const current = { kind: list.kind, name: savedName };
-  const copyText = async () => {
-    const text = toListText(current, lines, { showPrices });
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopyState({ kind: 'copied', count: summary.cards });
-    } catch {
-      setCopyState({ kind: 'fallback', text });
-    }
-  };
   const exportCsv = () => {
     const date = new Date().toISOString().slice(0, 10);
     downloadText(toListCsv(current, lines, { showPrices }), `${slug(savedName)}-${date}.csv`);
@@ -172,7 +163,7 @@ export default function ListView({ uid, list, collectionData, onBack, onDeleted,
           Show prices
         </button>
         {wants && <button type="button" onClick={() => setPicking(true)} className={btn}><Plus className="w-4 h-4" /> Add card</button>}
-        <button type="button" onClick={copyText} disabled={lines.length === 0} className={`${btn} disabled:opacity-40`}><ClipboardCopy className="w-4 h-4" /> Copy as text</button>
+        <CopyTextButton text={listText} count={summary.cards} fallbackLabel="List text" disabled={lines.length === 0} />
         <button type="button" onClick={exportCsv} disabled={lines.length === 0} className={`${btn} disabled:opacity-40`}><Download className="w-4 h-4" /> Download CSV</button>
         <button type="button" onClick={() => setPrinting(true)} disabled={lines.length === 0} className={`${btn} disabled:opacity-40`}><FileText className="w-4 h-4" /> Save as PDF</button>
       </div>
@@ -199,15 +190,6 @@ export default function ListView({ uid, list, collectionData, onBack, onDeleted,
         )}
         {shareError && <p role="alert" className="text-sm text-red-400">Couldn&apos;t update sharing — check your connection.</p>}
       </div>
-
-      {copyState?.kind === 'copied' && <p role="status" className="text-sm text-green-400 print:hidden">Copied {copyState.count} cards</p>}
-      {copyState?.kind === 'fallback' && (
-        <div className="space-y-1 print:hidden">
-          <p className="text-xs text-gray-400">Select and copy:</p>
-          <textarea readOnly aria-label="List text" value={copyState.text} rows={6} onFocus={(e) => e.target.select()}
-            className="w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs font-mono" />
-        </div>
-      )}
 
       <div className="flex gap-4 text-sm">
         <span>Cards <strong data-testid="list-cards">{summary.cards}</strong></span>
