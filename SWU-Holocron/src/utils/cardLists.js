@@ -157,7 +157,11 @@ export function toPublicList(list, lines, { showPrices, now }) {
     lines: lines.map((l) => {
       const out = { set: l.set, number: l.number, name: l.name, subtitle: l.subtitle ?? null, finish: l.finish, qty: l.qty };
       if (l.note) out.note = l.note;
-      if (showPrices && l.unitPrice !== null) out.unitPrice = l.unitPrice;
+      if (l.type) out.type = l.type;
+      if (showPrices && l.unitPrice !== null) {
+        out.unitPrice = l.unitPrice;
+        if (l.priceIsFallback) out.priceIsFallback = true;
+      }
       return out;
     }),
     cards: s.cards,
@@ -173,7 +177,7 @@ export function toPublicList(list, lines, { showPrices, now }) {
 export const publicLines = (doc) => (doc?.lines ?? []).map((l, i) => {
   const unitPrice = typeof l.unitPrice === 'number' ? l.unitPrice : null;
   return {
-    key: `${i}`, ...l, subtitle: l.subtitle ?? null, unitPrice, priceIsFallback: false,
+    key: `${i}`, ...l, subtitle: l.subtitle ?? null, unitPrice, priceIsFallback: Boolean(l.priceIsFallback),
     value: unitPrice === null ? null : cents(unitPrice * l.qty),
   };
 });

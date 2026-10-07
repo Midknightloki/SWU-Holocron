@@ -66,14 +66,19 @@ export default function PublicListView({ code, service = ListService }) {
                 <li key={l.key} data-testid="public-row" className="flex items-center gap-3 py-2">
                   <img src={CardService.getCardImage(l.set, l.number)} alt="" loading="lazy"
                     onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }}
-                    className="w-10 h-14 object-cover rounded bg-gray-800 shrink-0" />
+                    // Leaders and bases are landscape cards, as in the binder.
+                    className={`${l.type === 'Leader' || l.type === 'Base' ? 'w-14 h-10' : 'w-10 h-14'} object-cover rounded bg-gray-800 shrink-0`} />
                   <span className="flex-1 min-w-0">
-                    <span className="block font-medium truncate">{l.name}{l.subtitle ? `, ${l.subtitle}` : ''}</span>
+                    <span className="block font-medium break-words">{l.name}{l.subtitle ? `, ${l.subtitle}` : ''}</span>
                     <span className="block text-xs text-gray-500">{l.set} {l.number} · {FINISH_LABEL[l.finish] ?? l.finish}</span>
-                    {l.note && <span className="block text-xs text-gray-400">{l.note}</span>}
+                    {l.note && <span className="block text-xs text-gray-400 break-words">{l.note}</span>}
                   </span>
-                  {showPrices && l.unitPrice !== null && <span className="text-xs text-gray-400">{money(l.unitPrice)}</span>}
-                  <span className="w-8 text-right font-bold">×{l.qty}</span>
+                  {showPrices && l.unitPrice !== null && (
+                    <span className="text-xs text-gray-400 whitespace-nowrap" title={l.priceIsFallback ? 'Priced from the other finish' : undefined}>
+                      {money(l.unitPrice)}{l.priceIsFallback ? ' ↺' : ''}
+                    </span>
+                  )}
+                  <span className="min-w-[3rem] text-right font-bold whitespace-nowrap">×{l.qty}</span>
                 </li>
               ))}
             </ul>

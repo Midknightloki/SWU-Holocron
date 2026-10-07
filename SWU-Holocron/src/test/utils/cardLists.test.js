@@ -138,10 +138,17 @@ describe('public copy', () => {
     expect(body).toEqual({
       kind: 'wants', name: 'Gaps', showPrices: true, cards: 3, value: 3, pricesAsOf: 99,
       lines: [
-        { set: 'SOR', number: '005', name: 'Luke', subtitle: null, finish: 'foil', qty: 1 },
-        { set: 'SOR', number: '010', name: 'Darth Vader', subtitle: 'Dark Lord of the Sith', finish: 'any', qty: 2, note: 'any art', unitPrice: 1.5 },
+        { set: 'SOR', number: '005', name: 'Luke', subtitle: null, finish: 'foil', qty: 1, type: 'Leader' },
+        { set: 'SOR', number: '010', name: 'Darth Vader', subtitle: 'Dark Lord of the Sith', finish: 'any', qty: 2, note: 'any art', type: 'Leader', unitPrice: 1.5 },
       ],
     });
+  });
+
+  it('marks fallback prices only on priced lines, and keeps them on the way back', () => {
+    const body = toPublicList({ kind: 'wants', name: 'G' }, listLines(items, { SOR_010_any: { market: 1.5, isFallback: true } }), { showPrices: true, now: 1 });
+    expect(body.lines[1].priceIsFallback).toBe(true);
+    expect('priceIsFallback' in body.lines[0]).toBe(false);
+    expect(publicLines(body)[1].priceIsFallback).toBe(true);
   });
 
   it('drops every price when prices are hidden', () => {
