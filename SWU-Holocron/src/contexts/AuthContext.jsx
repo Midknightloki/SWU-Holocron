@@ -1,7 +1,8 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useReducer, useState, useCallback } from 'react';
 import { GoogleAuthProvider, signInAnonymously, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db, isConfigured, APP_ID } from '../firebase';
+import { upgradeGuest } from '../services/guestUpgrade';
 
 export const AuthContext = createContext(null);
 
@@ -13,6 +14,9 @@ export const AuthProvider = ({ children }) => {
   const [isContributor, setIsContributor] = useState(false);
   const [isPro, setIsPro] = useState(false);
   const [adminLoading, setAdminLoading] = useState(false);
+  // The outcome of a guest signing in with Google, for the app to show.
+  const [upgrade, setUpgrade] = useState(null);
+  const [, rerender] = useReducer((n) => n + 1, 0);
 
   useEffect(() => {
     if (!isConfigured) {
@@ -79,6 +83,22 @@ export const AuthProvider = ({ children }) => {
     try {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
+      if (auth.currentUser?.isAnonymous) {
+        try {
+          const res = await upgradeGuest({ auth, provider });
+          const { user: upgraded, ...outcome } = res;
+          setUpgrade(outcome);
+          // Linking keeps the same user object (no auth-state event): re-render
+          // so isAnonymous reads false everywhere.
+          if (res.kind === 'linked') rerender();
+          return upgraded;
+        } catch (err) {
+          if (err?.code !== 'auth/popup-closed-by-user' && err?.code !== 'auth/cancelled-popup-request') {
+            setUpgrade({ kind: 'error', message: err?.message ?? 'Sign-in failed' });
+          }
+          throw err;
+        }
+      }
       const result = await signInWithPopup(auth, provider);
       return result.user;
     } catch (err) {
@@ -130,6 +150,8 @@ export const AuthProvider = ({ children }) => {
     canScan: isAdmin || isPro,
     adminLoading,
     loginWithGoogle,
+    upgrade,
+    dismissUpgrade: () => setUpgrade(null),
     loginAnonymously,
     logout,
     isConfigured
