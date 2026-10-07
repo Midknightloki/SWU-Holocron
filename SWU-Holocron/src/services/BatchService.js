@@ -66,9 +66,9 @@ export const BatchService = {
     }
   },
 
-  async closeBatch(uid, id) {
+  async closeBatch(uid, id, extra = {}) {
     try {
-      await updateDoc(batchRef(uid, id), { closedAt: Date.now() });
+      await updateDoc(batchRef(uid, id), { ...extra, closedAt: Date.now() });
       return { ok: true };
     } catch (err) {
       return fail(err);
