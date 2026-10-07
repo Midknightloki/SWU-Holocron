@@ -11,7 +11,7 @@ import { CardCache } from './services/cardCache';
 import { loadSet } from './services/setLoader';
 import { DeckService } from './services/DeckService';
 import { collection, doc, onSnapshot, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
-import { parseCSV, generateCSV } from './utils/csvParser';
+import { generateCSV } from './utils/csvParser';
 import { getCollectionId, reconstructCardsFromCollection, isHorizontalCard } from './utils/collectionHelpers';
 import { useAuth } from './contexts/AuthContext';
 import { MigrationService } from './services/MigrationService';
@@ -36,6 +36,9 @@ import { showsSetPicker } from './utils/viewChrome';
 import MobileNav from './components/MobileNav';
 import CollectionValueReport from './components/CollectionValueReport';
 import SavedListsPage from './components/SavedListsPage';
+import ImportDialog from './components/ImportDialog';
+import { downloadText } from './utils/downloadText';
+import BatchReport from './components/BatchReport';
 
 // Version info
 const VERSION = __APP_VERSION__;
@@ -77,7 +80,7 @@ const getCollectionRef = (user, legacySyncCode, useLegacyPath) => {
 };
 
 export default function App() {
-  const { user, isAdmin, isContributor, canScan, loading: authLoading, loginWithGoogle, loginAnonymously, logout, error: authErrorFromContext } = useAuth();
+  const { user, isAdmin, isContributor, canScan, loading: authLoading, loginWithGoogle, loginAnonymously, logout, error: authErrorFromContext, upgrade, dismissUpgrade } = useAuth();
 
   // Set and Card State
   const [activeSet, setActiveSet] = useState('SOR');
@@ -145,7 +148,9 @@ export default function App() {
   const [batchesRefresh, setBatchesRefresh] = useState(0);
   // Handed only to users who can scan; views render no scan button without it.
   const openScanner = canScan ? () => setIsScannerOpen(true) : undefined;
-  const [importing, setImporting] = useState(false);
+  // The CSV being imported (the Import cards dialog), and a batch report to show.
+  const [importFile, setImportFile] = useState(null);
+  const [reportBatchId, setReportBatchId] = useState(null);
   const [activeDeck, setActiveDeck] = useState(null);
   const [sortBy, setSortBy] = useState('number'); // 'number' | 'cost' | 'recent'
   const [sortDir, setSortDir] = useState('asc');   // 'asc' | 'desc'
@@ -184,6 +189,14 @@ export default function App() {
     } catch (e) {
       console.error('Guest login failed:', e);
       setAuthError(e?.message || 'Guest mode failed. Please try again.');
+    }
+  };
+
+  const handleUpgrade = async () => {
+    try {
+      await loginWithGoogle();
+    } catch {
+      // AuthContext records anything worth showing in `upgrade`.
     }
   };
 
@@ -372,72 +385,10 @@ export default function App() {
 
   // CSV Import Handler
   // @environment:web-file-api
-  const handleFileUpload = async (event) => {
+  const handleFileUpload = (event) => {
     const file = event.target.files?.[0];
-    if (!file) return;
-
-    setImporting(true);
-    try {
-      const text = await file.text();
-      const { items, errors } = parseCSV(text);
-
-      if (errors.length > 0) {
-        console.warn('CSV parsing warnings:', errors);
-      }
-
-      if (items.length === 0) {
-        alert('No valid items found in CSV file');
-        return;
-      }
-
-      // Batch write to Firestore
-      const ref = getCollectionRef(user, legacySyncCode, useLegacyPath);
-      if (!ref) {
-        alert('Not connected to cloud storage');
-        return;
-      }
-
-      let batch = writeBatch(db);
-      let batchCount = 0;
-
-      for (const item of items) {
-        const collId = getCollectionId(item.set, item.number, item.isFoil);
-        const docRef = doc(ref, collId);
-
-        batch.set(docRef, {
-          quantity: item.quantity,
-          set: item.set,
-          number: item.number,
-          name: item.name,
-          isFoil: item.isFoil,
-          timestamp: Date.now()
-        }, { merge: true });
-
-        batchCount++;
-
-        // Firestore batch limit is 500, commit at 400 to be safe
-        if (batchCount >= 400) {
-          await batch.commit();
-          batch = writeBatch(db); // Create new batch after commit
-          batchCount = 0;
-        }
-      }
-
-      // Commit remaining
-      if (batchCount > 0) {
-        await batch.commit();
-      }
-
-      alert(`Successfully imported ${items.length} items${errors.length > 0 ? ` with ${errors.length} warnings` : ''}`);
-    } catch (error) {
-      console.error('Import error:', error);
-      alert(`Import failed: ${error.message}`);
-    } finally {
-      setImporting(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (file) setImportFile(file);
   };
 
   // CSV Export Handler
@@ -737,6 +688,11 @@ export default function App() {
                         Redeem invite
                       </button>
                     )}
+                    {user.isAnonymous && (
+                      <button onClick={handleUpgrade} className="text-yellow-400 hover:text-yellow-300 text-[11px] font-semibold">
+                        Sign in with Google
+                      </button>
+                    )}
                     <button
                       onClick={handleLogout}
                       className="text-gray-400 hover:text-white text-[11px] font-semibold"
@@ -913,7 +869,7 @@ export default function App() {
                 collectionData={collectionData}
                 onImport={() => fileInputRef.current?.click()}
                 onExport={handleExport}
-                isImporting={importing}
+                isImporting={Boolean(importFile)}
                 hasDataToExport={Object.keys(collectionData).length > 0}
                 onUpdateQuantity={handleGridQuantityChange}
                 onCardClick={setSelectedCard}
@@ -1128,6 +1084,37 @@ export default function App() {
         </ErrorBoundary>
       )}
 
+      {importFile && (
+        <ImportDialog
+          file={importFile}
+          uid={useLegacyPath ? undefined : user?.uid}
+          collectionRef={getCollectionRef(user, legacySyncCode, useLegacyPath)}
+          collectionData={collectionData}
+          onClose={() => setImportFile(null)}
+          onImported={(batchId) => { setImportFile(null); setBatchesRefresh((n) => n + 1); setReportBatchId(batchId); }}
+        />
+      )}
+      {reportBatchId && user?.uid && (
+        <BatchReport uid={user.uid} batchId={reportBatchId} onClose={() => setReportBatchId(null)} onDeleted={() => { setReportBatchId(null); setBatchesRefresh((n) => n + 1); }} />
+      )}
+      {upgrade && (
+        <div role="status" className="fixed top-3 left-1/2 -translate-x-1/2 z-[95] w-[calc(100%-2rem)] max-w-md rounded-xl bg-gray-900 border border-gray-700 p-3 text-sm text-gray-100 shadow-xl space-y-2">
+          <p>
+            {upgrade.kind === 'linked' && 'Signed in with Google — your collection is kept.'}
+            {upgrade.kind === 'merged' && `Signed in — your guest collection is now in this account (${upgrade.cards} cards). Guest decks and lists weren't moved.`}
+            {upgrade.kind === 'copy-failed' && "Signed in, but your guest cards couldn't be copied."}
+            {upgrade.kind === 'error' && `Google sign-in failed: ${upgrade.message}`}
+          </p>
+          <div className="flex gap-2 justify-end">
+            {upgrade.kind === 'copy-failed' && (
+              <button type="button" onClick={() => downloadText(upgrade.csv, 'guest-collection.csv')} className="px-3 py-1.5 rounded-lg bg-yellow-500 text-black font-semibold">
+                Download guest cards (CSV)
+              </button>
+            )}
+            <button type="button" onClick={dismissUpgrade} className="px-3 py-1.5 rounded-lg bg-gray-800">Dismiss</button>
+          </div>
+        </div>
+      )}
       {isMarketOpen && (
         <CollectionValueReport uid={user?.uid} collectionData={collectionData} onClose={() => setIsMarketOpen(false)} />
       )}
@@ -1142,6 +1129,7 @@ export default function App() {
           onNavigate={setView}
           onSearch={() => setIsSearchOpen(true)}
           onLogout={handleLogout}
+          onUpgrade={handleUpgrade}
           onRedeem={() => setIsRedeemOpen(true)}
           onForceSync={() => loadSetData(true)}
           syncing={loading}

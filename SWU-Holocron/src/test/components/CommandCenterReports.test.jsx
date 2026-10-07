@@ -18,8 +18,10 @@ vi.mock('../../contexts/AuthContext', () => ({
   useAuth: () => ({
     user: mockAuthState.user,
     loading: mockAuthState.loading,
-    loginWithGoogle: vi.fn(),
+    loginWithGoogle: mockAuthState.loginWithGoogle ?? vi.fn(),
     loginAnonymously: vi.fn(),
+    upgrade: mockAuthState.upgrade ?? null,
+    dismissUpgrade: mockAuthState.dismissUpgrade ?? vi.fn(),
     logout: vi.fn(),
     error: null,
     isConfigured: true,
@@ -117,4 +119,32 @@ describe('Market reports and saved lists', () => {
     await user.click(screen.getByText('close-saved'));
     expect(screen.queryByRole('dialog', { name: 'Saved reports/lists' })).not.toBeInTheDocument();
   });
+
+describe('Guest sign-in with Google', () => {
+  it('offers a signed-in guest Google sign-in from the header', async () => {
+    const loginWithGoogle = vi.fn(async () => ({}));
+    mockAuthState = { user: { uid: 'g1', isAnonymous: true }, loading: false, loginWithGoogle };
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: 'Sign in with Google' }, { timeout: 5000 }));
+    expect(loginWithGoogle).toHaveBeenCalled();
+  });
+
+  it('shows the guest-merge notice and offers the CSV when copying failed', async () => {
+    const dismissUpgrade = vi.fn();
+    mockAuthState = { ...mockAuthState, upgrade: { kind: 'copy-failed', csv: 'Set,Number,SOR,010' }, dismissUpgrade };
+    const user = userEvent.setup();
+    render(<App />);
+    expect(await screen.findByText(/guest cards couldn't be copied/, {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Download guest cards (CSV)' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(dismissUpgrade).toHaveBeenCalled();
+  });
+
+  it('says a merge brought the guest collection across', async () => {
+    mockAuthState = { ...mockAuthState, upgrade: { kind: 'merged', cards: 12 } };
+    render(<App />);
+    expect(await screen.findByText(/guest collection is now in this account \(12 cards\)/, {}, { timeout: 5000 })).toBeInTheDocument();
+  });
+});
 });

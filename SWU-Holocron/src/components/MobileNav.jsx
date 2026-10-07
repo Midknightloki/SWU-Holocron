@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LayoutGrid, BarChart3, Swords, Search, User, FileText, Shield, Ticket, RefreshCw, LogOut, Cloud, X } from 'lucide-react';
+import { LayoutGrid, BarChart3, Swords, Search, User, FileText, Shield, Ticket, RefreshCw, LogOut, LogIn, Cloud, X } from 'lucide-react';
 
 /**
  * Phone navigation: a bottom tab bar for the main destinations (thumb reach,
@@ -16,7 +16,7 @@ const TABS = [
 const TAB = 'flex-1 flex flex-col items-center justify-center gap-0.5 py-1.5 text-[11px] font-medium';
 
 export default function MobileNav({
-  view, onNavigate, onSearch, onLogout, onRedeem, onForceSync,
+  view, onNavigate, onSearch, onLogout, onRedeem, onForceSync, onUpgrade,
   user, isAdmin = false, isContributor = false, dbLabel, syncing = false,
 }) {
   const [meOpen, setMeOpen] = useState(false);
@@ -79,6 +79,11 @@ export default function MobileNav({
                 <X size={18} />
               </button>
             </div>
+            {user?.isAnonymous && onUpgrade && (
+              <button type="button" onClick={act(onUpgrade)} className={sheetItem}>
+                <LogIn size={18} aria-hidden="true" /> Sign in with Google
+              </button>
+            )}
             <button type="button" onClick={() => go('submit')} className={sheetItem}>
               <FileText size={18} aria-hidden="true" /> Submit missing card
             </button>

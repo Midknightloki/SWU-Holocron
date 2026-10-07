@@ -99,4 +99,11 @@ describe('BatchService', () => {
     expect(cards.SOR_010_std.qty).toBe(2);
     expect(summarize(cards)).toEqual({ cards: 2, unique: 1, newUnique: 1, valueAtAdd: 10 });
   });
+
+  it('closes a batch with extra fields', async () => {
+    store.docs.set(PATH, { name: 'x' });
+    expect(await BatchService.closeBatch('u1', 'b1', { source: { type: 'import' } })).toEqual({ ok: true });
+    expect(store.docs.get(PATH)).toMatchObject({ source: { type: 'import' } });
+    expect(store.docs.get(PATH).closedAt).toEqual(expect.any(Number));
+  });
 });

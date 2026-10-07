@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ClipboardCopy, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import CopyTextButton from './CopyTextButton';
 import { ListService } from '../services/ListService';
 import { CardService } from '../services/CardService';
 import { FINISH_LABEL, listSummary, publicLines, toListText } from '../utils/cardLists';
@@ -10,7 +11,6 @@ const HEADING = { trade: 'Trade list', wants: 'Wants list' };
 /** A shared trade or wants list, for anyone with the link. No sign-in. */
 export default function PublicListView({ code, service = ListService }) {
   const [state, setState] = useState({ status: 'loading' });
-  const [copyState, setCopyState] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -32,15 +32,7 @@ export default function PublicListView({ code, service = ListService }) {
     if (heading) document.title = `${heading} — SWU Holocron`;
   }, [heading]);
 
-  const copyText = async () => {
-    const text = toListText(doc, lines, { showPrices });
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopyState({ kind: 'copied' });
-    } catch {
-      setCopyState({ kind: 'fallback', text });
-    }
-  };
+  const text = useMemo(() => (doc ? toListText(doc, lines, { showPrices }) : ''), [doc, lines, showPrices]);
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
@@ -65,28 +57,28 @@ export default function PublicListView({ code, service = ListService }) {
               )}
             </header>
 
-            <button type="button" onClick={copyText} className="flex items-center gap-1 px-3 py-2 rounded-lg bg-gray-800 text-sm">
-              <ClipboardCopy className="w-4 h-4" /> Copy as text
-            </button>
-            {copyState?.kind === 'copied' && <p role="status" className="text-sm text-green-400">Copied</p>}
-            {copyState?.kind === 'fallback' && (
-              <textarea readOnly aria-label="List text" value={copyState.text} rows={6} onFocus={(e) => e.target.select()}
-                className="w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs font-mono" />
-            )}
+            <div className="flex flex-wrap gap-2">
+              <CopyTextButton text={text} fallbackLabel="List text" />
+            </div>
 
             <ul className="divide-y divide-gray-800">
               {lines.map((l) => (
                 <li key={l.key} data-testid="public-row" className="flex items-center gap-3 py-2">
                   <img src={CardService.getCardImage(l.set, l.number)} alt="" loading="lazy"
                     onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }}
-                    className="w-10 h-14 object-cover rounded bg-gray-800 shrink-0" />
+                    // Leaders and bases are landscape cards, as in the binder.
+                    className={`${l.type === 'Leader' || l.type === 'Base' ? 'w-14 h-10' : 'w-10 h-14'} object-cover rounded bg-gray-800 shrink-0`} />
                   <span className="flex-1 min-w-0">
-                    <span className="block font-medium truncate">{l.name}{l.subtitle ? `, ${l.subtitle}` : ''}</span>
+                    <span className="block font-medium break-words">{l.name}{l.subtitle ? `, ${l.subtitle}` : ''}</span>
                     <span className="block text-xs text-gray-500">{l.set} {l.number} · {FINISH_LABEL[l.finish] ?? l.finish}</span>
-                    {l.note && <span className="block text-xs text-gray-400">{l.note}</span>}
+                    {l.note && <span className="block text-xs text-gray-400 break-words">{l.note}</span>}
                   </span>
-                  {showPrices && l.unitPrice !== null && <span className="text-xs text-gray-400">{money(l.unitPrice)}</span>}
-                  <span className="w-8 text-right font-bold">×{l.qty}</span>
+                  {showPrices && l.unitPrice !== null && (
+                    <span className="text-xs text-gray-400 whitespace-nowrap" title={l.priceIsFallback ? 'Priced from the other finish' : undefined}>
+                      {money(l.unitPrice)}{l.priceIsFallback ? ' ↺' : ''}
+                    </span>
+                  )}
+                  <span className="min-w-[3rem] text-right font-bold whitespace-nowrap">×{l.qty}</span>
                 </li>
               ))}
             </ul>

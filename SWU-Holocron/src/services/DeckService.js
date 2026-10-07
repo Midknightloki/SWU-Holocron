@@ -34,6 +34,25 @@ import {
 // `publicDecks/{slug}` is 4 segments, a valid document path. The previous
 // 'public','decks',slug was 5 segments -- a collection -- so doc() threw before
 // Firestore was ever reached and public deck sharing had never worked.
+/**
+ * The shared copy of a deck, trimmed to what firestore.rules accept (name up
+ * to 200 characters, description 2000, 20 tags): a longer one would make the
+ * share fail as a permission error.
+ */
+export const toPublicDeckBody = (deck, deckId, uid) => ({
+  deckId,
+  uid,
+  name: String(deck.name ?? '').slice(0, 200),
+  description: String(deck.description || '').slice(0, 2000),
+  leaderId: deck.leaderId || null,
+  baseId: deck.baseId || null,
+  cards: deck.cards || {},
+  aspects: deck.aspects || [],
+  format: deck.format || 'Premier',
+  tags: (deck.tags || []).slice(0, 20),
+  totalCards: deck.totalCards || 0,
+});
+
 const publicDeckRef = (slug) =>
   doc(db, 'artifacts', APP_ID, 'publicDecks', slug);
 
@@ -368,20 +387,7 @@ export const DeckService = {
 
     const batch = writeBatch(db);
 
-    batch.set(publicDeckRef(slug), {
-      deckId,
-      uid,
-      name: deck.name,
-      description: deck.description || '',
-      leaderId: deck.leaderId || null,
-      baseId: deck.baseId || null,
-      cards: deck.cards || {},
-      aspects: deck.aspects || [],
-      format: deck.format || 'Premier',
-      tags: deck.tags || [],
-      totalCards: deck.totalCards || 0,
-      publishedAt: serverTimestamp(),
-    });
+    batch.set(publicDeckRef(slug), { ...toPublicDeckBody(deck, deckId, uid), publishedAt: serverTimestamp() });
 
     batch.update(deckRef(uid, deckId), { publicSlug: slug });
 

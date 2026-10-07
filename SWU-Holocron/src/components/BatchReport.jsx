@@ -260,6 +260,20 @@ export default function BatchReport({ uid, batchId, onClose, onDeleted }) {
       {report.newCards.length > 0 && <CardList title="New to your collection" lines={report.newCards} testId="new-cards" />}
       {report.otherFinish.length > 0 && <CardList title="Priced from the other finish" lines={report.otherFinish} testId="other-finish" />}
       {report.unpriced.length > 0 && <CardList title="No price data" lines={report.unpriced} testId="unpriced" price={false} />}
+      {batch.reductions?.length > 0 && (
+        <section className="break-inside-avoid">
+          <h3 className="text-sm font-semibold text-gray-300 mb-1 print:text-black">Quantities lowered</h3>
+          <ul data-testid="reductions" className="text-sm divide-y divide-gray-800 print:divide-gray-200">
+            {batch.reductions.map((r) => (
+              <li key={r.id} className="py-1 flex gap-2">
+                <span className="text-gray-500 w-20 flex-shrink-0">{r.set} {r.number}</span>
+                <span className="flex-1 min-w-0 break-words">{r.name}{r.isFoil ? ' (foil)' : ''}</span>
+                <span>{r.from} → {r.to}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </>,
   );
 }

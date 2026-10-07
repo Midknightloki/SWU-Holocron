@@ -93,17 +93,31 @@ service cloud.firestore {
     // `public/decks/{slug}` was 5 segments — a collection path — so doc() threw
     // before rules were ever consulted and sharing had never worked.
     // ---------------------------------------------------------------------
+    // Shared decks: known fields, bounded size. No slug-format check, so
+    // every link already shared keeps working.
+    function isPublicDeckBody() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['deckId', 'uid', 'name', 'description', 'leaderId', 'baseId', 'cards',
+                               'aspects', 'format', 'tags', 'totalCards', 'publishedAt'])
+        && d.name is string && d.name.size() <= 200
+        && (!('description' in d) || (d.description is string && d.description.size() <= 2000))
+        && (!('cards' in d) || (d.cards is map && d.cards.size() <= 200))
+        && (!('tags' in d) || (d.tags is list && d.tags.size() <= 20));
+    }
+
     match /artifacts/{appId}/publicDecks/{slug} {
       // Anyone with the link; never a listing of every shared deck.
       allow get: if true;
       allow list: if false;
       allow create: if isSignedIn()
-        && request.resource.data.uid == request.auth.uid;
+        && request.resource.data.uid == request.auth.uid
+        && isPublicDeckBody();
       // Update needs the existing owner too: checking only the new data let
       // any signed-in user take over a shared deck by writing their own uid.
       allow update: if isSignedIn()
         && resource.data.uid == request.auth.uid
-        && request.resource.data.uid == request.auth.uid;
+        && request.resource.data.uid == request.auth.uid
+        && isPublicDeckBody();
       allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
     }
 
