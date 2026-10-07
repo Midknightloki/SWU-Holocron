@@ -37,6 +37,7 @@ import MobileNav from './components/MobileNav';
 import CollectionValueReport from './components/CollectionValueReport';
 import SavedListsPage from './components/SavedListsPage';
 import ImportDialog from './components/ImportDialog';
+import { downloadText } from './utils/downloadText';
 import BatchReport from './components/BatchReport';
 
 // Version info
@@ -79,7 +80,7 @@ const getCollectionRef = (user, legacySyncCode, useLegacyPath) => {
 };
 
 export default function App() {
-  const { user, isAdmin, isContributor, canScan, loading: authLoading, loginWithGoogle, loginAnonymously, logout, error: authErrorFromContext } = useAuth();
+  const { user, isAdmin, isContributor, canScan, loading: authLoading, loginWithGoogle, loginAnonymously, logout, error: authErrorFromContext, upgrade, dismissUpgrade } = useAuth();
 
   // Set and Card State
   const [activeSet, setActiveSet] = useState('SOR');
@@ -188,6 +189,14 @@ export default function App() {
     } catch (e) {
       console.error('Guest login failed:', e);
       setAuthError(e?.message || 'Guest mode failed. Please try again.');
+    }
+  };
+
+  const handleUpgrade = async () => {
+    try {
+      await loginWithGoogle();
+    } catch {
+      // AuthContext records anything worth showing in `upgrade`.
     }
   };
 
@@ -679,6 +688,11 @@ export default function App() {
                         Redeem invite
                       </button>
                     )}
+                    {user.isAnonymous && (
+                      <button onClick={handleUpgrade} className="text-yellow-400 hover:text-yellow-300 text-[11px] font-semibold">
+                        Sign in with Google
+                      </button>
+                    )}
                     <button
                       onClick={handleLogout}
                       className="text-gray-400 hover:text-white text-[11px] font-semibold"
@@ -1083,6 +1097,24 @@ export default function App() {
       {reportBatchId && user?.uid && (
         <BatchReport uid={user.uid} batchId={reportBatchId} onClose={() => setReportBatchId(null)} onDeleted={() => { setReportBatchId(null); setBatchesRefresh((n) => n + 1); }} />
       )}
+      {upgrade && (
+        <div role="status" className="fixed top-3 left-1/2 -translate-x-1/2 z-[95] w-[calc(100%-2rem)] max-w-md rounded-xl bg-gray-900 border border-gray-700 p-3 text-sm text-gray-100 shadow-xl space-y-2">
+          <p>
+            {upgrade.kind === 'linked' && 'Signed in with Google — your collection is kept.'}
+            {upgrade.kind === 'merged' && `Signed in — your guest collection is now in this account (${upgrade.cards} cards). Guest decks and lists weren't moved.`}
+            {upgrade.kind === 'copy-failed' && "Signed in, but your guest cards couldn't be copied."}
+            {upgrade.kind === 'error' && `Google sign-in failed: ${upgrade.message}`}
+          </p>
+          <div className="flex gap-2 justify-end">
+            {upgrade.kind === 'copy-failed' && (
+              <button type="button" onClick={() => downloadText(upgrade.csv, 'guest-collection.csv')} className="px-3 py-1.5 rounded-lg bg-yellow-500 text-black font-semibold">
+                Download guest cards (CSV)
+              </button>
+            )}
+            <button type="button" onClick={dismissUpgrade} className="px-3 py-1.5 rounded-lg bg-gray-800">Dismiss</button>
+          </div>
+        </div>
+      )}
       {isMarketOpen && (
         <CollectionValueReport uid={user?.uid} collectionData={collectionData} onClose={() => setIsMarketOpen(false)} />
       )}
@@ -1097,6 +1129,7 @@ export default function App() {
           onNavigate={setView}
           onSearch={() => setIsSearchOpen(true)}
           onLogout={handleLogout}
+          onUpgrade={handleUpgrade}
           onRedeem={() => setIsRedeemOpen(true)}
           onForceSync={() => loadSetData(true)}
           syncing={loading}

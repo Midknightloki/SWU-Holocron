@@ -75,4 +75,18 @@ describe('MobileNav', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Log out' }));
     expect(p.onLogout).toHaveBeenCalled();
   });
+
+  it('offers guests a Google sign-in that keeps their collection', () => {
+    const onUpgrade = vi.fn();
+    render(<MobileNav {...props({ user: { isAnonymous: true }, onUpgrade })} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Me' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in with Google' }));
+    expect(onUpgrade).toHaveBeenCalled();
+  });
+
+  it('does not offer it to a Google user', () => {
+    render(<MobileNav {...props({ onUpgrade: vi.fn() })} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Me' }));
+    expect(screen.queryByRole('button', { name: 'Sign in with Google' })).not.toBeInTheDocument();
+  });
 });

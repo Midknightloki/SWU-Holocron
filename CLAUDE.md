@@ -151,7 +151,8 @@ first — that is the gate working.
 
 `publicDecks` and `publicLists` updates require the existing owner as well as
 the new data's uid: checking only the new uid let any signed-in user take over
-a shared deck. Running `npm run test:rules` locally needs JDK 21+ (the
+a shared deck. Writes to both are shape-checked (known fields, bounded size);
+`publicLists` codes must look app-made. Running `npm run test:rules` locally needs JDK 21+ (the
 emulator refuses older Java).
 
 ### Card data: four tiers, and a cache with no expiry
@@ -243,10 +244,20 @@ that identity is the browser's local storage. Clear site data, switch browsers o
 open the app on a phone and the account is gone — with the collection still
 sitting in Firestore, unreachable and never cleaned up.
 
-Signing in with Google afterwards does not rescue it. `loginWithGoogle` calls
-`signInWithPopup`, which issues a **different uid**; it does not call
-`linkWithPopup`, and nothing migrates the guest collection. So a guest who builds
-a collection and then signs in properly finds it empty.
+The way out is **Sign in with Google**, which a signed-in guest gets in the
+header and the phone Me sheet. `loginWithGoogle` sees an anonymous current user
+and calls `upgradeGuest` (`src/services/guestUpgrade.js`), which links the
+Google account to the guest (`linkWithPopup`): same uid, so the collection,
+decks, lists and batches all stay. Linking fires no auth-state event, so
+`AuthContext` forces a re-render for `isAnonymous` to read false. If that
+Google account already exists (`credential-already-in-use`), the guest's
+collection is read *first* -- it is unreadable once signed out of the guest --
+then the existing account is signed in with the credential from the error and
+the cards are added to it through `importToCollection` as a "Guest collection"
+batch. Guest decks, lists and batches are not moved in that case. A failed copy
+offers the guest cards as a CSV. `AuthContext.upgrade` carries the outcome and
+`App` shows it as a dismissible notice. A guest who clears site data before
+upgrading still loses the account.
 
 `isPro` is a third profile flag, protected in `firestore.rules` exactly like
 `isAdmin`/`isContributor` (Patreon is the planned automatic source).
@@ -267,9 +278,6 @@ at sign-in, so a user sees a change on their next app load; server checks
 Roles are never read for anonymous users (`if (u && !u.isAnonymous)`), and
 `redeemInviteCode` rejects them outright, so a guest cannot be a contributor or
 an admin.
-
-The fix, if this is picked up, is `linkWithPopup` when the current user is
-anonymous — which upgrades the account in place and keeps the uid.
 
 ### Card scanner
 
@@ -344,7 +352,12 @@ that cross-check is what keeps a misread number from adding the wrong card.
   any matched cards first, closes the record and opens its report
   (`BatchReport.jsx`, built by the pure `batchReport.js`); rows still in the
   list go into the next batch (`endBatch`). Reports are
-  listed under Saved reports/lists → Batches (`BatchesPanel`). Export is CSV
+  listed under Saved reports/lists → Batches (`BatchesPanel`). CSV imports are
+  batches too: **Import cards** (`ImportDialog`) asks Add (additive, like
+  scanning) or Replace (sets each card to the file's number) and then opens the
+  batch report (`importBatch.js`). A Replace batch holds only the increases;
+  decreases are stored as `reductions` and listed under "Quantities lowered".
+  A replace that changes nothing files no batch. Export is CSV
   (`batchCsv.js`) and PDF via the browser's print dialog — a print rule in
   `index.css` shows only `#batch-report`. Cards with no price data are listed,
   never counted as $0.
@@ -352,7 +365,8 @@ that cross-check is what keeps a misread number from adding the wrong card.
   creates every store (`cardSets`, `scanPhotos`). A store must never be
   created elsewhere: a module asking for a lower version than another has
   already opened fails with VersionError.
-- Commits are **additive** (`increment`), unlike CSV import, which overwrites.
+- Commits are **additive** (`increment`), unlike a CSV import in Replace mode,
+  which overwrites.
   Committed rows leave the draft after each 400-op chunk, so a retry after a
   mid-commit failure never double-counts.
 - The daily limit defaults to 1000 (`DEFAULT_SCAN_DAILY_LIMIT`) and is tuned
@@ -420,7 +434,10 @@ wants lists from collection gaps (`WantsFromGaps`: the Command Center's
 unique-title logic, missing titles or up to a playset), from a deck's Shop
 tab (**Save as wants list**), or Add card. Each list is edited in place
 (`ListView`: quantity, finish, note, rename) and exports as text, CSV and PDF;
-its Show prices choice is stored on the list.
+its Show prices choice is stored on the list. Copy as text is escaped and
+split for Discord's 2000-character limit (`discordText.js`, `CopyTextButton`:
+"Copy part 1 of N"), and list edits are saved together after an 800 ms pause
+(flushed on Back and unload).
 
 **Share link** publishes a list at `/list/<code>`: a self-contained copy at
 `publicLists/{code}` (`toPublicList`: no owner name, prices only with Show
