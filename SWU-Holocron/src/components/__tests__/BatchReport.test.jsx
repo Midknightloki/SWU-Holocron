@@ -42,6 +42,21 @@ describe('BatchReport', () => {
     expect(screen.getByTestId('unpriced')).toHaveTextContent('Battle Droid');
   });
 
+  it('lists quantities a Replace import lowered', async () => {
+    m.getBatch.mockResolvedValue({ ...BATCH, reductions: [{ id: 'SOR_020_std', set: 'SOR', number: '020', name: 'Luke', isFoil: false, from: 4, to: 1 }] });
+    renderReport();
+    const list = await screen.findByTestId('reductions');
+    expect(list).toHaveTextContent('SOR 020');
+    expect(list).toHaveTextContent('Luke');
+    expect(list).toHaveTextContent('4 → 1');
+  });
+
+  it('has no reductions section for an ordinary batch', async () => {
+    renderReport();
+    await screen.findByRole('heading', { name: 'eBay SOR box' });
+    expect(screen.queryByTestId('reductions')).not.toBeInTheDocument();
+  });
+
   it('renders straight under <body>, so printing can hide the rest of the app', async () => {
     renderReport();
     await screen.findByRole('heading', { name: 'eBay SOR box' });

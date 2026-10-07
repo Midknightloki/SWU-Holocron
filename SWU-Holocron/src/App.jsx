@@ -11,7 +11,7 @@ import { CardCache } from './services/cardCache';
 import { loadSet } from './services/setLoader';
 import { DeckService } from './services/DeckService';
 import { collection, doc, onSnapshot, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
-import { parseCSV, generateCSV } from './utils/csvParser';
+import { generateCSV } from './utils/csvParser';
 import { getCollectionId, reconstructCardsFromCollection, isHorizontalCard } from './utils/collectionHelpers';
 import { useAuth } from './contexts/AuthContext';
 import { MigrationService } from './services/MigrationService';
@@ -36,6 +36,8 @@ import { showsSetPicker } from './utils/viewChrome';
 import MobileNav from './components/MobileNav';
 import CollectionValueReport from './components/CollectionValueReport';
 import SavedListsPage from './components/SavedListsPage';
+import ImportDialog from './components/ImportDialog';
+import BatchReport from './components/BatchReport';
 
 // Version info
 const VERSION = __APP_VERSION__;
@@ -145,7 +147,9 @@ export default function App() {
   const [batchesRefresh, setBatchesRefresh] = useState(0);
   // Handed only to users who can scan; views render no scan button without it.
   const openScanner = canScan ? () => setIsScannerOpen(true) : undefined;
-  const [importing, setImporting] = useState(false);
+  // The CSV being imported (the Import cards dialog), and a batch report to show.
+  const [importFile, setImportFile] = useState(null);
+  const [reportBatchId, setReportBatchId] = useState(null);
   const [activeDeck, setActiveDeck] = useState(null);
   const [sortBy, setSortBy] = useState('number'); // 'number' | 'cost' | 'recent'
   const [sortDir, setSortDir] = useState('asc');   // 'asc' | 'desc'
@@ -372,72 +376,10 @@ export default function App() {
 
   // CSV Import Handler
   // @environment:web-file-api
-  const handleFileUpload = async (event) => {
+  const handleFileUpload = (event) => {
     const file = event.target.files?.[0];
-    if (!file) return;
-
-    setImporting(true);
-    try {
-      const text = await file.text();
-      const { items, errors } = parseCSV(text);
-
-      if (errors.length > 0) {
-        console.warn('CSV parsing warnings:', errors);
-      }
-
-      if (items.length === 0) {
-        alert('No valid items found in CSV file');
-        return;
-      }
-
-      // Batch write to Firestore
-      const ref = getCollectionRef(user, legacySyncCode, useLegacyPath);
-      if (!ref) {
-        alert('Not connected to cloud storage');
-        return;
-      }
-
-      let batch = writeBatch(db);
-      let batchCount = 0;
-
-      for (const item of items) {
-        const collId = getCollectionId(item.set, item.number, item.isFoil);
-        const docRef = doc(ref, collId);
-
-        batch.set(docRef, {
-          quantity: item.quantity,
-          set: item.set,
-          number: item.number,
-          name: item.name,
-          isFoil: item.isFoil,
-          timestamp: Date.now()
-        }, { merge: true });
-
-        batchCount++;
-
-        // Firestore batch limit is 500, commit at 400 to be safe
-        if (batchCount >= 400) {
-          await batch.commit();
-          batch = writeBatch(db); // Create new batch after commit
-          batchCount = 0;
-        }
-      }
-
-      // Commit remaining
-      if (batchCount > 0) {
-        await batch.commit();
-      }
-
-      alert(`Successfully imported ${items.length} items${errors.length > 0 ? ` with ${errors.length} warnings` : ''}`);
-    } catch (error) {
-      console.error('Import error:', error);
-      alert(`Import failed: ${error.message}`);
-    } finally {
-      setImporting(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (file) setImportFile(file);
   };
 
   // CSV Export Handler
@@ -913,7 +855,7 @@ export default function App() {
                 collectionData={collectionData}
                 onImport={() => fileInputRef.current?.click()}
                 onExport={handleExport}
-                isImporting={importing}
+                isImporting={Boolean(importFile)}
                 hasDataToExport={Object.keys(collectionData).length > 0}
                 onUpdateQuantity={handleGridQuantityChange}
                 onCardClick={setSelectedCard}
@@ -1128,6 +1070,19 @@ export default function App() {
         </ErrorBoundary>
       )}
 
+      {importFile && (
+        <ImportDialog
+          file={importFile}
+          uid={useLegacyPath ? undefined : user?.uid}
+          collectionRef={getCollectionRef(user, legacySyncCode, useLegacyPath)}
+          collectionData={collectionData}
+          onClose={() => setImportFile(null)}
+          onImported={(batchId) => { setImportFile(null); setBatchesRefresh((n) => n + 1); setReportBatchId(batchId); }}
+        />
+      )}
+      {reportBatchId && user?.uid && (
+        <BatchReport uid={user.uid} batchId={reportBatchId} onClose={() => setReportBatchId(null)} onDeleted={() => { setReportBatchId(null); setBatchesRefresh((n) => n + 1); }} />
+      )}
       {isMarketOpen && (
         <CollectionValueReport uid={user?.uid} collectionData={collectionData} onClose={() => setIsMarketOpen(false)} />
       )}
