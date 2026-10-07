@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../../firebase', () => ({ db: {}, APP_ID: 'app' }));
-import { importToCollection } from '../../services/importBatch';
+import { importToCollection, makeCardDetails } from '../../services/importBatch';
 
 const item = (o) => ({ set: 'SOR', number: '010', name: 'Vader', quantity: 1, isFoil: false, ...o });
 let deps;
@@ -94,5 +94,22 @@ describe('importToCollection — other', () => {
   it('uses a given source (guest merge)', async () => {
     await run({ mode: 'add', items: [item()], source: { type: 'guest' } });
     expect(deps.batches.closeBatch.mock.calls[0][2].source).toEqual({ type: 'guest' });
+  });
+});
+
+describe('makeCardDetails', () => {
+  it('reads each set once through the set cache, and skips legacy buckets', async () => {
+    const loadSetImpl = vi.fn(async () => ({ cards: [{ Number: 10, Name: 'Vader', Type: 'Leader', Rarity: 'Rare', Aspects: ['Villainy'], VariantType: 'Normal' }] }));
+    const details = makeCardDetails(loadSetImpl);
+    expect(await details('SOR', '010')).toEqual({ name: 'Vader', type: 'Leader', rarity: 'Rare', aspects: ['Villainy'], variant: 'Normal' });
+    expect(await details('SOR', '999')).toBeNull();
+    expect(await details('PROMO', '001')).toBeNull();
+    expect(loadSetImpl).toHaveBeenCalledTimes(1);
+    expect(loadSetImpl).toHaveBeenCalledWith('SOR');
+  });
+
+  it('never throws when a set will not load', async () => {
+    const details = makeCardDetails(async () => { throw new Error('offline'); });
+    expect(await details('SHD', '001')).toBeNull();
   });
 });

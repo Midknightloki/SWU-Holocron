@@ -258,4 +258,28 @@ describe('ListView', () => {
     expect(asOf).toBeGreaterThanOrEqual(loadedAt);
     expect(asOf).toBeLessThan(loadedAt + 25);
   });
+
+  it('saves a pending edit when the page is hidden (phone app switch) or closed', async () => {
+    render(<ListView uid="u1" list={LIST} collectionData={{}} onBack={vi.fn()} onDeleted={vi.fn()} service={service} loadPrices={loadPrices} saveDelay={60000} />);
+    fireEvent.click(screen.getByRole('button', { name: 'More Luke' }));
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+    await waitFor(() => expect(service.updateList).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: 'More Luke' }));
+    window.dispatchEvent(new Event('pagehide'));
+    await waitFor(() => expect(service.updateList).toHaveBeenCalledTimes(2));
+  });
+
+  it('adds prices to the shared copy when they load after sharing', async () => {
+    let resolvePrices;
+    loadPrices.mockImplementationOnce(() => new Promise((r) => { resolvePrices = r; }));
+    renderView();
+    fireEvent.click(screen.getByRole('button', { name: 'Share link' }));
+    await screen.findByLabelText('Share link');
+    expect(service.shareList.mock.calls[0][2]).not.toHaveProperty('value');
+    resolvePrices({ prices: { SOR_010_any: { market: 1.5 } } });
+    await waitFor(() => expect(service.updatePublic).toHaveBeenCalled());
+    expect(service.updatePublic.mock.calls.at(-1)[2].value).toBe(3);
+  });
 });

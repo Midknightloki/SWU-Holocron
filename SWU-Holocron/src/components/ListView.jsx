@@ -112,9 +112,19 @@ export default function ListView({ uid, list, collectionData, onBack, onDeleted,
 
   // Leaving (unmount, page close) sends whatever is still waiting.
   useEffect(() => {
+    // Phones rarely fire beforeunload: switching apps (hidden) and pagehide
+    // are the last reliable moments to save.
     const onUnload = () => { flush(); };
+    const onHidden = () => { if (document.visibilityState === 'hidden') flush(); };
     window.addEventListener('beforeunload', onUnload);
-    return () => { window.removeEventListener('beforeunload', onUnload); flush(); };
+    window.addEventListener('pagehide', onUnload);
+    document.addEventListener('visibilitychange', onHidden);
+    return () => {
+      window.removeEventListener('beforeunload', onUnload);
+      window.removeEventListener('pagehide', onUnload);
+      document.removeEventListener('visibilitychange', onHidden);
+      flush();
+    };
   }, [flush]);
 
   const setQty = (key, qty) => saveItems({ ...items, [key]: { ...items[key], qty } });
@@ -164,7 +174,8 @@ export default function ListView({ uid, list, collectionData, onBack, onDeleted,
     setSharing(false);
     if (res?.code) {
       // The share write already carried this content: no republish for it.
-      pending.current.justShared = true;
+      // Shared before prices loaded: let them republish it once they arrive.
+      pending.current.justShared = prices !== null && !priceError;
       setPublicCode(res.code);
     } else setShareError(true);
   };

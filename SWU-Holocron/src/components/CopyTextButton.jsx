@@ -20,6 +20,7 @@ export default function CopyTextButton({ text, count, fallbackLabel, disabled = 
       setIndex((part + 1) % parts.length);
     } catch {
       setState({ kind: 'fallback', part });
+      setIndex((part + 1) % parts.length);
     }
   };
 

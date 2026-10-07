@@ -63,4 +63,12 @@ describe('upgradeGuest', () => {
     expect(res).toMatchObject({ kind: 'merged', cards: 0 });
     expect(deps.importToCollection).not.toHaveBeenCalled();
   });
+
+  it('stays signed in as the guest when the guest cards cannot be read', async () => {
+    deps.linkWithPopup.mockRejectedValue(inUse);
+    deps.readCollection.mockRejectedValue(Object.assign(new Error('unavailable'), { code: 'unavailable' }));
+    await expect(upgradeGuest({ auth, provider: {}, deps })).rejects.toMatchObject({ code: 'guest-read-failed' });
+    expect(deps.signInWithCredential).not.toHaveBeenCalled();
+    expect(deps.importToCollection).not.toHaveBeenCalled();
+  });
 });

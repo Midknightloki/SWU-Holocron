@@ -3,6 +3,8 @@ import { db } from '../firebase';
 import { ScanService, COMMIT_CHUNK_SIZE } from './ScanService';
 import { PricingService } from './PricingService';
 import { BatchService } from './BatchService';
+import { loadSet } from './setLoader';
+import { LEGACY_SET_CODES } from '../setCatalog';
 import { getCardQuantities, getCollectionId } from '../utils/collectionHelpers';
 
 /**
@@ -29,6 +31,26 @@ async function writeQuantities(collectionRef, writes, { onChunk = () => {} } = {
   }
 }
 
+/**
+ * Card details for a report, through the IndexedDB set cache (loadSet): a
+ * restore touching every set must not re-download each from Firestore.
+ * Each set is read once; legacy PROMO/OTHER buckets have nothing to read.
+ */
+export function makeCardDetails(loadSetImpl = loadSet) {
+  const sets = new Map();
+  const pad = (n) => String(n).padStart(3, '0');
+  return async (set, number) => {
+    if (!set || LEGACY_SET_CODES.includes(set)) return null;
+    if (!sets.has(set)) {
+      sets.set(set, Promise.resolve().then(() => loadSetImpl(set)).then((r) => r?.cards ?? []).catch(() => []));
+    }
+    const card = (await sets.get(set)).find((c) => pad(c.Number) === pad(number));
+    return card
+      ? { name: card.Name ?? null, type: card.Type ?? null, rarity: card.Rarity ?? null, aspects: card.Aspects ?? [], variant: card.VariantType ?? null }
+      : null;
+  };
+}
+
 const defaultId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 export async function importToCollection({
@@ -36,7 +58,7 @@ export async function importToCollection({
 }) {
   const {
     commit = (d, r, o) => ScanService.commitDraft(d, r, o), writeQuantities: write = writeQuantities,
-    cardDetails = (s, n) => ScanService.cardDetails(s, n), pricing = PricingService, batches = BatchService,
+    cardDetails = makeCardDetails(), pricing = PricingService, batches = BatchService,
     now = Date.now, newId = defaultId,
   } = deps;
 

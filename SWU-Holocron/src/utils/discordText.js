@@ -11,11 +11,14 @@ export const escapeDiscord = (text) => String(text).replace(/([*_~|`])/g, '\\$1'
 export function splitForDiscord(text, limit = DISCORD_LIMIT) {
   if (text.length <= limit) return [text];
   const lines = text.split('\n');
-  const heading = lines[0];
+  // A heading is a first line followed by a blank one; the surplus trade text
+  // has none, and its first card must not be repeated as one.
+  const heading = lines.length > 2 && lines[1] === '' ? lines[0] : null;
   const total = lines.at(-1);
-  const body = lines.slice(1, -1).filter((l, i) => !(i === 0 && l === ''));
-  // Room for "<heading> (part NN of NN)\n\n" and, on the last part, "\n<total>".
-  const room = limit - heading.length - ' (part 99 of 99)'.length - 2;
+  const body = heading === null ? lines.slice(0, -1) : lines.slice(2, -1);
+  const label = (i, n) => (heading === null ? `Part ${i} of ${n}` : `${heading} (part ${i} of ${n})`);
+  // Room for "<label>\n\n" and, on the last part, "\n<total>".
+  const room = limit - label(99, 99).length - 2;
   const chunks = [];
   let current = [];
   let size = 0;
@@ -32,7 +35,7 @@ export function splitForDiscord(text, limit = DISCORD_LIMIT) {
   // The total must fit on the last part.
   if (size + total.length + 1 > room) chunks.push([]);
   return chunks.map((chunk, i) => {
-    const out = [`${heading} (part ${i + 1} of ${chunks.length})`, '', ...chunk];
+    const out = [label(i + 1, chunks.length), '', ...chunk];
     if (i === chunks.length - 1) out.push(total);
     return out.join('\n');
   });

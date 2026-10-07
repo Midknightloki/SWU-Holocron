@@ -32,7 +32,16 @@ export async function upgradeGuest({ auth, provider, deps = {} }) {
     const credential = d.credentialFromError(err);
     if (!credential) throw err;
 
-    const guestCards = await d.readCollection(guest.uid).catch(() => ({}));
+    let guestCards;
+    try {
+      guestCards = await d.readCollection(guest.uid);
+    } catch {
+      // Switching now would strand the guest's cards for good: stay the guest.
+      throw Object.assign(
+        new Error("Couldn't read your guest collection, so you're still signed in as a guest. Please try again."),
+        { code: 'guest-read-failed' },
+      );
+    }
     const { user } = await d.signInWithCredential(auth, credential);
     const items = Object.values(guestCards)
       .filter((c) => (Number(c?.quantity) || 0) > 0 && c.set && c.number)

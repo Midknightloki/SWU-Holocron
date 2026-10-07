@@ -46,4 +46,13 @@ describe('CopyTextButton', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Copy part 1/ })).toBeInTheDocument();
   });
+
+  it('reaches every part when the clipboard is blocked', async () => {
+    writeText.mockRejectedValue(new Error('denied'));
+    render(<CopyTextButton text={long} fallbackLabel="List text" />);
+    fireEvent.click(screen.getByRole('button', { name: /^Copy part 1/ }));
+    await screen.findByLabelText('List text');
+    fireEvent.click(screen.getByRole('button', { name: /^Copy part 2/ }));
+    await vi.waitFor(() => expect(screen.getByLabelText('List text').value).toMatch(/^Wants: Big \(part 2 of/));
+  });
 });

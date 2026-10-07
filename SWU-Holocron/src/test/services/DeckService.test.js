@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { DeckService } from '../../services/DeckService';
+import { DeckService, toPublicDeckBody } from '../../services/DeckService';
 
 // ---------------------------------------------------------------------------
 // Firebase mocks
@@ -315,5 +315,20 @@ describe('DeckService', () => {
         DeckService.restoreVersion(UID, deckId, 'bad-version')
       ).rejects.toThrow('not found');
     });
+  });
+});
+
+describe('toPublicDeckBody', () => {
+  it('fits a shared deck within the rules: long names, descriptions and tag lists are trimmed', () => {
+    const body = toPublicDeckBody({ name: 'x'.repeat(250), description: 'd'.repeat(2500), tags: Array.from({ length: 30 }, (_, i) => `t${i}`), cards: { SOR_001: 3 } }, 'd1', 'u1');
+    expect(body.name).toHaveLength(200);
+    expect(body.description).toHaveLength(2000);
+    expect(body.tags).toHaveLength(20);
+    expect(Object.keys(body).sort()).toEqual(['aspects', 'baseId', 'cards', 'deckId', 'description', 'format', 'leaderId', 'name', 'tags', 'totalCards', 'uid']);
+  });
+
+  it('keeps an ordinary deck as it is', () => {
+    const body = toPublicDeckBody({ name: 'Vader Aggro', leaderId: 'SOR_010', cards: { SOR_050: 3 }, totalCards: 50 }, 'd1', 'u1');
+    expect(body).toMatchObject({ deckId: 'd1', uid: 'u1', name: 'Vader Aggro', description: '', leaderId: 'SOR_010', baseId: null, format: 'Premier', totalCards: 50 });
   });
 });

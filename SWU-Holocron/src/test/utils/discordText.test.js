@@ -32,4 +32,16 @@ describe('splitForDiscord', () => {
     expect(parts.at(-1).endsWith('Total: 80 cards')).toBe(true);
     expect(parts.slice(0, -1).some((p) => p.includes('Total:'))).toBe(false);
   });
+
+  it('splits a list with no heading (the surplus trade text) without repeating a card', () => {
+    const trade = [...Array.from({ length: 80 }, (_, i) => card(i)), 'Total: 80 cards · ~$12.00'].join('\n');
+    const parts = splitForDiscord(trade, 2000);
+    expect(parts.length).toBeGreaterThan(1);
+    parts.forEach((p, i) => expect(p.split('\n')[0]).toBe(`Part ${i + 1} of ${parts.length}`));
+    const cardLines = parts.flatMap((p) => p.split('\n')).filter((l) => l.startsWith('1×'));
+    expect(cardLines).toHaveLength(80);
+    expect(new Set(cardLines).size).toBe(80);
+    expect(parts.at(-1).endsWith('Total: 80 cards · ~$12.00')).toBe(true);
+    for (const p of parts) expect(p.length).toBeLessThanOrEqual(2000);
+  });
 });

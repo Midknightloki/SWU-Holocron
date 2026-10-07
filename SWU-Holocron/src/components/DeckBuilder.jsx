@@ -2211,6 +2211,7 @@ export default function DeckBuilder({ deck, collectionData, onClose, onSaved, on
               type="text"
               value={deckName}
               onChange={(e) => setDeckName(e.target.value)}
+              maxLength={200}
               placeholder="Deck name..."
               className="flex-1 min-w-0 px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-yellow-500"
               style={{ minHeight: '44px' }}
