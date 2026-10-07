@@ -20,7 +20,7 @@ let service;
 const loadPrices = vi.fn(async () => ({ prices: { SOR_010_any: { market: 1.5 } } }));
 
 const renderView = (list = LIST) => render(
-  <ListView uid="u1" list={list} collectionData={{}} onBack={vi.fn()} onDeleted={vi.fn()} service={service} loadPrices={loadPrices} />,
+  <ListView uid="u1" list={list} collectionData={{}} onBack={vi.fn()} onDeleted={vi.fn()} service={service} loadPrices={loadPrices} saveDelay={0} />,
 );
 
 beforeEach(() => {
@@ -45,13 +45,14 @@ describe('ListView', () => {
   it('changes a quantity and saves the items', async () => {
     renderView();
     fireEvent.click(screen.getByRole('button', { name: 'More Luke' }));
-    expect(service.updateList).toHaveBeenCalledWith('u1', 'l1', { items: expect.objectContaining({ SOR_020_any: expect.objectContaining({ qty: 2 }) }) });
+    await waitFor(() => expect(service.updateList).toHaveBeenCalledWith('u1', 'l1', { items: expect.objectContaining({ SOR_020_any: expect.objectContaining({ qty: 2 }) }) }));
   });
 
   it('removes a card', async () => {
     renderView();
     fireEvent.click(screen.getByRole('button', { name: 'Remove Luke' }));
     expect(screen.getAllByTestId('list-row')).toHaveLength(2);
+    await waitFor(() => expect(service.updateList).toHaveBeenCalled());
     expect(service.updateList.mock.calls[0][2].items.SOR_020_any).toBeUndefined();
   });
 
@@ -59,6 +60,7 @@ describe('ListView', () => {
     renderView();
     const [anyRow] = screen.getAllByTestId('list-row').filter((r) => within(r).queryByLabelText('Finish for Vader')?.value === 'any');
     fireEvent.change(within(anyRow).getByLabelText('Finish for Vader'), { target: { value: 'standard' } });
+    await waitFor(() => expect(service.updateList).toHaveBeenCalled());
     const items = service.updateList.mock.calls[0][2].items;
     expect(items.SOR_010_any).toBeUndefined();
     expect(items.SOR_010_standard.qty).toBe(3);
@@ -69,7 +71,7 @@ describe('ListView', () => {
     const name = screen.getByLabelText('List name');
     fireEvent.change(name, { target: { value: 'My wants' } });
     fireEvent.blur(name);
-    expect(service.updateList).toHaveBeenCalledWith('u1', 'l1', { name: 'My wants' });
+    await waitFor(() => expect(service.updateList).toHaveBeenCalledWith('u1', 'l1', { name: 'My wants' }));
   });
 
   it('saves a note on blur', async () => {
@@ -77,6 +79,7 @@ describe('ListView', () => {
     const note = screen.getByLabelText('Note for Luke');
     fireEvent.change(note, { target: { value: 'any art' } });
     fireEvent.blur(note);
+    await waitFor(() => expect(service.updateList).toHaveBeenCalled());
     expect(service.updateList.mock.calls[0][2].items.SOR_020_any.note).toBe('any art');
   });
 
@@ -92,6 +95,7 @@ describe('ListView', () => {
     renderView();
     fireEvent.click(screen.getByRole('button', { name: 'Add card' }));
     fireEvent.click(screen.getByText('pick-card'));
+    await waitFor(() => expect(service.updateList).toHaveBeenCalled());
     expect(service.updateList.mock.calls[0][2].items.SOR_099_any).toMatchObject({ name: 'Picked', qty: 1 });
   });
 
@@ -99,7 +103,7 @@ describe('ListView', () => {
     renderView();
     await screen.findByTestId('list-value');
     fireEvent.click(screen.getByRole('button', { name: 'Show prices' }));
-    expect(service.updateList).toHaveBeenCalledWith('u1', 'l1', { showPrices: false });
+    await waitFor(() => expect(service.updateList).toHaveBeenCalledWith('u1', 'l1', { showPrices: false }));
     expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
   });
 
@@ -115,7 +119,7 @@ describe('ListView', () => {
 
   it('deletes only on the second tap', async () => {
     const onDeleted = vi.fn();
-    render(<ListView uid="u1" list={LIST} collectionData={{}} onBack={vi.fn()} onDeleted={onDeleted} service={service} loadPrices={loadPrices} />);
+    render(<ListView uid="u1" list={LIST} collectionData={{}} onBack={vi.fn()} onDeleted={onDeleted} service={service} loadPrices={loadPrices} saveDelay={0} />);
     fireEvent.click(screen.getByRole('button', { name: 'Delete list' }));
     expect(service.deleteList).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Tap again to delete' }));
@@ -205,5 +209,53 @@ describe('ListView', () => {
     renderView({ ...LIST, publicCode: 'abcd2345' });
     await screen.findByText('Prices are unavailable right now.');
     expect(service.updatePublic).not.toHaveBeenCalled();
+  });
+
+  it('turns a burst of taps into one save', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    render(<ListView uid="u1" list={LIST} collectionData={{}} onBack={vi.fn()} onDeleted={vi.fn()} service={service} loadPrices={loadPrices} saveDelay={800} />);
+    for (let i = 0; i < 3; i++) fireEvent.click(screen.getByRole('button', { name: 'More Luke' }));
+    expect(service.updateList).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(800);
+    expect(service.updateList).toHaveBeenCalledTimes(1);
+    expect(service.updateList.mock.calls[0][2].items.SOR_020_any.qty).toBe(4);
+    vi.useRealTimers();
+  });
+
+  it('saves a pending edit when leaving the list', async () => {
+    const onBack = vi.fn();
+    render(<ListView uid="u1" list={LIST} collectionData={{}} onBack={onBack} onDeleted={vi.fn()} service={service} loadPrices={loadPrices} saveDelay={60000} />);
+    fireEvent.click(screen.getByRole('button', { name: 'More Luke' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await waitFor(() => expect(service.updateList).toHaveBeenCalledTimes(1));
+    expect(onBack).toHaveBeenCalled();
+  });
+
+  it('saves a pending edit when the view unmounts', async () => {
+    const { unmount } = render(<ListView uid="u1" list={LIST} collectionData={{}} onBack={vi.fn()} onDeleted={vi.fn()} service={service} loadPrices={loadPrices} saveDelay={60000} />);
+    fireEvent.click(screen.getByRole('button', { name: 'More Luke' }));
+    unmount();
+    await waitFor(() => expect(service.updateList).toHaveBeenCalledTimes(1));
+  });
+
+  it('does not republish right after sharing', async () => {
+    renderView();
+    await screen.findByTestId('list-value');
+    fireEvent.click(screen.getByRole('button', { name: 'Share link' }));
+    await screen.findByLabelText('Share link');
+    await new Promise((r) => setTimeout(r, 20));
+    expect(service.updatePublic).not.toHaveBeenCalled();
+  });
+
+  it('dates prices by when they were loaded, not by the edit', async () => {
+    const loadedAt = Date.now();
+    renderView({ ...LIST, publicCode: 'abcd2345' });
+    await waitFor(() => expect(service.updatePublic).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 30));
+    fireEvent.click(screen.getByRole('button', { name: 'More Luke' }));
+    await waitFor(() => expect(service.updatePublic).toHaveBeenCalledTimes(2));
+    const asOf = service.updatePublic.mock.calls[1][2].pricesAsOf;
+    expect(asOf).toBeGreaterThanOrEqual(loadedAt);
+    expect(asOf).toBeLessThan(loadedAt + 25);
   });
 });

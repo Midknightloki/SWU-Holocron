@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Download, FileText, Link2, Minus, Plus, Share2, Trash2, X } from 'lucide-react';
 import CardPickerModal from './CardPickerModal';
 import CopyTextButton from './CopyTextButton';
@@ -14,12 +14,14 @@ const btn = 'flex items-center gap-1 px-3 py-2 rounded-lg bg-gray-800 text-sm';
 const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'list';
 
 /** One saved list: edit it in place and share it. Every edit saves at once. */
-export default function ListView({ uid, list, collectionData, onBack, onDeleted, service = ListService, loadPrices = loadListPrices }) {
+export default function ListView({ uid, list, collectionData, onBack, onDeleted, service = ListService, loadPrices = loadListPrices, saveDelay = 800 }) {
   const [items, setItems] = useState(list.items ?? {});
   const [name, setName] = useState(list.name);
   const [savedName, setSavedName] = useState(list.name);
   const [showPrices, setShowPrices] = useState(list.showPrices !== false);
   const [prices, setPrices] = useState(null);
+  // When the prices were loaded: the public copy's "prices as of".
+  const [pricesAt, setPricesAt] = useState(null);
   const [priceError, setPriceError] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [printing, setPrinting] = useState(false);
@@ -40,6 +42,7 @@ export default function ListView({ uid, list, collectionData, onBack, onDeleted,
     loadPrices(items).then((res) => {
       if (cancelled) return;
       setPrices(res.prices ?? {});
+      setPricesAt(Date.now());
       setPriceError(Boolean(res.error));
     });
     return () => { cancelled = true; };
@@ -55,29 +58,64 @@ export default function ListView({ uid, list, collectionData, onBack, onDeleted,
   const summary = useMemo(() => listSummary(lines), [lines]);
   const listText = useMemo(() => toListText({ kind: list.kind, name: savedName }, lines, { showPrices }), [list.kind, savedName, lines, showPrices]);
 
-  const publicBody = () => toPublicList({ kind: list.kind, name: savedName }, lines, { showPrices, now: Date.now() });
+  const publicBody = () => toPublicList({ kind: list.kind, name: savedName }, lines, { showPrices, now: pricesAt ?? Date.now() });
 
-  // While shared, keep the public copy current: once prices load (which also
-  // refreshes "prices as of") and after every change.
-  useEffect(() => {
-    // Not after a failed price load: that would publish "prices as of today"
-    // with every price missing.
-    if (!publicCode || prices === null || priceError) return undefined;
-    let cancelled = false;
-    service.updatePublic(uid, publicCode, publicBody()).then((res) => {
-      if (cancelled) return;
+  // Edits are saved together after a short pause: a burst of + taps is one
+  // write to the list and one to its public copy.
+  const pending = useRef({ patch: null, publicDirty: false, timer: null, justShared: false });
+  const latest = useRef({});
+  latest.current = { publicCode, publicBody };
+
+  const flush = useCallback(async () => {
+    const p = pending.current;
+    clearTimeout(p.timer);
+    p.timer = null;
+    const patch = p.patch;
+    const publish = p.publicDirty;
+    p.patch = null;
+    p.publicDirty = false;
+    if (patch) {
+      const res = await service.updateList(uid, list.id, patch);
+      setSaveError(Boolean(res?.error));
+    }
+    const { publicCode: code, publicBody: body } = latest.current;
+    if (publish && code) {
+      const res = await service.updatePublic(uid, code, body());
       // Stopped on another device: show it as not shared.
       if (res?.error === 'not-shared') { setPublicCode(null); setSyncError(false); return; }
       setSyncError(Boolean(res?.error));
-    });
-    return () => { cancelled = true; };
-  }, [publicCode, lines, savedName, showPrices]); // eslint-disable-line react-hooks/exhaustive-deps -- publish on content change
+    }
+  }, [service, uid, list.id]);
 
-  const save = async (patch) => {
-    const res = await service.updateList(uid, list.id, patch);
-    setSaveError(Boolean(res?.error));
+  const schedule = useCallback(() => {
+    const p = pending.current;
+    clearTimeout(p.timer);
+    p.timer = setTimeout(flush, saveDelay);
+  }, [flush, saveDelay]);
+
+  const save = (patch) => {
+    pending.current.patch = { ...(pending.current.patch ?? {}), ...patch };
+    schedule();
   };
   const saveItems = (next) => { setItems(next); save({ items: next }); };
+
+  // While shared, keep the public copy current: once prices load (which also
+  // refreshes "prices as of") and after every change -- but not straight
+  // after sharing, whose write already carried this content, and not after a
+  // failed price load, which would publish every price missing.
+  useEffect(() => {
+    if (!publicCode || prices === null || priceError) return;
+    if (pending.current.justShared) { pending.current.justShared = false; return; }
+    pending.current.publicDirty = true;
+    schedule();
+  }, [publicCode, lines, savedName, showPrices]); // eslint-disable-line react-hooks/exhaustive-deps -- publish on content change
+
+  // Leaving (unmount, page close) sends whatever is still waiting.
+  useEffect(() => {
+    const onUnload = () => { flush(); };
+    window.addEventListener('beforeunload', onUnload);
+    return () => { window.removeEventListener('beforeunload', onUnload); flush(); };
+  }, [flush]);
 
   const setQty = (key, qty) => saveItems({ ...items, [key]: { ...items[key], qty } });
   const remove = (key) => { const next = { ...items }; delete next[key]; saveItems(next); };
@@ -109,6 +147,10 @@ export default function ListView({ uid, list, collectionData, onBack, onDeleted,
   };
   const del = async () => {
     if (!confirmDelete) { setConfirmDelete(true); return; }
+    // Never save into a list that is being deleted.
+    clearTimeout(pending.current.timer);
+    pending.current.patch = null;
+    pending.current.publicDirty = false;
     const res = publicCode ? await service.deleteList(uid, list.id, publicCode) : await service.deleteList(uid, list.id);
     if (res?.error) { setSaveError(true); setConfirmDelete(false); return; }
     onDeleted();
@@ -120,13 +162,18 @@ export default function ListView({ uid, list, collectionData, onBack, onDeleted,
     setShareError(false);
     const res = await service.shareList(uid, list.id, publicBody());
     setSharing(false);
-    if (res?.code) setPublicCode(res.code); else setShareError(true);
+    if (res?.code) {
+      // The share write already carried this content: no republish for it.
+      pending.current.justShared = true;
+      setPublicCode(res.code);
+    } else setShareError(true);
   };
   const stopSharing = async () => {
     if (!confirmStop) { setConfirmStop(true); return; }
     setConfirmStop(false);
     const res = await service.unshareList(uid, list.id, publicCode);
     if (res?.error) { setShareError(true); return; }
+    pending.current.publicDirty = false;
     setPublicCode(null);
     setSyncError(false);
     setLinkCopied(false);
@@ -143,7 +190,7 @@ export default function ListView({ uid, list, collectionData, onBack, onDeleted,
   return (
     <section aria-label={savedName} className="space-y-4">
       <div className="flex items-center gap-2 print:hidden">
-        <button type="button" onClick={onBack} className={btn}><ArrowLeft className="w-4 h-4" /> Back</button>
+        <button type="button" onClick={() => { flush(); onBack(); }} className={btn}><ArrowLeft className="w-4 h-4" /> Back</button>
       </div>
       <input
         aria-label="List name"
