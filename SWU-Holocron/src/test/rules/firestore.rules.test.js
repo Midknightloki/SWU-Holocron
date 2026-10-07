@@ -151,6 +151,25 @@ describe('public decks', () => {
     await assertFails(setDoc(doc(asUser('plain-uid'), p('publicDecks', 'abc12345')), { uid: 'plain-uid', name: 'Mine now' }));
   });
 
+  const FULL = {
+    deckId: 'd1', uid: 'plain-uid', name: 'Vader Aggro', description: 'Fast', leaderId: 'SOR_010', baseId: 'SOR_020',
+    cards: { SOR_050: 3 }, aspects: ['Villainy'], format: 'Premier', tags: ['aggro'], totalCards: 50, publishedAt: 1,
+  };
+
+  it('accepts a deck published the way the app publishes', async () => {
+    await assertSucceeds(setDoc(doc(asUser('plain-uid'), p('publicDecks', 'abc12345')), FULL));
+  });
+
+  it('refuses unexpected or oversized deck content', async () => {
+    const db = asUser('plain-uid');
+    await assertFails(setDoc(doc(db, p('publicDecks', 'abc12345')), { ...FULL, link: 'https://evil.example' }));
+    await assertFails(setDoc(doc(db, p('publicDecks', 'abc12345')), { ...FULL, name: 'x'.repeat(201) }));
+    await assertFails(setDoc(doc(db, p('publicDecks', 'abc12345')), { ...FULL, description: 'x'.repeat(2001) }));
+    const cards = Object.fromEntries(Array.from({ length: 201 }, (_, i) => [`SOR_${i}`, 1]));
+    await assertFails(setDoc(doc(db, p('publicDecks', 'abc12345')), { ...FULL, cards }));
+    await assertFails(setDoc(doc(db, p('publicDecks', 'abc12345')), { ...FULL, tags: Array.from({ length: 21 }, (_, i) => `t${i}`) }));
+  });
+
   it('still lets the owner update their shared deck', async () => {
     await seedDoc(p('publicDecks', 'abc12345'), { uid: 'plain-uid', name: 'Mine' });
     await assertSucceeds(setDoc(doc(asUser('plain-uid'), p('publicDecks', 'abc12345')), { uid: 'plain-uid', name: 'Renamed' }));
