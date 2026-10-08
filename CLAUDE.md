@@ -380,8 +380,9 @@ that cross-check is what keeps a misread number from adding the wrong card.
   (`firebase deploy --only functions:scanCard,functions:locateCard`, and
   `functions:adminListUsers,functions:adminGetUserDetail,functions:adminSetRole`
   for user management, whose runtime account also needs
-  `roles/firebaseauth.viewer` -- see `docs/FUNCTIONS-RUNTIME-SA.md`); no
-  workflow deploys them.
+  `roles/firebaseauth.viewer` -- see `docs/FUNCTIONS-RUNTIME-SA.md`; and
+  `functions:readDecklist` for precon decklist images); no workflow deploys
+  them.
 - **Rig calibration.** Users with a fixed scanning rig calibrate once:
   `locateCard` (same pipeline, entitlement and quota as `scanCard`, shared in
   `functions/scanCard.js`) asks Gemini for the card's `box_2d`, the user adjusts
@@ -470,6 +471,17 @@ owner (user **3671**) publishes each precon as it releases:
   `SET_NNN_std`. Adding a deck reuses `ScanService.commitDraft` (additive) and
   records a finished batch with its report (`src/services/prebuiltAdd.js`).
   Cards our database lacks are flagged at review and skipped on add.
+- **Official decklist images.** Most precons (Spotlight decks, Two-Player
+  Starters) are published only as images in official articles
+  (`cdn.starwarsunlimited.com/…SWH_0N…Decklist…`, two decks each). **Add from
+  decklist image** in the admin tab sends the link (CDN only, checked in the
+  browser and the function) or an upload to the admin-only `readDecklist`
+  function (`functions/readDecklist.js`, Gemini), then resolves each line by
+  number + name (`src/utils/decklistImage.js`): a plain number is in the
+  deck's set, guessed from `SWH_0N`; `*` means an earlier base set, newest
+  first. A name that disagrees is never accepted. The admin fixes unresolved
+  lines (Pick card / Remove) and the decks are saved for review as
+  `img-<set>-<name>`; the weekly sync never touches them.
 - Product matching (`src/utils/prebuiltDecks.js`) needs the same set and a
   shared name word: a shared set alone suggested the SOR starter for the
   owner's personal SOR decks.
