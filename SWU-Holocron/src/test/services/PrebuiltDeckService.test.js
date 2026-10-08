@@ -37,6 +37,19 @@ describe('PrebuiltDeckService', () => {
     });
   });
 
+  it('keeps the deck\'s flagged cards and suggests the product', async () => {
+    store.docs.set('artifacts/app/public/data/cardDatabase/preconProducts', { products: [
+      { setCode: 'JTL', name: 'Jump to Lightspeed - Spotlight Deck: Boba Fett', productId: 614673 },
+      { setCode: 'JTL', name: 'Jump to Lightspeed - Spotlight Deck: Han Solo', productId: 614672 },
+    ] });
+    const deck = { ...IMG_DECK, issues: [{ id: 'JTL_200', problem: 'unknown-card' }], removedLines: [] };
+    await PrebuiltDeckService.addFromImage(deck, { setCode: 'JTL' });
+    expect(store.docs.get(`${P}/img-jtl-boba-fett`)).toMatchObject({
+      issues: [{ id: 'JTL_200', problem: 'unknown-card' }],
+      suggestedProduct: { productId: 614673 },
+    });
+  });
+
   it('never overwrites a deck already stored under that id', async () => {
     store.docs.set(`${P}/img-jtl-boba-fett`, { status: 'published' });
     expect(await PrebuiltDeckService.addFromImage(IMG_DECK, { setCode: 'JTL' })).toEqual({ error: 'exists' });

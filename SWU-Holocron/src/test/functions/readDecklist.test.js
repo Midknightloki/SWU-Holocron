@@ -102,4 +102,9 @@ describe('sanitizeDecklist', () => {
     ] }] });
     expect(sanitizeDecklist(null)).toEqual({ decks: [] });
   });
+
+  it('keeps digits only, even if a rarity letter is read into the number', () => {
+    const out = sanitizeDecklist({ decks: [{ title: 'X', lines: [{ number: 'S9', fromPreviousSet: false, name: 'Boba Fett', qty: 1 }, { number: 'C 026*', fromPreviousSet: false, name: 'Jabba', qty: 1 }] }] });
+    expect(out.decks[0].lines.map((l) => [l.number, l.fromPreviousSet])).toEqual([['9', false], ['026', true]]);
+  });
 });

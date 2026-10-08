@@ -1,7 +1,7 @@
 import { collection, deleteField, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db, APP_ID } from '../firebase';
-import { deckApiUrl, findMissingCards, parseDeckApi, parseDeckLink, splitCardId } from '../utils/prebuiltDecks';
+import { deckApiUrl, findMissingCards, parseDeckApi, parseDeckLink, splitCardId, suggestProduct } from '../utils/prebuiltDecks';
 
 /**
  * Prebuilt (precon) decks: admin review and publishing, and the published
@@ -43,8 +43,10 @@ export const PrebuiltDeckService = {
   async addFromImage(deck, { url = null, setCode }) {
     try {
       if ((await getDoc(deckRef(deck.sourceId))).exists()) return { error: 'exists' };
+      const products = await PrebuiltDeckService.listProducts();
       await setDoc(deckRef(deck.sourceId), {
-        ...deck, issues: [], sourceUpdatedAt: null, typeId: null, suggestedProduct: null, product: null,
+        ...deck, issues: deck.issues ?? [], sourceUpdatedAt: null, typeId: null,
+        suggestedProduct: suggestProduct(deck, products) ?? null, product: null,
         name: deck.sourceName, status: 'review', fetchedAt: new Date().toISOString(),
         source: { type: 'image', url, setCode },
       });

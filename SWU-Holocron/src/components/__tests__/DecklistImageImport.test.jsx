@@ -106,4 +106,26 @@ describe('DecklistImageImport', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save as review' }));
     expect(await screen.findByText('Han Solo is already in Prebuilt Decks')).toBeInTheDocument();
   });
+
+  it('saves a removed in-set line as a flagged card', async () => {
+    open();
+    const deck = await read();
+    await within(deck).findByText(/not found/i);
+    fireEvent.click(within(deck).getByRole('button', { name: /Remove/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save as review' }));
+    await waitFor(() => expect(service.addFromImage).toHaveBeenCalled());
+    const [saved] = service.addFromImage.mock.calls[0];
+    expect(saved.cards).toContainEqual({ id: 'JTL_200', qty: 3 });
+    expect(saved.issues).toEqual([{ id: 'JTL_200', problem: 'unknown-card' }]);
+  });
+
+  it('offers the card at that number when only the name disagrees', async () => {
+    service.readDecklistImage.mockResolvedValue({ decks: [{ title: 'HAN SOLO', lines: [
+      { number: '249', fromPreviousSet: false, name: 'Millenium Falcon', qty: 3 },
+    ] }] });
+    open();
+    const deck = await read();
+    fireEvent.click(await within(deck).findByRole('button', { name: 'Use JTL 249 Millennium Falcon' }));
+    expect(within(deck).getByText('JTL 249 Millennium Falcon')).toBeInTheDocument();
+  });
 });

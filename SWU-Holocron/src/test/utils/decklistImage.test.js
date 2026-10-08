@@ -84,6 +84,21 @@ describe('building the deck', () => {
       leaders: ['JTL_009'],
       base: 'JTL_024',
       cards: [{ id: 'JTL_009', qty: 1 }, { id: 'JTL_024', qty: 1 }, { id: 'JTL_189', qty: 3 }, { id: 'TWI_184', qty: 1 }],
+      issues: [],
+      removedLines: [],
     });
+  });
+
+  it('keeps a removed in-set line as a flagged card, so adding the deck names it as skipped', () => {
+    const deck = buildPrebuiltDeck({ title: 'BOBA FETT', entries, setCode: 'JTL', removed: [
+      { number: '200', name: 'Shuttle Tydirium', qty: 3, fromPreviousSet: false },
+      { number: '131', name: 'Fifth Brother', qty: 2, fromPreviousSet: true },
+    ] });
+    expect(deck.cards).toContainEqual({ id: 'JTL_200', qty: 3 });
+    expect(deck.issues).toEqual([{ id: 'JTL_200', problem: 'unknown-card' }]);
+    expect(deck.removedLines).toEqual([
+      { number: '200', name: 'Shuttle Tydirium', qty: 3, fromPreviousSet: false },
+      { number: '131', name: 'Fifth Brother', qty: 2, fromPreviousSet: true },
+    ]);
   });
 });

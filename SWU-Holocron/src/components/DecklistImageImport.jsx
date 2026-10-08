@@ -104,7 +104,8 @@ export default function DecklistImageImport({
     for (let d = 0; d < decks.length; d++) {
       const title = titles[d] ?? decks[d].title;
       const entries = resolved[d].filter((r) => r.card).map((r) => ({ card: r.card, qty: r.line.qty }));
-      const deck = buildPrebuiltDeck({ title, entries, setCode });
+      const removed = resolved[d].filter((r) => r.removed).map((r) => r.line);
+      const deck = buildPrebuiltDeck({ title, entries, setCode, removed });
       const res = await service.addFromImage(deck, { url: source?.url ?? null, setCode });
       out.push(res.ok ? `Saved ${deck.sourceName}` : res.error === 'exists' ? `${deck.sourceName} is already in Prebuilt Decks` : `Couldn't save ${deck.sourceName}`);
     }
@@ -164,6 +165,11 @@ export default function DecklistImageImport({
                       {r.error && !r.removed && (
                         <>
                           <span className="text-red-300">{REASON[r.error]}</span>
+                          {r.candidate && (
+                            <button type="button" onClick={() => setOverrides((o) => ({ ...o, [r.key]: r.candidate }))} className="text-yellow-300 underline">
+                              {`Use ${r.candidate.Set} ${String(r.candidate.Number).padStart(3, '0')} ${r.candidate.Name}`}
+                            </button>
+                          )}
                           <button type="button" onClick={() => setPicking({ key: r.key, name: r.line.name })} className="text-blue-300 underline">Pick card for {r.line.name}</button>
                           <button type="button" onClick={() => setOverrides((o) => ({ ...o, [r.key]: 'removed' }))} className="text-gray-300 underline">Remove {r.line.name}</button>
                         </>

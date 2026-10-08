@@ -32,7 +32,9 @@ function sanitizeDecklist(output) {
       lines: (Array.isArray(d?.lines) ? d.lines.slice(0, 80) : []).map((l) => {
         const raw = clean(l?.number, 12);
         const qty = Math.min(9, Math.max(1, Math.round(Number(l?.qty)) || 1));
-        return { number: raw.replace(/[^0-9A-Za-z]/g, ""), fromPreviousSet: l?.fromPreviousSet === true || raw.includes("*"), name: clean(l?.name, 100), qty };
+        // These images print digits only; a rarity letter read into the number
+        // ("S9") would otherwise make every line unresolvable.
+        return { number: raw.replace(/\D/g, ""), fromPreviousSet: l?.fromPreviousSet === true || raw.includes("*"), name: clean(l?.name, 100), qty };
       }).filter((l) => l.number && l.name),
     })).filter((d) => d.lines.length > 0),
   };

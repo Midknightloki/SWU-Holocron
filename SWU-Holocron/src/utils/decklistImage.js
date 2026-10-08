@@ -68,11 +68,24 @@ export function deckCounts(entries) {
 
 const slug = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'deck';
 
-export function buildPrebuiltDeck({ title, entries, setCode }) {
+/**
+ * A removed line is kept, not dropped: an in-set number (the card our database
+ * lacks, e.g. a set not seeded yet) stays in the deck flagged as an issue, so
+ * adding the deck skips it by name like a deck added from a link; every removed
+ * line is also listed in removedLines.
+ */
+export function buildPrebuiltDeck({ title, entries, setCode, removed = [] }) {
   const qty = new Map();
   for (const { card, qty: n } of entries ?? []) {
     const id = cardKey(card.Set, card.Number);
     qty.set(id, (qty.get(id) ?? 0) + n);
+  }
+  const issues = [];
+  for (const line of removed) {
+    if (line.fromPreviousSet) continue;
+    const id = cardKey(setCode, line.number);
+    qty.set(id, (qty.get(id) ?? 0) + line.qty);
+    if (!issues.some((i) => i.id === id)) issues.push({ id, problem: 'unknown-card' });
   }
   const ids = (pred) => [...new Set((entries ?? []).filter((e) => pred(e.card)).map((e) => cardKey(e.card.Set, e.card.Number)))];
   return {
@@ -81,5 +94,7 @@ export function buildPrebuiltDeck({ title, entries, setCode }) {
     leaders: ids(isLeader),
     base: ids(isBase)[0] ?? null,
     cards: [...qty].map(([id, n]) => ({ id, qty: n })).sort((a, b) => a.id.localeCompare(b.id)),
+    issues,
+    removedLines: removed.map(({ number, name, qty: n, fromPreviousSet }) => ({ number, name, qty: n, fromPreviousSet: Boolean(fromPreviousSet) })),
   };
 }
