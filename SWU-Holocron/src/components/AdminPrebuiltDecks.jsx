@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { PrebuiltDeckService } from '../services/PrebuiltDeckService';
 import { loadSet } from '../services/setLoader';
 import { knownIdsFrom } from '../utils/prebuiltDecks';
+import DecklistImageImport from './DecklistImageImport';
 
 /**
  * Admin review of prebuilt (precon) decks. The weekly sync brings in the
@@ -186,6 +187,8 @@ export default function AdminPrebuiltDecks({ uid, loadKnownIds = defaultLoadKnow
         </div>
         {message && <p className="text-sm text-red-300">{message}</p>}
       </div>
+
+      <DecklistImageImport onSaved={load} />
 
       <section aria-labelledby="prebuilt-review" className="space-y-2">
         <h3 id="prebuilt-review" className="text-lg font-bold text-white">Needs review</h3>

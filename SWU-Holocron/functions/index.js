@@ -218,7 +218,7 @@ const SCAN_SCHEMA = {
 
 // One image, one prompt, schema-constrained JSON out. Shared by scanCard and
 // locateCard so the Vertex setup and the thinking-budget fix exist once.
-async function askGemini(imageBase64, prompt, schema) {
+async function askGemini(imageBase64, prompt, schema, { mimeType = "image/jpeg", maxOutputTokens = 256 } = {}) {
   const { GoogleGenAI } = require("@google/genai");
   const ai = new GoogleGenAI({ enterprise: true, project: GCP_PROJECT, location: VERTEX_LOCATION });
   const result = await ai.models.generateContent({
@@ -226,12 +226,12 @@ async function askGemini(imageBase64, prompt, schema) {
     contents: [{
       role: "user",
       parts: [
-        { inlineData: { mimeType: "image/jpeg", data: imageBase64 } },
+        { inlineData: { mimeType, data: imageBase64 } },
         { text: prompt },
       ],
     }],
     config: {
-      maxOutputTokens: 256,
+      maxOutputTokens,
       temperature: 0,
       // Required: see getCardSuggestions. Thinking tokens count against the cap.
       thinkingConfig: { thinkingBudget: 0 },
@@ -286,6 +286,69 @@ const locateCardHandler = createLocateCardHandler({
 });
 
 exports.locateCard = onCall({ maxInstances: 5 }, locateCardHandler);
+
+/**
+ * readDecklist -- reads an official decklist image for the Prebuilt Decks
+ * admin tab. Admin-only; links only from the official CDN. See
+ * functions/readDecklist.js. Returns lines; the client resolves them to cards.
+ */
+const { createReadDecklistHandler } = require("./readDecklist");
+
+const DECKLIST_PROMPT = `This image is an official Star Wars: Unlimited decklist graphic. It holds one or more deck lists, each under a heading like "LEIA ORGANA DECK LIST".
+For each deck return:
+- title: the heading without the words "DECK LIST".
+- lines: every card row, reading the left column top to bottom, then the right column top to bottom.
+Each row shows a small icon, a collector number that may end in an asterisk (*), the card name, and a quantity such as "x3".
+For each row return number (the digits exactly as printed, keeping leading zeros, without the asterisk), fromPreviousSet (true only if the number has an asterisk), name (exactly as printed) and qty (the number after "x").
+Ignore footnotes, QR codes, rules text and anything that is not a card row.`;
+
+const DECKLIST_SCHEMA = {
+  type: "object",
+  properties: {
+    decks: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          title: { type: "string" },
+          lines: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                number: { type: "string" },
+                fromPreviousSet: { type: "boolean" },
+                name: { type: "string" },
+                qty: { type: "integer" },
+              },
+              required: ["number", "fromPreviousSet", "name", "qty"],
+            },
+          },
+        },
+        required: ["title", "lines"],
+      },
+    },
+  },
+  required: ["decks"],
+};
+
+async function fetchOfficialImage(url) {
+  // Never follow a redirect off the checked host.
+  const res = await fetch(url, { redirect: "error" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return { contentType: res.headers.get("content-type") ?? "", bytes: Buffer.from(await res.arrayBuffer()) };
+}
+
+const readDecklistHandler = createReadDecklistHandler({
+  db: admin.firestore(),
+  appId: APP_ID,
+  HttpsError,
+  logger,
+  fetchImage: fetchOfficialImage,
+  readImage: (data, mimeType) => askGemini(data, DECKLIST_PROMPT, DECKLIST_SCHEMA, { mimeType, maxOutputTokens: 4096 }),
+});
+
+exports.readDecklist = onCall({ maxInstances: 2, timeoutSeconds: 120, memory: "512MiB" }, readDecklistHandler);
 
 /**
  * User management (admin console). Admin-only: each handler checks the

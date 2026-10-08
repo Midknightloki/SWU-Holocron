@@ -8,6 +8,7 @@ import React from 'react';
 const m = vi.hoisted(() => ({ listDecks: vi.fn(), listProducts: vi.fn(), publish: vi.fn(), ignore: vi.fn(), unpublish: vi.fn(), acceptChanges: vi.fn(), addFromLink: vi.fn() }));
 vi.mock('../../services/PrebuiltDeckService', () => ({ PrebuiltDeckService: m }));
 
+vi.mock('../DecklistImageImport', () => ({ default: () => <div>decklist-importer</div> }));
 import AdminPrebuiltDecks from '../AdminPrebuiltDecks';
 
 const PRODUCTS = [
@@ -33,6 +34,11 @@ const loadKnownIds = async () => new Set(['ASH_015']);
 const renderTab = () => render(<AdminPrebuiltDecks uid="admin" loadKnownIds={loadKnownIds} />);
 
 describe('AdminPrebuiltDecks', () => {
+  it('offers adding precons from an official decklist image', async () => {
+    renderTab();
+    expect(await screen.findByText('decklist-importer')).toBeInTheDocument();
+  });
+
   it('lists decks needing review first, with issues, card count and the suggested product', async () => {
     renderTab();
     const review = await screen.findByRole('region', { name: 'Needs review' });
