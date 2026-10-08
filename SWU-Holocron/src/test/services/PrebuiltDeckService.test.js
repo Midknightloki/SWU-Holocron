@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const store = vi.hoisted(() => ({ docs: new Map(), fail: false }));
 vi.mock('../../firebase', () => ({ db: {}, APP_ID: 'app' }));
+vi.mock('firebase/functions', () => ({ getFunctions: vi.fn(), httpsCallable: vi.fn() }));
 vi.mock('firebase/firestore', () => ({
   doc: (db, ...s) => ({ path: s.join('/') }),
   collection: (db, ...s) => ({ path: s.join('/') }),
@@ -26,6 +27,30 @@ const ok = (body) => ({ ok: true, json: async () => body });
 beforeEach(() => { store.docs.clear(); store.fail = false; });
 
 describe('PrebuiltDeckService', () => {
+  const IMG_DECK = { sourceId: 'img-jtl-boba-fett', sourceName: 'Boba Fett', leaders: ['JTL_009'], base: 'JTL_024', cards: [{ id: 'JTL_009', qty: 1 }] };
+
+  it('saves a deck read from an image for review, with its source', async () => {
+    expect(await PrebuiltDeckService.addFromImage(IMG_DECK, { url: 'https://cdn.starwarsunlimited.com/x.png', setCode: 'JTL' })).toEqual({ ok: true, id: 'img-jtl-boba-fett' });
+    expect(store.docs.get(`${P}/img-jtl-boba-fett`)).toMatchObject({
+      status: 'review', name: 'Boba Fett', issues: [], product: null, leaders: ['JTL_009'],
+      source: { type: 'image', url: 'https://cdn.starwarsunlimited.com/x.png', setCode: 'JTL' },
+    });
+  });
+
+  it('never overwrites a deck already stored under that id', async () => {
+    store.docs.set(`${P}/img-jtl-boba-fett`, { status: 'published' });
+    expect(await PrebuiltDeckService.addFromImage(IMG_DECK, { setCode: 'JTL' })).toEqual({ error: 'exists' });
+    expect(store.docs.get(`${P}/img-jtl-boba-fett`).status).toBe('published');
+  });
+
+  it('reads a decklist image through the function, and reports its error', async () => {
+    const callable = vi.fn(async () => ({ data: { decks: [{ title: 'X', lines: [] }] } }));
+    expect(await PrebuiltDeckService.readDecklistImage({ imageUrl: 'u' }, { callable })).toEqual({ decks: [{ title: 'X', lines: [] }] });
+    expect(callable).toHaveBeenCalledWith({ imageUrl: 'u' });
+    const failing = vi.fn(async () => { throw Object.assign(new Error('Only official starwarsunlimited.com images can be read.'), { code: 'functions/invalid-argument' }); });
+    expect(await PrebuiltDeckService.readDecklistImage({ imageUrl: 'u' }, { callable: failing })).toEqual({ error: 'Only official starwarsunlimited.com images can be read.' });
+  });
+
   it('adds a deck from a link for review, flagging unknown cards', async () => {
     const fetchImpl = vi.fn(async () => ok(API));
     const loadKnownIds = vi.fn(async () => new Set(['ASH_015', 'ASH_021']));

@@ -1,4 +1,5 @@
 import { collection, deleteField, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db, APP_ID } from '../firebase';
 import { deckApiUrl, findMissingCards, parseDeckApi, parseDeckLink, splitCardId } from '../utils/prebuiltDecks';
 
@@ -27,6 +28,32 @@ function issuesFor(cards, loaded, setCodes) {
 }
 
 export const PrebuiltDeckService = {
+  /** An official decklist image, read by the readDecklist function (admins). */
+  async readDecklistImage(input, { callable } = {}) {
+    try {
+      const call = callable ?? httpsCallable(getFunctions(), 'readDecklist');
+      const res = await call(input);
+      return { decks: res?.data?.decks ?? [] };
+    } catch (err) {
+      return { error: err?.message || "Couldn't read the decklist." };
+    }
+  },
+
+  /** A deck resolved from a decklist image, saved for review. Never overwrites. */
+  async addFromImage(deck, { url = null, setCode }) {
+    try {
+      if ((await getDoc(deckRef(deck.sourceId))).exists()) return { error: 'exists' };
+      await setDoc(deckRef(deck.sourceId), {
+        ...deck, issues: [], sourceUpdatedAt: null, typeId: null, suggestedProduct: null, product: null,
+        name: deck.sourceName, status: 'review', fetchedAt: new Date().toISOString(),
+        source: { type: 'image', url, setCode },
+      });
+      return { ok: true, id: deck.sourceId };
+    } catch (err) {
+      return fail(err);
+    }
+  },
+
   async listDecks() {
     try { return rows(await getDocs(decksRef())); } catch (err) { return fail(err); }
   },
