@@ -52,7 +52,9 @@ npm run lint           # --max-warnings 0; CI gates on errors only (see below)
 
 npm test               # vitest watch
 npm run test:unit      # single run, verbose
-npm run test:ci        # single run + coverage (thresholds are inert, see Testing)
+npm run test:unit:fast # pure unit tests (~4s, skips slow integration/DOM suites)
+npm run test:components# component and integration test suites
+npm run test:ci        # single run + coverage (enforces ratcheted thresholds)
 npm run test:changed   # only tests for changed files
 ```
 
@@ -68,6 +70,7 @@ Admin/data scripts (need `firebase-admin-key.json` or `FIREBASE_SERVICE_ACCOUNT`
 
 ```bash
 npm run admin:seed-cards       # write card DB to Firestore by hand (sync-cards.yml does it weekly)
+npm run admin:seed-guided      # seed curated starter shells and modular packets into Firestore
 npm run admin:verify-db        # integrity check
 npm run admin:scrape-dry-run   # scrape official card site without writing
 npm run admin:merge-dry-run    # preview merge of swu-db + official sources

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Database, RefreshCw, Clock, CheckCircle, XCircle, AlertTriangle,
-  Shield, Plus, Trash2, Edit2, Package, Wand2, Users, Save, X, Mail, Copy, Ticket, Boxes
+  Shield, Plus, Trash2, Edit2, Package, Wand2, Users, Save, X, Mail, Copy, Ticket, Boxes, Sparkles
 } from 'lucide-react';
 import AdminPrebuiltDecks from './AdminPrebuiltDecks';
 import AdminUsers from './AdminUsers';
@@ -346,6 +346,7 @@ export default function AdminPanel() {
   const [inviteExpiryDays, setInviteExpiryDays] = useState(14);
   const [issuedCode, setIssuedCode] = useState('');
   const [copiedCode, setCopiedCode] = useState('');
+  const [seedingGuided, setSeedingGuided] = useState(false);
 
   useEffect(() => {
     loadDashboardData();
@@ -461,6 +462,20 @@ export default function AdminPanel() {
     if (!window.confirm('Delete this packet?')) return;
     await GuidedModeService.deletePacket(packetId);
     await loadPackets();
+  };
+
+  const handleSeedDefaults = async () => {
+    if (!canEdit) return;
+    if (!window.confirm('Seed built-in starter shells and packets into the database? Existing items will not be overwritten.')) return;
+    setSeedingGuided(true);
+    try {
+      await GuidedModeService.seedDefaults(user?.uid);
+      await Promise.all([loadShells(), loadPackets()]);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSeedingGuided(false);
+    }
   };
 
   const handleSendInvite = async () => {
@@ -702,13 +717,25 @@ export default function AdminPanel() {
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-bold text-white flex items-center gap-2"><Wand2 size={20} className="text-green-400" /> Shells ({shells.length})</h2>
               {canEdit && !editingShell && (
-                <button
-                  onClick={() => setEditingShell({})}
-                  className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 text-white font-semibold rounded-lg text-sm"
-                  style={{ minHeight: '44px' }}
-                >
-                  <Plus size={16} /> New Shell
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleSeedDefaults}
+                    disabled={seedingGuided}
+                    className="flex items-center gap-2 px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-200 font-medium rounded-lg text-sm"
+                    style={{ minHeight: '44px' }}
+                    title="Write built-in starter shells and packets to the database"
+                  >
+                    {seedingGuided ? <RefreshCw size={16} className="animate-spin text-gray-400" /> : <Sparkles size={16} className="text-yellow-400" />}
+                    Seed Starter Content
+                  </button>
+                  <button
+                    onClick={() => setEditingShell({})}
+                    className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 text-white font-semibold rounded-lg text-sm"
+                    style={{ minHeight: '44px' }}
+                  >
+                    <Plus size={16} /> New Shell
+                  </button>
+                </div>
               )}
             </div>
 
@@ -761,13 +788,25 @@ export default function AdminPanel() {
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-bold text-white flex items-center gap-2"><Package size={20} className="text-blue-400" /> Packets ({packets.length})</h2>
               {canEdit && !editingPacket && (
-                <button
-                  onClick={() => setEditingPacket({})}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg text-sm"
-                  style={{ minHeight: '44px' }}
-                >
-                  <Plus size={16} /> New Packet
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleSeedDefaults}
+                    disabled={seedingGuided}
+                    className="flex items-center gap-2 px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-200 font-medium rounded-lg text-sm"
+                    style={{ minHeight: '44px' }}
+                    title="Write built-in starter shells and packets to the database"
+                  >
+                    {seedingGuided ? <RefreshCw size={16} className="animate-spin text-gray-400" /> : <Sparkles size={16} className="text-yellow-400" />}
+                    Seed Starter Content
+                  </button>
+                  <button
+                    onClick={() => setEditingPacket({})}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg text-sm"
+                    style={{ minHeight: '44px' }}
+                  >
+                    <Plus size={16} /> New Packet
+                  </button>
+                </div>
               )}
             </div>
 

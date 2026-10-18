@@ -39,7 +39,7 @@ vi.mock('../../firebase', () => ({
 }));
 
 function Harness() {
-  const { user, loading, loginWithGoogle, loginAnonymously, logout, upgrade } = useAuth();
+  const { user, loading, loginWithGoogle, loginAnonymously, logout, upgrade, dismissUpgrade } = useAuth();
   const [lastUser, setLastUser] = useState(null);
 
   return (
@@ -53,6 +53,7 @@ function Harness() {
       <button onClick={() => loginWithGoogle().catch(() => {})}>google-try</button>
       <button onClick={async () => setLastUser(await loginAnonymously())}>guest</button>
       <button onClick={logout}>logout</button>
+      <button onClick={dismissUpgrade}>dismiss</button>
     </div>
   );
 }
@@ -139,5 +140,17 @@ describe('AuthContext', () => {
     await user.click(screen.getByText('logout'));
 
     expect(mockSignOut).toHaveBeenCalledTimes(1);
+  });
+
+  it('dismisses upgrade status when dismissUpgrade is called', async () => {
+    mockAuth.currentUser = { uid: 'anon-9', isAnonymous: true };
+    mockUpgradeGuest.mockRejectedValueOnce(Object.assign(new Error('fail'), { code: 'auth/network-request-failed' }));
+    const user = userEvent.setup();
+    renderHarness();
+    await user.click(screen.getByText('google-try'));
+    await waitFor(() => expect(screen.getByTestId('upgrade').textContent).toBe('error'));
+
+    await user.click(screen.getByText('dismiss'));
+    expect(screen.getByTestId('upgrade').textContent).toBe('none');
   });
 });

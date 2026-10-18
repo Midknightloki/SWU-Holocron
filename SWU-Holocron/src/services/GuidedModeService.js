@@ -2,9 +2,10 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import { generateInviteCode, normalizeInviteCode } from '../utils/inviteCodes';
 import { db, APP_ID } from '../firebase';
 import {
-  collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc,
+  collection, doc, getDocs, getDoc, addDoc, deleteDoc,
   serverTimestamp, query, orderBy, setDoc
 } from 'firebase/firestore';
+import { DEFAULT_SHELLS, DEFAULT_PACKETS } from '../data/defaultGuidedContent';
 
 const shellsCol = () => collection(db, 'artifacts', APP_ID, 'shells');
 const packetsCol = () => collection(db, 'artifacts', APP_ID, 'packets');
@@ -14,15 +15,30 @@ export const GuidedModeService = {
   // ─── Shells ───────────────────────────────────────────────────────────────
 
   async getShells() {
-    const q = query(shellsCol(), orderBy('createdAt', 'desc'));
-    const snap = await getDocs(q);
-    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    try {
+      const q = query(shellsCol(), orderBy('createdAt', 'desc'));
+      const snap = await getDocs(q);
+      if (snap?.docs?.length > 0) {
+        return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      }
+    } catch (err) {
+      console.warn('Could not load shells from Firestore; falling back to defaults:', err?.message || err);
+    }
+    return DEFAULT_SHELLS;
   },
 
   async getShell(shellId) {
-    const snap = await getDoc(doc(shellsCol(), shellId));
-    if (!snap.exists()) throw new Error('Shell not found');
-    return { id: snap.id, ...snap.data() };
+    try {
+      const snap = await getDoc(doc(shellsCol(), shellId));
+      if (snap.exists()) {
+        return { id: snap.id, ...snap.data() };
+      }
+    } catch {
+      // Fall through to check built-in defaults
+    }
+    const defaultShell = DEFAULT_SHELLS.find(s => s.id === shellId);
+    if (defaultShell) return defaultShell;
+    throw new Error('Shell not found');
   },
 
   async createShell(uid, shellData) {
@@ -36,10 +52,10 @@ export const GuidedModeService = {
   },
 
   async updateShell(shellId, shellData) {
-    await updateDoc(doc(shellsCol(), shellId), {
+    await setDoc(doc(shellsCol(), shellId), {
       ...shellData,
       updatedAt: serverTimestamp(),
-    });
+    }, { merge: true });
   },
 
   async deleteShell(shellId) {
@@ -49,9 +65,16 @@ export const GuidedModeService = {
   // ─── Packets ─────────────────────────────────────────────────────────────
 
   async getPackets() {
-    const q = query(packetsCol(), orderBy('createdAt', 'desc'));
-    const snap = await getDocs(q);
-    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    try {
+      const q = query(packetsCol(), orderBy('createdAt', 'desc'));
+      const snap = await getDocs(q);
+      if (snap?.docs?.length > 0) {
+        return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      }
+    } catch (err) {
+      console.warn('Could not load packets from Firestore; falling back to defaults:', err?.message || err);
+    }
+    return DEFAULT_PACKETS;
   },
 
   async createPacket(uid, packetData) {
@@ -65,14 +88,58 @@ export const GuidedModeService = {
   },
 
   async updatePacket(packetId, packetData) {
-    await updateDoc(doc(packetsCol(), packetId), {
+    await setDoc(doc(packetsCol(), packetId), {
       ...packetData,
       updatedAt: serverTimestamp(),
-    });
+    }, { merge: true });
   },
 
   async deletePacket(packetId) {
     await deleteDoc(doc(packetsCol(), packetId));
+  },
+
+  // ─── Seeding Defaults ───────────────────────────────────────────────────
+
+  async seedDefaults(uid) {
+    let seededShells = 0;
+    let seededPackets = 0;
+
+    for (const shell of DEFAULT_SHELLS) {
+      const ref = doc(shellsCol(), shell.id);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) {
+        await setDoc(ref, {
+          name: shell.name,
+          description: shell.description,
+          leaderId: shell.leaderId,
+          baseId: shell.baseId,
+          cards: shell.cards,
+          createdBy: uid || 'system',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        seededShells += 1;
+      }
+    }
+
+    for (const packet of DEFAULT_PACKETS) {
+      const ref = doc(packetsCol(), packet.id);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) {
+        await setDoc(ref, {
+          name: packet.name,
+          description: packet.description,
+          role: packet.role,
+          cards: packet.cards,
+          createdBy: uid || 'system',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        seededPackets += 1;
+      }
+    }
+
+    return { seededShells, seededPackets };
   },
 
   // ─── Contributor Invites ─────────────────────────────────────────────────

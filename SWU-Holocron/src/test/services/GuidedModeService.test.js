@@ -2,11 +2,12 @@
  * @vitest-environment happy-dom
  * @unit @service
  *
- * GuidedModeService Tests — Shells, Packets, and Contributor Invites.
+ * GuidedModeService Tests — Shells, Packets, Seeding, and Contributor Invites.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GuidedModeService } from '../../services/GuidedModeService';
+import { DEFAULT_SHELLS, DEFAULT_PACKETS } from '../../data/defaultGuidedContent';
 
 vi.mock('../../firebase', () => ({
   db: { _type: 'firestore' },
@@ -51,8 +52,13 @@ vi.mock('firebase/firestore', () => ({
     mockDocsStore.set(path, data);
     return { id, _path: path };
   }),
-  setDoc: vi.fn(async (docRef, data) => {
-    mockDocsStore.set(docRef._path, data);
+  setDoc: vi.fn(async (docRef, data, options = {}) => {
+    if (options.merge) {
+      const existing = mockDocsStore.get(docRef._path) || {};
+      mockDocsStore.set(docRef._path, { ...existing, ...data });
+    } else {
+      mockDocsStore.set(docRef._path, data);
+    }
   }),
   updateDoc: vi.fn(async (docRef, data) => {
     const existing = mockDocsStore.get(docRef._path) || {};
@@ -77,57 +83,101 @@ describe('GuidedModeService', () => {
     vi.clearAllMocks();
   });
 
+  describe('Curated Defaults & Fallback', () => {
+    it('returns DEFAULT_SHELLS when Firestore has no shells', async () => {
+      const shells = await GuidedModeService.getShells();
+      expect(shells).toEqual(DEFAULT_SHELLS);
+      expect(shells.length).toBeGreaterThanOrEqual(3);
+    });
+
+    it('returns DEFAULT_PACKETS when Firestore has no packets', async () => {
+      const packets = await GuidedModeService.getPackets();
+      expect(packets).toEqual(DEFAULT_PACKETS);
+      expect(packets.length).toBeGreaterThanOrEqual(5);
+    });
+
+    it('resolves a default shell by ID when not stored in Firestore', async () => {
+      const shell = await GuidedModeService.getShell('default-vader-command');
+      expect(shell).toBeTruthy();
+      expect(shell.name).toContain('Darth Vader');
+      expect(shell.leaderId).toBe('SOR_010');
+      expect(shell.baseId).toBe('SOR_023');
+      const totalCards = Object.values(shell.cards).reduce((s, c) => s + c, 0);
+      expect(totalCards).toBe(50);
+    });
+
+    it('throws when getting non-existent shell that is not in defaults', async () => {
+      await expect(GuidedModeService.getShell('non-existent-shell')).rejects.toThrow('Shell not found');
+    });
+
+    it('seeds defaults to Firestore and does not duplicate on second seed', async () => {
+      const firstSeed = await GuidedModeService.seedDefaults('admin-uid');
+      expect(firstSeed.seededShells).toBe(DEFAULT_SHELLS.length);
+      expect(firstSeed.seededPackets).toBe(DEFAULT_PACKETS.length);
+
+      // Now Firestore has documents, so getShells returns them
+      const shells = await GuidedModeService.getShells();
+      expect(shells).toHaveLength(DEFAULT_SHELLS.length);
+
+      // Second seed should find existing documents and seed 0
+      const secondSeed = await GuidedModeService.seedDefaults('admin-uid');
+      expect(secondSeed.seededShells).toBe(0);
+      expect(secondSeed.seededPackets).toBe(0);
+    });
+  });
+
   describe('Shells CRUD', () => {
-    it('creates, retrieves, updates and deletes a shell', async () => {
+    it('creates, retrieves, updates and deletes custom shells', async () => {
       const shellId = await GuidedModeService.createShell('admin-1', {
-        name: 'Vader Aggro',
-        leaderId: 'L_VADER',
-        baseId: 'B_CATINA',
+        name: 'Custom Boba Deck',
+        leaderId: 'SOR_015',
+        baseId: 'SOR_022',
+        cards: { SOR_179: 3 },
       });
 
       expect(shellId).toBeTruthy();
 
       const shell = await GuidedModeService.getShell(shellId);
-      expect(shell.name).toBe('Vader Aggro');
+      expect(shell.name).toBe('Custom Boba Deck');
       expect(shell.createdBy).toBe('admin-1');
 
-      await GuidedModeService.updateShell(shellId, { name: 'Vader Midrange' });
+      await GuidedModeService.updateShell(shellId, { name: 'Custom Boba Aggro' });
       const updated = await GuidedModeService.getShell(shellId);
-      expect(updated.name).toBe('Vader Midrange');
+      expect(updated.name).toBe('Custom Boba Aggro');
 
       const shellsList = await GuidedModeService.getShells();
       expect(shellsList).toHaveLength(1);
+      expect(shellsList[0].name).toBe('Custom Boba Aggro');
 
       await GuidedModeService.deleteShell(shellId);
+      // When Firestore is empty again, it falls back to DEFAULT_SHELLS
       const afterDelete = await GuidedModeService.getShells();
-      expect(afterDelete).toHaveLength(0);
-    });
-
-    it('throws when getting non-existent shell', async () => {
-      await expect(GuidedModeService.getShell('non-existent')).rejects.toThrow('Shell not found');
+      expect(afterDelete).toEqual(DEFAULT_SHELLS);
     });
   });
 
   describe('Packets CRUD', () => {
-    it('creates, retrieves, updates and deletes a packet', async () => {
+    it('creates, retrieves, updates and deletes custom packets', async () => {
       const packetId = await GuidedModeService.createPacket('contributor-1', {
-        name: 'Imperial Trooper Package',
-        cards: [{ cardId: 'C_TROOPER', count: 3 }],
+        name: 'Custom Swarm Packet',
+        role: 'Aggression',
+        cards: { SOR_229: 3 },
       });
 
       expect(packetId).toBeTruthy();
 
       let packets = await GuidedModeService.getPackets();
       expect(packets).toHaveLength(1);
-      expect(packets[0].name).toBe('Imperial Trooper Package');
+      expect(packets[0].name).toBe('Custom Swarm Packet');
 
-      await GuidedModeService.updatePacket(packetId, { name: 'Updated Package' });
+      await GuidedModeService.updatePacket(packetId, { name: 'Updated Swarm' });
       packets = await GuidedModeService.getPackets();
-      expect(packets[0].name).toBe('Updated Package');
+      expect(packets[0].name).toBe('Updated Swarm');
 
       await GuidedModeService.deletePacket(packetId);
+      // When Firestore is empty again, it falls back to DEFAULT_PACKETS
       packets = await GuidedModeService.getPackets();
-      expect(packets).toHaveLength(0);
+      expect(packets).toEqual(DEFAULT_PACKETS);
     });
   });
 

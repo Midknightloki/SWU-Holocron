@@ -49,4 +49,19 @@ A restricted format often used for specific organized play seasons or community 
   3. *Twilight of the Republic*
 
 ### Validation
-- Community tools like **SWUDB** offer a "Trilogy Validator" to ensure deck legality for this format.
+- Validated automatically in SWU-Holocron via `LegalityService.validateTrilogy()`.
+
+---
+
+## 4. Sideboards & Deck Constraints
+- **Sideboard Size:** Exactly 0 to 10 cards.
+- **Combined Card Limits:** Across the main draw deck and sideboard combined, no card (other than basic bases) may exceed 3 copies total (or 1 copy in Twin Suns).
+- **Enforcement:** Validated in `LegalityService.validatePremier()`, `validateTwinSuns()`, and `validateTrilogy()`.
+
+---
+
+## 5. Guided Deck Building (Shells & Packets)
+To accelerate deck construction for new and returning players:
+- **Starter Shells:** 50-card legal decks centered on popular Leaders and Bases (e.g. *Darth Vader — Imperial Might*, *Luke Skywalker — Heroic Defense*, *Sabine Wren — Rebel Rush*).
+- **Modular Packets:** Curated 6–8 card thematic modules across standard archetypes (`Aggression`, `Removal`, `Ramp`, `Utility`, `Control`).
+- **Offline / Zero-Config Fallback:** Bundled curated starter content (`src/data/defaultGuidedContent.js`) serves players immediately without requiring prior admin database seeding. Admins and contributors can customize and extend content through the Admin Panel (`/admin`) or `npm run admin:seed-guided`.
