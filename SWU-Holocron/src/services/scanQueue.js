@@ -50,7 +50,6 @@ export function createScanQueue({
         pause('offline');
         return;
       }
-      // eslint-disable-next-line no-await-in-loop
       const result = await scan(image);
       if (stopped) return;
       if (result.status !== 'failed') {
@@ -66,7 +65,6 @@ export function createScanQueue({
         onResult(id, result);
         return;
       }
-      // eslint-disable-next-line no-await-in-loop
       await wait(RETRY_DELAYS_MS[attempt]);
       if (stopped) return;
       // Paused while backing off (another read hit the limit, or the network

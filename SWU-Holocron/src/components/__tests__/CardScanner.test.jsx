@@ -495,7 +495,6 @@ describe('CardScanner', () => {
     const CAL = JSON.stringify({ version: 1, rect: { x: 0.2, y: 0.1, w: 0.6, h: 0.8 }, source: 'photo', orientation: 'portrait', savedAt: 1 });
     const tick = async (n) => {
       for (let i = 0; i < n; i += 1) {
-        // eslint-disable-next-line no-await-in-loop
         await act(async () => { vi.advanceTimersByTime(AUTO_TICK_MS); });
       }
     };
@@ -796,7 +795,7 @@ describe('CardScanner', () => {
     const { unmount } = renderScanner();
     for (let i = 0; i < 4; i += 1) {
       pressSpace();
-      await flush(); // eslint-disable-line no-await-in-loop
+      await flush();
     }
     await waitFor(() => expect(mocks.scan).toHaveBeenCalledTimes(3));
     unmount();

@@ -656,8 +656,6 @@ Long-standing, still true, and each one a reasonable thing to pick up:
 - **No store.** Everything prop-drills from `App.jsx`; collection update callbacks
   are threaded through every component that touches quantities.
 - **No memoization on the card grid**, which routinely renders 200+ cards.
-- `.animate-shimmer` (the foil effect) is defined in `src/index.css` but
-  referenced by no component — dead CSS left from `Prototype/app.jsx`.
 - A React Native migration has been scoped but not started, in
   `SWU Holocron - React Native Migration Context.md` and
   `docs/PLATFORM-ARCHITECTURE-DECISION.md`. The platform-coupled spots it cares

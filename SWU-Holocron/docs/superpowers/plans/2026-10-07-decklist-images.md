@@ -1,6 +1,6 @@
 # Precon Decks from Official Decklist Images Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** An admin pastes an official decklist image link (or uploads the image). Gemini reads its decks, each line is resolved to a card by number + name, the admin fixes any line that didn't resolve, and the decks are saved to Prebuilt Decks in review.
 
@@ -48,7 +48,7 @@
   - `readImage(base64, mimeType)` resolves to the raw Gemini JSON.
   - `fetchImage(url)` resolves to `{ contentType, bytes: Buffer }`.
 
-- [ ] **Step 1: Write the failing test** (`src/test/functions/readDecklist.test.js`)
+- [x] **Step 1: Write the failing test** (`src/test/functions/readDecklist.test.js`)
 
 ```js
 // @vitest-environment node
@@ -158,12 +158,12 @@ describe('sanitizeDecklist', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `npx vitest run src/test/functions/readDecklist.test.js`
 Expected: FAIL — cannot find `functions/readDecklist.js`.
 
-- [ ] **Step 3: Implement `functions/readDecklist.js`**
+- [x] **Step 3: Implement `functions/readDecklist.js`**
 
 ```js
 /**
@@ -258,12 +258,12 @@ function createReadDecklistHandler({ db, appId, HttpsError, readImage, fetchImag
 module.exports = { createReadDecklistHandler, isOfficialImageUrl, sanitizeDecklist };
 ```
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `npx vitest run src/test/functions/readDecklist.test.js`
 Expected: PASS.
 
-- [ ] **Step 5: Wire it in `functions/index.js`**
+- [x] **Step 5: Wire it in `functions/index.js`**
 
 - Give `askGemini` an options argument: `async function askGemini(imageBase64, prompt, schema, { mimeType = "image/jpeg", maxOutputTokens = 256 } = {})`. Use `mimeType` in `inlineData` and `maxOutputTokens` in `config`. The existing callers are unchanged.
 - After the `locateCard` export, add:
@@ -336,7 +336,7 @@ exports.readDecklist = onCall({ maxInstances: 2, timeoutSeconds: 120, memory: "5
 Run: `node -e "require('./functions/readDecklist.js'); console.log('ok')"`
 Expected: `ok`. (`index.js` needs `functions/node_modules`, which may be absent locally; it is checked at deploy.)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 npx vitest run src/test/functions/readDecklist.test.js && L=$(npx eslint src --ext js,jsx --quiet 2>/dev/null); [ -n "$L" ] && echo "$L" || { git add functions/readDecklist.js functions/index.js src/test/functions/readDecklist.test.js && git commit -m "feat(precons): readDecklist function reads official decklist images"; }
@@ -362,7 +362,7 @@ npx vitest run src/test/functions/readDecklist.test.js && L=$(npx eslint src --e
   - `buildPrebuiltDeck({ title, entries, setCode })` → `{ sourceId, sourceName, leaders, base, cards: [{ id, qty }] }`.
   - Card objects are card-database records `{ Set, Number, Name, Subtitle, Type }`.
 
-- [ ] **Step 1: Write the failing test** (`src/test/utils/decklistImage.test.js`)
+- [x] **Step 1: Write the failing test** (`src/test/utils/decklistImage.test.js`)
 
 ```js
 import { describe, it, expect } from 'vitest';
@@ -456,12 +456,12 @@ describe('building the deck', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `npx vitest run src/test/utils/decklistImage.test.js`
 Expected: FAIL — cannot resolve `../../utils/decklistImage`.
 
-- [ ] **Step 3: Implement `src/utils/decklistImage.js`**
+- [x] **Step 3: Implement `src/utils/decklistImage.js`**
 
 ```js
 /**
@@ -553,12 +553,12 @@ export function buildPrebuiltDeck({ title, entries, setCode }) {
 
 Note: the accent-stripping character class above is the combining-mark range U+0300–U+036F. Write it as `/[̀-ͯ]/g`. That escape is safe; only the U+FEFF escape is forbidden. The plan text shows the literal characters only because of how it was rendered.
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `npx vitest run src/test/utils/decklistImage.test.js`
 Expected: PASS. If `cardKey` is not exported from `prebuiltDecks.js`, export it there (it already exists as `export const cardKey`).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 npx vitest run src/test/utils/decklistImage.test.js && L=$(npx eslint src --ext js,jsx --quiet 2>/dev/null); [ -n "$L" ] && echo "$L" || { git add src/utils/decklistImage.js src/test/utils/decklistImage.test.js && git commit -m "feat(precons): resolve decklist image lines by number and name"; }
@@ -578,7 +578,7 @@ npx vitest run src/test/utils/decklistImage.test.js && L=$(npx eslint src --ext 
   - `PrebuiltDeckService.readDecklistImage(input, { callable } = {})` → `{ decks }` | `{ error: message }`, where `input` = `{ imageUrl }` | `{ image, mimeType }`.
   - `addFromImage(deck, { url = null, setCode })` → `{ ok: true, id }` | `{ error: 'exists' }` | `{ error }`. The stored document is `{ ...deck, issues: [], sourceUpdatedAt: null, typeId: null, suggestedProduct: null, product: null, name: deck.sourceName, status: 'review', fetchedAt, source: { type: 'image', url, setCode } }`.
 
-- [ ] **Step 1: Write the failing tests** (add inside the existing `describe('PrebuiltDeckService', …)`)
+- [x] **Step 1: Write the failing tests** (add inside the existing `describe('PrebuiltDeckService', …)`)
 
 ```js
   const IMG_DECK = { sourceId: 'img-jtl-boba-fett', sourceName: 'Boba Fett', leaders: ['JTL_009'], base: 'JTL_024', cards: [{ id: 'JTL_009', qty: 1 }] };
@@ -608,12 +608,12 @@ npx vitest run src/test/utils/decklistImage.test.js && L=$(npx eslint src --ext 
 
 (`P` is the file's existing prebuiltDecks path constant. Use whatever that file names it.)
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `npx vitest run src/test/services/PrebuiltDeckService.test.js`
 Expected: FAIL — `addFromImage` / `readDecklistImage` are not functions.
 
-- [ ] **Step 3: Implement** — add `import { getFunctions, httpsCallable } from 'firebase/functions';` and these methods to `PrebuiltDeckService`:
+- [x] **Step 3: Implement** — add `import { getFunctions, httpsCallable } from 'firebase/functions';` and these methods to `PrebuiltDeckService`:
 
 ```js
   /** An official decklist image, read by the readDecklist function (admins). */
@@ -645,12 +645,12 @@ Expected: FAIL — `addFromImage` / `readDecklistImage` are not functions.
 
 If the service test file's `firebase/functions` is not mocked, add `vi.mock('firebase/functions', () => ({ getFunctions: vi.fn(), httpsCallable: vi.fn() }));` at its top.
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `npx vitest run src/test/services/PrebuiltDeckService.test.js`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 npx vitest run src/test/services/PrebuiltDeckService.test.js && L=$(npx eslint src --ext js,jsx --quiet 2>/dev/null); [ -n "$L" ] && echo "$L" || { git add src/services/PrebuiltDeckService.js src/test/services/PrebuiltDeckService.test.js && git commit -m "feat(precons): read decklist images and save their decks for review"; }
@@ -675,7 +675,7 @@ npx vitest run src/test/services/PrebuiltDeckService.test.js && L=$(npx eslint s
   - **Save as review**, disabled while any row is unresolved;
   - after saving, a status line per deck: "Saved <name>" or "<name> is already in Prebuilt Decks".
 
-- [ ] **Step 1: Write the failing test** (`src/components/__tests__/DecklistImageImport.test.jsx`)
+- [x] **Step 1: Write the failing test** (`src/components/__tests__/DecklistImageImport.test.jsx`)
 
 ```jsx
 /**
@@ -791,12 +791,12 @@ describe('DecklistImageImport', () => {
 
 In `AdminPrebuiltDecks.test.jsx`, mock the importer (`vi.mock('../DecklistImageImport', () => ({ default: () => <div>decklist-importer</div> }))`) and add a test that the tab renders `decklist-importer`.
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `npx vitest run src/components/__tests__/DecklistImageImport.test.jsx src/components/__tests__/AdminPrebuiltDecks.test.jsx`
 Expected: FAIL — cannot resolve `../DecklistImageImport`; the importer is not in the tab.
 
-- [ ] **Step 3: Implement `src/components/DecklistImageImport.jsx`**
+- [x] **Step 3: Implement `src/components/DecklistImageImport.jsx`**
 
 ```jsx
 import React, { useEffect, useMemo, useState } from 'react';
@@ -988,12 +988,12 @@ export default function DecklistImageImport({
 
 `AdminPrebuiltDecks.jsx`: import `DecklistImageImport` and render `<DecklistImageImport onSaved={load} />` directly after the paste-a-link box. Use the tab's existing reload function, the one that calls `PrebuiltDeckService.listDecks()`, whatever it is named.
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `npx vitest run src/components/__tests__/DecklistImageImport.test.jsx src/components/__tests__/AdminPrebuiltDecks.test.jsx`
 Expected: PASS. Where the plan's expected text differs from the component in a harmless way (e.g. the exact "not found" reason wording), align the test to the component's text and ledger it.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 L=$(npx eslint src --ext js,jsx --quiet 2>/dev/null); [ -n "$L" ] && echo "$L" || { git add src/components/DecklistImageImport.jsx src/components/AdminPrebuiltDecks.jsx src/components/__tests__/DecklistImageImport.test.jsx src/components/__tests__/AdminPrebuiltDecks.test.jsx && git commit -m "feat(precons): add precons from an official decklist image"; }
@@ -1006,12 +1006,12 @@ L=$(npx eslint src --ext js,jsx --quiet 2>/dev/null); [ -n "$L" ] && echo "$L" |
 **Files:**
 - Modify: `CLAUDE.md` (git root)
 
-- [ ] **Step 1: CLAUDE.md**
+- [x] **Step 1: CLAUDE.md**
   - In "Prebuilt decks", add a bullet:
     > **Official decklist images.** Most precons (Spotlight decks, Two-Player Starters) are published only as images in official articles (`cdn.starwarsunlimited.com/…SWH_0N…Decklist…`, two decks each). **Add from decklist image** in the admin tab sends the link (CDN only) or an upload to the admin-only `readDecklist` function (`functions/readDecklist.js`, Gemini). It resolves each line by number + name (`src/utils/decklistImage.js`): a plain number is in the deck's set, guessed from `SWH_0N`; `*` means an earlier base set, newest first. The admin fixes unresolved lines, and the decks are saved for review as `img-<set>-<name>`. The weekly sync never touches them.
   - Add `functions:readDecklist` to the "Functions are deployed by hand" bullet.
 
-- [ ] **Step 2: Full gate**
+- [x] **Step 2: Full gate**
 
 Run: `npm run test:unit > /tmp/unit.txt 2>&1; tail -n 6 /tmp/unit.txt`
 Expected: all pass.
@@ -1019,7 +1019,7 @@ Expected: all pass.
 Run: `npm run build 2>&1 | tail -n 3`
 Expected: `✓ built in …`.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 L=$(npx eslint src --ext js,jsx --quiet 2>/dev/null); [ -n "$L" ] && echo "$L" || { git add ../CLAUDE.md && git commit -m "docs: precons from official decklist images"; }

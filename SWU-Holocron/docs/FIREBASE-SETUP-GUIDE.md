@@ -251,6 +251,8 @@ Hosting URL: https://swu-holocron-xxxxx.web.app
 
 This allows your app to automatically update the card database daily.
 
+> **Note for Midknightloki/SWU-Holocron maintainers**: The production repo uses keyless **Workload Identity Federation (WIF)** via GitHub Actions rather than raw `FIREBASE_SERVICE_ACCOUNT` secrets. See [`CI-KEYLESS-AUTH.md`](./CI-KEYLESS-AUTH.md). The steps below are for personal fork setups where WIF is not configured.
+
 ### Step 16: Create Service Account
 1. Go back to Firebase Console
 2. Click the **⚙️ gear icon** (top left) → **"Project settings"**

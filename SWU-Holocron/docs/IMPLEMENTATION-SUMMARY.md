@@ -1,5 +1,7 @@
 # Card Database Reliability Improvements - Implementation Summary
 
+> **Historical Context Note:** The manual service-account key generation and `FIREBASE_SERVICE_ACCOUNT` GitHub secret steps described below were superseded by keyless authentication via **Workload Identity Federation (WIF)**. The sync pipeline now authenticates through GitHub OIDC using the dedicated `card-sync@` identity. See [`docs/CI-KEYLESS-AUTH.md`](./CI-KEYLESS-AUTH.md) and [`CLAUDE.md`](../../CLAUDE.md).
+
 ## ✅ Completed
 
 ### 1. Architecture Design

@@ -62,7 +62,7 @@ describe('scanQueue', () => {
     const scan = vi.fn(async () => ({ status: 'failed', error: 'network' }));
     const { queue, results, waits } = setup({ scan });
     queue.enqueue('a');
-    for (let i = 0; i < 10; i += 1) await flush(); // eslint-disable-line no-await-in-loop
+    for (let i = 0; i < 10; i += 1) await flush();
     expect(waits).toEqual(RETRY_DELAYS_MS);
     expect(results).toEqual([['a', { status: 'failed', error: 'network' }]]);
   });

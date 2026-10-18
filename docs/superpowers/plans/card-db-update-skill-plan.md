@@ -1,5 +1,9 @@
 # Plan: Card DB Update Skill & Scheduled Task
 
+> **Status:** Partially implemented / Superseded.
+> - **Chunk 1 & 2 Completed:** `scripts/cardDbSync.js` and `config/release-calendar.json` were built and are maintained.
+> - **Chunks 3–6 Superseded:** Local Claude Code skill and local scheduled tasks were superseded by the automated weekly GitHub Actions cron (`.github/workflows/sync-cards.yml`) with Workload Identity Federation (WIF). See `SWU-Holocron/docs/CI-KEYLESS-AUTH.md` and `CLAUDE.md`.
+
 Task: Build a Claude Code skill and scheduled task that orchestrates card database updates — seeding from SWU-DB API, scraping the official site, reconciling disagreements (official wins), verifying integrity, and logging results. Triggered on release dates from a calendar file.
 
 Final deliverable: A working Claude Code skill (`swu-card-db-update`) + scheduled task + release calendar config, all tested end-to-end.

@@ -35,14 +35,6 @@ html {
   background: #6b7280; 
 }
 
-/* Shimmer animation for Foil cards */
-@keyframes shimmer {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
-}
-.animate-shimmer {
-  animation: shimmer 2s infinite;
-}
 /* Batch report: printing (Save as PDF) shows only the report. It is portalled
    to <body>, so everything else can leave the layout entirely -- hiding it
    with visibility kept its height and printed pages of blank binder. */

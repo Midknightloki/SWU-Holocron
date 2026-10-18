@@ -1,6 +1,6 @@
 # Polish Round Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Imports become batches with reports; copied text fits Discord; the public list page reads well on a phone; list editing writes less; shared decks get shape checks; a guest can upgrade to Google without losing their collection.
 
@@ -73,7 +73,7 @@
 **Interfaces:**
 - Produces: `DISCORD_LIMIT = 2000`; `escapeDiscord(text) → string`; `splitForDiscord(text, limit = DISCORD_LIMIT) → string[]` (always at least one part).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```js
 import { describe, it, expect } from 'vitest';
@@ -113,12 +113,12 @@ describe('splitForDiscord', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `npx vitest run src/test/utils/discordText.test.js`
 Expected: FAIL — cannot resolve `../../utils/discordText`.
 
-- [ ] **Step 3: Implement `src/utils/discordText.js`**
+- [x] **Step 3: Implement `src/utils/discordText.js`**
 
 ```js
 /**
@@ -162,12 +162,12 @@ export function splitForDiscord(text, limit = DISCORD_LIMIT) {
 }
 ```
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `npx vitest run src/test/utils/discordText.test.js`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 npx vitest run src/test/utils/discordText.test.js && L=$(npx eslint src --ext js,jsx --quiet 2>/dev/null); [ -n "$L" ] && echo "$L" || { git add src/utils/discordText.js src/test/utils/discordText.test.js && git commit -m "feat(polish): Discord escaping and splitting for copied text"; }
@@ -190,7 +190,7 @@ npx vitest run src/test/utils/discordText.test.js && L=$(npx eslint src --ext js
   - **Clipboard blocked:** a read-only textarea with `aria-label={fallbackLabel}` holds the current part.
   - **Text changes** (filters, prices, edits): the state resets and the status and box disappear.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```jsx
 /**
@@ -244,12 +244,12 @@ describe('CopyTextButton', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `npx vitest run src/components/__tests__/CopyTextButton.test.jsx`
 Expected: FAIL — cannot resolve `../CopyTextButton`.
 
-- [ ] **Step 3: Implement `src/components/CopyTextButton.jsx`**
+- [x] **Step 3: Implement `src/components/CopyTextButton.jsx`**
 
 ```jsx
 import React, { useEffect, useMemo, useState } from 'react';
@@ -303,7 +303,7 @@ export default function CopyTextButton({ text, count, fallbackLabel, disabled = 
 }
 ```
 
-- [ ] **Step 4: Adopt it in the three components**
+- [x] **Step 4: Adopt it in the three components**
 
 `ListView.jsx`:
 - Remove the `copyState` state, every `setCopyState(…)` call, the `copyText` function, the `Copy as text` button, and the `copyState` status and textarea block. Remove `ClipboardCopy` from the lucide import if it is unused.
@@ -321,12 +321,12 @@ export default function CopyTextButton({ text, count, fallbackLabel, disabled = 
 - Add `const tradeText = useMemo(() => toTradeText(lines, { showPrices }), [lines, showPrices]);` with the other hooks.
 - Where the button was: `<CopyTextButton text={tradeText} count={summary.cards} fallbackLabel="Trade list" disabled={noExport} />`.
 
-- [ ] **Step 5: Run all affected tests**
+- [x] **Step 5: Run all affected tests**
 
 Run: `npx vitest run src/components/__tests__/CopyTextButton.test.jsx src/components/__tests__/ListView.test.jsx src/components/__tests__/PublicListView.test.jsx src/components/__tests__/CollectionValueReport.test.jsx`
 Expected: PASS. The existing assertions keep their meaning: "Copied 3 cards", the `Trade list` / `List text` fallback boxes, and "clears the copy box when prices or filters change" (the text changes, so the box resets). If an existing test asserted exact copied text containing a character that is now escaped, update the expectation to the escaped form and ledger it.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 npx vitest run src/components/__tests__/CopyTextButton.test.jsx src/components/__tests__/ListView.test.jsx src/components/__tests__/PublicListView.test.jsx src/components/__tests__/CollectionValueReport.test.jsx && L=$(npx eslint src --ext js,jsx --quiet 2>/dev/null); [ -n "$L" ] && echo "$L" || { git add src/components/CopyTextButton.jsx src/components/ListView.jsx src/components/PublicListView.jsx src/components/CollectionValueReport.jsx src/components/__tests__ && git commit -m "feat(polish): copy lists for Discord in parts"; }
@@ -343,7 +343,7 @@ npx vitest run src/components/__tests__/CopyTextButton.test.jsx src/components/_
 **Interfaces:**
 - Produces: public lines carry `type` (when known) and `priceIsFallback: true` (only on priced fallback lines). `publicLines` keeps `priceIsFallback` from the doc.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 In `src/test/utils/cardLists.test.js`, update the expected `lines` in "carries prices only on priced lines…": add `type: 'Leader'` to both lines (the fixture card is a Leader), and give the test's price `{ market: 1.5, isFallback: true }`, so the Vader line also carries `priceIsFallback: true`. Add:
 
@@ -372,12 +372,12 @@ In `src/components/__tests__/PublicListView.test.jsx`, give the Vader line `type
   });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `npx vitest run src/test/utils/cardLists.test.js src/components/__tests__/PublicListView.test.jsx`
 Expected: FAIL — no `type` or `priceIsFallback` on public lines; the classes are missing.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `cardLists.js`, inside `toPublicList`'s line mapping:
 - after `if (l.note) out.note = l.note;` add `if (l.type) out.type = l.type;`;
@@ -393,12 +393,12 @@ In `publicLines`, replace `priceIsFallback: false` with `priceIsFallback: Boolea
 - **Price** span: `{money(l.unitPrice)}{l.priceIsFallback ? ' ↺' : ''}`, with `title="Priced from the other finish"` when it's a fallback.
 - **Quantity** span: `className="min-w-[3rem] text-right font-bold whitespace-nowrap"`.
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `npx vitest run src/test/utils/cardLists.test.js src/components/__tests__/PublicListView.test.jsx src/components/__tests__/ListView.test.jsx`
 Expected: PASS. ListView's public-body tests still pass: they check fields with `toMatchObject` or `JSON.stringify`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 npx vitest run src/test/utils/cardLists.test.js src/components/__tests__/PublicListView.test.jsx && L=$(npx eslint src --ext js,jsx --quiet 2>/dev/null); [ -n "$L" ] && echo "$L" || { git add src/utils/cardLists.js src/components/PublicListView.jsx src/test/utils/cardLists.test.js src/components/__tests__/PublicListView.test.jsx && git commit -m "feat(polish): public list page fits a phone"; }
@@ -415,7 +415,7 @@ npx vitest run src/test/utils/cardLists.test.js src/components/__tests__/PublicL
 **Interfaces:**
 - Produces: `ListView` takes `saveDelay = 800` (ms). List saves and public updates are debounced together and flushed on Back, on unmount and on `beforeunload`. A share does not trigger an immediate republish. The public body's `now` is the time prices were loaded.
 
-- [ ] **Step 1: Write the failing tests and adapt the existing ones**
+- [x] **Step 1: Write the failing tests and adapt the existing ones**
 
 In `ListView.test.jsx`:
 - The `renderView` helper passes `saveDelay={0}`. The two tests that render `<ListView …>` directly also get `saveDelay={0}`.
@@ -473,12 +473,12 @@ Add:
   });
 ```
 
-- [ ] **Step 2: Run to verify the new tests fail**
+- [x] **Step 2: Run to verify the new tests fail**
 
 Run: `npx vitest run src/components/__tests__/ListView.test.jsx`
 Expected: the five new tests FAIL (several saves, no debounce, a republish after share, `pricesAsOf` set at the edit). The adapted old tests pass.
 
-- [ ] **Step 3: Implement in `ListView.jsx`**
+- [x] **Step 3: Implement in `ListView.jsx`**
 
 - **Signature:** add `saveDelay = 800`. Add `useRef` and `useCallback` to the React import.
 - **State:** add `const [pricesAt, setPricesAt] = useState(null);`. In the price-loading effect, call `setPricesAt(Date.now())` alongside `setPrices(…)`.
@@ -549,12 +549,12 @@ Expected: the five new tests FAIL (several saves, no debounce, a republish after
 - **`del`:** before calling `deleteList`, add `clearTimeout(pending.current.timer); pending.current.patch = null; pending.current.publicDirty = false;`. Never save into a deleted list.
 - **Back button:** `onClick={() => { flush(); onBack(); }}`.
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `npx vitest run src/components/__tests__/ListView.test.jsx src/components/__tests__/SavedListsPage.test.jsx`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 npx vitest run src/components/__tests__/ListView.test.jsx && L=$(npx eslint src --ext js,jsx --quiet 2>/dev/null); [ -n "$L" ] && echo "$L" || { git add src/components/ListView.jsx src/components/__tests__/ListView.test.jsx && git commit -m "feat(polish): debounce list saves; one write on share; honest price dates"; }
@@ -570,7 +570,7 @@ npx vitest run src/components/__tests__/ListView.test.jsx && L=$(npx eslint src 
 **Interfaces:**
 - Produces: `publicDecks` create and update also require `isPublicDeckBody()`.
 
-- [ ] **Step 1: Write the failing tests** (inside `describe('public decks', …)`)
+- [x] **Step 1: Write the failing tests** (inside `describe('public decks', …)`)
 
 ```js
   const FULL = {
@@ -593,12 +593,12 @@ npx vitest run src/components/__tests__/ListView.test.jsx && L=$(npx eslint src 
   });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `JAVA_HOME="/c/Program Files/Microsoft/jdk-21.0.12.101-hotspot" PATH="/c/Program Files/Microsoft/jdk-21.0.12.101-hotspot/bin:$PATH" npm run test:rules > /tmp/rules.txt 2>&1; grep -E "Tests |FAIL .*>" /tmp/rules.txt`
 Expected: FAIL — "refuses unexpected or oversized deck content".
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `firestore.rules`, add this function above the `publicDecks` match:
 
@@ -618,12 +618,12 @@ In `firestore.rules`, add this function above the `publicDecks` match:
 
 Then append `&& isPublicDeckBody()` to both the `create` and `update` conditions of `publicDecks`.
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: the Step 2 command.
 Expected: all rules tests pass, including the earlier deck tests (`{ uid, name }` documents still satisfy the shape).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add firestore.rules src/test/rules/firestore.rules.test.js && git commit -m "fix(rules): shape checks for shared decks"
@@ -649,7 +649,7 @@ git add firestore.rules src/test/rules/firestore.rules.test.js && git commit -m 
   - `deps` overrides `{ commit, writeQuantities, cardDetails, pricing, batches, now, newId }`, for tests.
   - The batch doc gets `source: source ?? { type: 'import', mode, file }` and `reductions: [{ id, set, number, name, isFoil, from, to }]`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `src/test/services/BatchService.test.js`, append:
 
@@ -767,12 +767,12 @@ describe('importToCollection — other', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `npx vitest run src/test/services/importBatch.test.js src/test/services/BatchService.test.js`
 Expected: FAIL — cannot resolve `importBatch`; the closeBatch extra fields are missing.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `BatchService.closeBatch`:
 
@@ -896,12 +896,12 @@ export async function importToCollection({
 }
 ```
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `npx vitest run src/test/services/importBatch.test.js src/test/services/BatchService.test.js`
 Expected: PASS. If `getCardQuantities` reads padded keys differently from `getCollectionId` for the fixtures, fix the fixture (not the code) and ledger it.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 npx vitest run src/test/services/importBatch.test.js src/test/services/BatchService.test.js && L=$(npx eslint src --ext js,jsx --quiet 2>/dev/null); [ -n "$L" ] && echo "$L" || { git add src/services/importBatch.js src/services/BatchService.js src/test/services/importBatch.test.js src/test/services/BatchService.test.js && git commit -m "feat(polish): imports recorded as batches (add or replace)"; }
@@ -929,7 +929,7 @@ npx vitest run src/test/services/importBatch.test.js src/test/services/BatchServ
   - **Report failed:** an alert line "Cards imported, but the report couldn't be saved."
   - **`BatchReport`** shows a `Quantities lowered` section (`data-testid="reductions"`) when `batch.reductions?.length`. Each row reads `{set} {number} {name}{ (foil)} {from} → {to}`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `src/components/__tests__/ImportDialog.test.jsx`:
 
@@ -1018,12 +1018,12 @@ describe('ImportDialog', () => {
 
 For `BatchReport`, add a test to its existing test file that loads a batch with `reductions: [{ id: 'SOR_020_std', set: 'SOR', number: '020', name: 'Luke', isFoil: false, from: 4, to: 1 }]`, using the same mocking the file already uses to supply a batch. Assert `screen.getByTestId('reductions')` contains `SOR 020` and `4 → 1`. Find the file with `grep -rl "BatchReport" src/test src/components/__tests__`.
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `npx vitest run src/components/__tests__/ImportDialog.test.jsx` plus the BatchReport test file.
 Expected: FAIL — `ImportDialog` is missing; there is no reductions section.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `src/components/ImportDialog.jsx`:
 
@@ -1189,12 +1189,12 @@ Use whatever variable holds the loaded batch document in that component (`batch`
       )}
 ```
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `npx vitest run src/components/__tests__/ImportDialog.test.jsx` plus the BatchReport test file, then `npx vitest run src/test/components src/test/integration 2>&1 | tail -n 5` to catch App-level import tests.
 Expected: PASS. Any existing App test that drove the old alert-based import must be updated to the dialog flow; ledger each one.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 L=$(npx eslint src --ext js,jsx --quiet 2>/dev/null); [ -n "$L" ] && echo "$L" || { git add src/components/ImportDialog.jsx src/components/BatchReport.jsx src/App.jsx src/components/__tests__ src/test && git commit -m "feat(polish): import dialog with add/replace and a batch report"; }
@@ -1215,7 +1215,7 @@ L=$(npx eslint src --ext js,jsx --quiet 2>/dev/null); [ -n "$L" ] && echo "$L" |
   - `upgradeGuest({ auth, provider, deps }) → { kind: 'linked', user }` | `{ kind: 'merged', user, cards }` | `{ kind: 'copy-failed', user, csv }`. It throws the original error for anything other than `credential-already-in-use`, such as a closed popup.
   - `AuthContext`: when `auth.currentUser?.isAnonymous`, `loginWithGoogle` uses `upgradeGuest`. The context exposes `upgrade` (the last result without `user`, or `{ kind: 'error', message }`) and `dismissUpgrade()`. After `linked`, the context re-renders so `user.isAnonymous` reads `false`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `src/test/services/guestUpgrade.test.js`:
 
@@ -1307,12 +1307,12 @@ describe('upgradeGuest', () => {
 
 Write these two using the file's existing `Harness` pattern. The harness may need to render `String(user?.isAnonymous)` and `upgrade?.kind`; add that to the harness. Because the `firebase` mock is `{ auth: {}, … }`, set `auth.currentUser` by importing the mocked `auth` object in the test and assigning to it.
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `npx vitest run src/test/services/guestUpgrade.test.js src/test/contexts/AuthContext.test.jsx`
 Expected: FAIL — no `guestUpgrade`; `loginWithGoogle` always uses the popup.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `src/services/guestUpgrade.js`:
 
@@ -1395,12 +1395,12 @@ export async function upgradeGuest({ auth, provider, deps = {} }) {
 
 - Add `upgrade` and `dismissUpgrade: () => setUpgrade(null)` to `value`.
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `npx vitest run src/test/services/guestUpgrade.test.js src/test/contexts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 npx vitest run src/test/services/guestUpgrade.test.js src/test/contexts && L=$(npx eslint src --ext js,jsx --quiet 2>/dev/null); [ -n "$L" ] && echo "$L" || { git add src/services/guestUpgrade.js src/contexts/AuthContext.jsx src/test/services/guestUpgrade.test.js src/test/contexts && git commit -m "feat(polish): guests upgrade to Google without losing their collection"; }
@@ -1425,7 +1425,7 @@ npx vitest run src/test/services/guestUpgrade.test.js src/test/contexts && L=$(n
     - `error` — "Google sign-in failed: <message>".
     - Every notice has a `Dismiss` button.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `MobileNav.test.jsx`, add (using the file's existing render helper and props):
 
@@ -1451,12 +1451,12 @@ App-level test (in the chosen file, with its `useAuth` mock extended to return `
 
 Fill in these bodies against the files' existing helpers. They must assert exactly the behaviour named in the comments.
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `npx vitest run src/components/__tests__/MobileNav.test.jsx src/test/components`
 Expected: the new tests FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `MobileNav.jsx`:
 - Add `onUpgrade` to the props.
@@ -1532,7 +1532,7 @@ Expected: the new tests FAIL.
   - Add to the saved-lists paragraph: copied text is escaped and split for Discord's 2000-character limit (`discordText.js`, `CopyTextButton`), and list edits save after an 800 ms pause.
   - Add to the rules note: `publicDecks` writes are shape-checked too.
 
-- [ ] **Step 4: Full gate**
+- [x] **Step 4: Full gate**
 
 Run: `npm run test:unit > /tmp/unit.txt 2>&1; tail -n 6 /tmp/unit.txt`
 Expected: all pass.
@@ -1543,7 +1543,7 @@ Expected: all pass.
 Run: `npm run build 2>&1 | tail -n 3`
 Expected: `✓ built in …`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 L=$(npx eslint src --ext js,jsx --quiet 2>/dev/null); [ -n "$L" ] && echo "$L" || { git add src/App.jsx src/components/MobileNav.jsx src/components/__tests__/MobileNav.test.jsx src/test ../CLAUDE.md && git commit -m "feat(polish): guest sign-in with Google, upgrade notice; docs"; }
