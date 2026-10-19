@@ -39,7 +39,8 @@ const open = () => render(<DecklistImageImport onSaved={onSaved} service={servic
 const read = async () => {
   fireEvent.change(screen.getByLabelText('Decklist image link'), { target: { value: URL } });
   fireEvent.click(screen.getByRole('button', { name: 'Read image' }));
-  return screen.findByRole('region', { name: 'Han Solo' });
+  // The default 1s timeout was flaky under the full coverage run.
+  return screen.findByRole('region', { name: 'Han Solo' }, { timeout: 5000 });
 };
 
 describe('DecklistImageImport', () => {
@@ -47,10 +48,14 @@ describe('DecklistImageImport', () => {
     open();
     const deck = await read();
     expect(service.readDecklistImage).toHaveBeenCalledWith({ imageUrl: URL });
-    expect(screen.getByLabelText('Deck set')).toHaveValue('JTL');
-    await waitFor(() => expect(within(deck).getByText('TWI 114 Clone Commander Cody')).toBeInTheDocument());
-    expect(within(deck).getByText('JTL 017 Han Solo')).toBeInTheDocument();
-    expect(within(deck).getByText(/not found/i)).toBeInTheDocument();
+    // The set guess and the card data both land asynchronously after the deck
+    // appears, so wait for each rather than asserting on the first render.
+    await waitFor(() => expect(screen.getByLabelText('Deck set')).toHaveValue('JTL'));
+    await waitFor(() => {
+      expect(within(deck).getByText('TWI 114 Clone Commander Cody')).toBeInTheDocument();
+      expect(within(deck).getByText('JTL 017 Han Solo')).toBeInTheDocument();
+      expect(within(deck).getByText(/not found/i)).toBeInTheDocument();
+    });
     expect(screen.getByRole('button', { name: 'Save as review' })).toBeDisabled();
   });
 
